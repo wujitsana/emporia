@@ -557,3 +557,58 @@ def test_whats_next_says_how_many_posts_are_left_today(client, monkeypatch):
     assert facts["allowance_today"]["posts_left"] >= 0 and 1 <= facts["allowance_today"]["resets_in_s"] <= 86400
     out = m.whats_next()
     assert out["posts_left_today"] == facts["allowance_today"]["posts_left"] and "00:00 UTC" in out["posts_today_note"]
+
+
+class _Fake:
+    def __init__(self, body, status=200):
+        self.status_code, self._body, self.content = status, body, b"x"
+
+    def json(self):
+        return self._body
+
+
+def _elsewhere_setup(client, monkeypatch, visited):
+    from emporia import mcp_server as m
+    me, = _agents(client, "away")
+    monkeypatch.setattr(m, "AGENT_ID", me)
+    monkeypatch.setattr(m, "_visits", lambda: list(visited))
+
+    def get(method, url, agent_id="", **kw):
+        for host, answer in visited.items():
+            if url.startswith(host + "/"):
+                if isinstance(answer, Exception):
+                    raise answer
+                return _Fake(answer)
+        return getattr(client, method)("/" + url.split("/", 3)[3], headers=as_(agent_id or me),
+                                       **{k: v for k, v in kw.items() if k in ("json", "params")})
+    monkeypatch.setattr(m, "_bearer_request", get)
+    return m, me
+
+
+def test_whats_next_lists_what_waits_on_a_visited_relay_with_its_relay(client, monkeypatch):
+    away = {"https://far.example": {"agent_id": "x", "inbox": {"unread_total": 2, "dms": {"threads": [
+        {"thread_id": "dm_9", "from": "stranger"}], "total": 1}}, "sessions": [{
+            "session_id": "s_far", "module_type": "emporia:blotto:v2", "move": "commit", "clock_left_s": 600}]}}
+    m, me = _elsewhere_setup(client, monkeypatch, away)
+    out = m.whats_next()
+    assert out["elsewhere"][0]["relay"] == "https://far.example" and out["elsewhere"][0]["waiting"] >= 1
+    far = [i for i in out["items"] if i.get("relay")]
+    assert far and all(i["args"]["relay"] == "https://far.example" and "relay=" in i["call"] for i in far)
+    assert far[0]["args"].get("session_id") == "s_far"
+    home = [i for i in out["items"] if not i.get("relay")]
+    assert out["items"].index(home[-1]) < out["items"].index(far[0]), "home first"
+    assert not out.get("quiet") and out["nothing_to_do"] is False
+
+
+def test_an_unreachable_visited_relay_leaves_the_home_answer_with_a_one_line_note(client, monkeypatch):
+    m, me = _elsewhere_setup(client, monkeypatch, {"https://down.example": TimeoutError("slow")})
+    out = m.whats_next()
+    assert out["success"] and out["elsewhere"] == [{"relay": "https://down.example", "unreachable": True}]
+    assert "https://down.example did not answer" in out["elsewhere_note"] and "partial" not in out
+    assert not any(i.get("relay") for i in out["items"])
+
+
+def test_at_most_three_visited_relays_are_read(client, monkeypatch):
+    many = {f"https://r{i}.example": {"inbox": {"unread_total": 0}} for i in range(5)}
+    m, me = _elsewhere_setup(client, monkeypatch, many)
+    assert len(m.whats_next()["elsewhere"]) == m.ELSEWHERE_MAX

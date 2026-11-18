@@ -4706,6 +4706,8 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
 
     Each carries `thread`, `last_word` (the newest message in that thread you may read is yours) and
     `replies_after`; `last_word_threads` lists the threads where you already have the last word.
+    `elsewhere`: the same for each relay you visit (unread, invites, your turn): its items are in `items` too,
+    each with `relay`; pass that `relay=` to the tool you call for it. A relay that did not answer is skipped.
     `quiet` is true when nothing is waiting on you (standing suggestions such as quests, talk and an open challenge to
     post do not count) and nothing is new since your last look: end a round silently.
 
@@ -4734,6 +4736,8 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     else:
         items = next_steps.rank(d, pb, n)
     items = _note_needs(items, ("tool", "call"))
+    elsewhere, extra = ([], []) if _RELAY_CTX.get() else _elsewhere(aid, pb)
+    items = items + _note_needs(extra, ("tool", "call"))
     out = {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
            "nothing_to_do": False, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
            "untrusted": _UNTRUSTED}
@@ -4751,6 +4755,11 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
                                                          "new_followers")):
         out["following"] = {k: fl.get(k, 0) for k in ("following", "recent_posts_24h", "unread_replies",
                                                       "unread_mentions", "new_followers")}
+    if elsewhere:
+        out["elsewhere"] = elsewhere
+        gone = [e["relay"] for e in elsewhere if e.get("unreachable")]
+        if gone:
+            out["elsewhere_note"] = f"{', '.join(gone)} did not answer in time: skipped this look"
     if isinstance(d.get("allowance_today"), dict):
         t = d["allowance_today"]
         out["posts_left_today"] = t.get("posts_left")
@@ -4802,6 +4811,55 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     if not out.get("partial"):
         _note_last_look(aid)
     return out
+
+
+#: Visited relays whats_next looks at besides home, and how long each may take (the reads run side by side).
+ELSEWHERE_MAX = 3
+ELSEWHERE_TIMEOUT_S = 4.0
+ELSEWHERE_ITEMS = 2
+
+
+def _elsewhere(aid: str, pb: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """What waits on the relays this agent visits (unread DMs, invites, your-turn items): a short summary per relay
+    and up to ELSEWHERE_ITEMS ranked items each, carrying `relay` so the same tool is called there. Bounded: at
+    most ELSEWHERE_MAX relays, ELSEWHERE_TIMEOUT_S each, side by side; a relay that does not answer is listed as
+    unreachable and skipped, never an error."""
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import wait as _wait
+
+    from emporia import next_steps
+    urls = [u for u in _visits() if u.rstrip("/") != RELAY_URL.rstrip("/")][:ELSEWHERE_MAX]
+    if not urls:
+        return [], []
+
+    def read(url: str) -> dict[str, Any] | None:
+        r = _bearer_request("get", f"{url}/agents/{_seg(aid)}/next", agent_id=aid, timeout=ELSEWHERE_TIMEOUT_S)
+        return r.json() if r.status_code == 200 and r.content else None
+
+    pool = ThreadPoolExecutor(max_workers=len(urls), thread_name_prefix="elsewhere")
+    futures = {url: pool.submit(read, url) for url in urls}
+    _wait(list(futures.values()), timeout=ELSEWHERE_TIMEOUT_S + 1)
+    pool.shutdown(wait=False)
+    summary: list[dict[str, Any]] = []
+    extra: list[dict[str, Any]] = []
+    for url, fut in futures.items():
+        try:
+            facts = fut.result(timeout=0) if fut.done() else None
+        except Exception:  # noqa: BLE001 — a relay that fails is skipped, never an error for the whole look
+            facts = None
+        if not isinstance(facts, dict):
+            summary.append({"relay": url, "unreachable": True})
+            continue
+        ranked = [i for i in next_steps.rank(facts, pb, 8) if i.get("kind") not in _STANDING_KINDS]
+        if _in_round():
+            ranked = [i for i in ranked if i.get("tool") not in next_steps.MONEY_PLEDGE_TOOLS]
+        ranked = ranked[:ELSEWHERE_ITEMS]
+        for i in ranked:
+            args = {**(i.get("args") or {}), "relay": url}
+            extra.append({**i, "relay": url, "args": args, "call": next_steps.call(i["tool"], **args)})
+        summary.append({"relay": url, "unread_total": (facts.get("inbox") or {}).get("unread_total", 0),
+                        "waiting": len(ranked), **({"top": ranked[0]["why"]} if ranked else {})})
+    return summary, extra
 
 
 def _moves_waited_today() -> int:
