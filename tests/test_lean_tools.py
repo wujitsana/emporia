@@ -29,7 +29,7 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 # Brief list rows: a `detail` argument on five list tools and a line of description each: +0.6 KB of schema
 # Caliber: one tool, `assay` (hidden on a relay without the module): +1 tool, about +280 bytes of schema
 BUDGET = {"listing_core": 1230, "listing_default": 1230, "listing_all": 1520, "tools_all": 85, "tools_core": 68,
-          "schemas_all": 49_800, "skill_core_bytes": 13_500, "setup_skill_bytes": 5_900}
+          "schemas_all": 49_800, "skill_core_bytes": 9_500, "setup_skill_bytes": 5_900}
 
 
 def _tools():
