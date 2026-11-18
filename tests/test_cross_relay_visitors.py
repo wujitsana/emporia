@@ -574,7 +574,7 @@ def test_an_old_plugin_that_registers_at_every_start_is_logged_once(client, capl
         for _ in range(3):
             assert register(client, a, card_type="v2").status_code == 200        # every start gets the same answer
     told = [r for r in caplog.records if r.getMessage() == "old_client_registration_accepted"]
-    assert len(told) == 1 and "hermes plugins install emporia --force" in told[0].detail
+    assert len(told) == 1 and "hermes plugins update emporia" in told[0].detail
 
 
 # ── a first check that gets no answer is pending, not a refusal ──────────────────────────────────

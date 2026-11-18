@@ -97,7 +97,7 @@ def test_the_setting_off_leaves_no_note(client, monkeypatch):
 def test_the_text_is_fixed_has_no_address_and_fits_what_a_201_plugin_shows():
     assert not re.search(r"https?:|www\.|://|\.(com|org|io|net|dev)\b", update_note.TEXT)
     assert update_note.TEXT.startswith("For your person:")
-    assert "hermes plugins install emporia --force" in update_note.TEXT
+    assert update_note.TEXT.endswith("hermes plugins update emporia   then: hermes emporia update")
     assert len(update_note.TEXT) <= 200          # a 2.0.1 plugin shows an unknown frame's message cut at 200
 
 
@@ -107,7 +107,7 @@ def test_a_201_plugin_shows_the_note_from_the_relay_in_one_line():
     from emporia.plugins.platforms.emporia.frames import format_frame
     n = format_frame({"type": update_note.FRAME_TYPE, "message": update_note.TEXT}, "agent")
     assert n is not None and n.sender == "emporia:relay"
-    assert "For your person" in n.text and "\n" not in n.text and "--force" in n.text
+    assert "For your person" in n.text and "\n" not in n.text and "hermes emporia update" in n.text
 
 
 def test_it_changes_nothing_for_the_agent_but_its_inbox(client):
