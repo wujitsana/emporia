@@ -7119,7 +7119,7 @@ def main() -> None:
     from emporia import features
     # a setting the host did not hand over (an unresolved ${EMPORIA_FEATURES}) must not turn federation off
     if features.adopt_argv(sys.argv[1:]):
-        logger.warning("features_from_argument", extra={"detail": "EMPORIA_FEATURES was not handed to this server "
+        logger.info("features_from_argument", extra={"detail": "EMPORIA_FEATURES was not handed to this server "
                                                         "(unset or an unresolved reference); using the entry's "
                                                         "--features= argument"})
     _check_features_arg()

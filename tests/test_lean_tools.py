@@ -284,10 +284,15 @@ def test_the_features_command_for_a_profile_refreshes_the_entry_and_says_to_rest
 
         def refresh_mcp_references(self, p):
             return ["--features"]
+
+        def sync_mcp_costs(self, p):
+            synced.append(p)
+    synced = []
     monkeypatch.setattr(cli, "installer", lambda: _Installer())
     assert cli.main(["features", "on", "archive"]) == 0
     out = capsys.readouterr().out
     assert saved == {F.SETTING: "archive"} and "restart the gateway" in out and "--features" in out
+    assert synced == [profile], "the prices Hermes is given follow the features"
 
 
 def test_a_features_change_changes_the_entrys_args_so_hermes_lists_the_tools_again(tmp_path):

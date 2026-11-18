@@ -512,9 +512,22 @@ DEFAULT_MAX_DAILY_CENTS = 5000
 COST_KEYS = ("tool_costs", "spend_limit", "cost_unit")
 
 
+def _offered_money_tools(dotenv: dict[str, str]) -> set[str]:
+    """The paying tools the server offers this agent: Hermes warns about a priced tool the server does not list,
+    and the features (`EMPORIA_FEATURES`, or what its wallet implies) decide which tools it lists (`fund_session`
+    belongs to the money feature). A relay without money hides more at run time; that is not known here."""
+    from emporia import features as F
+    try:
+        enabled = F.enabled_from(dotenv, dotenv.get("EMPORIA_KEYS_DIR") or None)
+    except F.FeatureError:
+        enabled = list(F.DEFAULTS)
+    return set(MONEY_TOOLS) - F.hidden_by_features(enabled, F.read_only(dotenv.get(F.SETTING, "")))
+
+
 def mcp_cost_policy(dotenv: dict[str, str]) -> dict[str, Any]:
     """The cost declaration for this agent's limits (`EMPORIA_X402_MAX_PAYMENT_CENTS`, `EMPORIA_X402_MAX_DAILY_CENTS`):
-    {} when a limit is 0 or unreadable, so nothing is declared that Hermes cannot count."""
+    {} when a limit is 0 or unreadable, so nothing is declared that Hermes cannot count. Only the paying tools the
+    server offers this agent are named (see `_offered_money_tools`)."""
     def cents(name: str, default: int) -> int:
         raw = (dotenv.get(name) or "").strip()
         try:
@@ -525,8 +538,11 @@ def mcp_cost_policy(dotenv: dict[str, str]) -> dict[str, Any]:
     daily = cents("EMPORIA_X402_MAX_DAILY_CENTS", DEFAULT_MAX_DAILY_CENTS)
     if per <= 0 or daily <= 0:
         return {}
+    tools = [t for t in MONEY_TOOLS if t in _offered_money_tools(dotenv)]
+    if not tools:
+        return {}
     note = f"at most this agent's {per}-cent payment limit; the exact amount is in the payment's own approval"
-    return {"tool_costs": {tool: {"credits": [0, per], "note": note} for tool in MONEY_TOOLS},
+    return {"tool_costs": {tool: {"credits": [0, per], "note": note} for tool in tools},
             "spend_limit": daily, "cost_unit": COST_UNIT}
 
 

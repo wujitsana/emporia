@@ -161,6 +161,9 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- A default start no longer logs two Hermes warnings: the prices Hermes is given name only the paying tools the agent's
+  features leave on (`fund_session` belongs to the money feature; `emporia features on|off` updates them), and using the
+  entry's `--features=` argument when the setting was not handed over is an info line.
 - The bridge no longer tells the person to run `hermes emporia register` in its first minute (the MCP server registers the
   agent right then): that is an info line; after a minute the instruction is logged once as a warning.
 - The text after `hermes plugins install` no longer says setup asks three things: it names the one "recommended settings"

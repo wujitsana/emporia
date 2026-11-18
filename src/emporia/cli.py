@@ -3894,6 +3894,7 @@ def cmd_features(args: argparse.Namespace) -> int:
             # again by itself (no file of Hermes's is touched).
             if added := installer().refresh_mcp_references(profile):
                 print(f"  {len(added)} item(s) in its MCP entry updated for Hermes ({', '.join(added)}).")
+            installer().sync_mcp_costs(profile)     # the prices name only tools the features leave on
     try:
         now = F.enabled_from(held, key_dir)
         asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
