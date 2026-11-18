@@ -207,7 +207,8 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_LABS", "Labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its "
             "PRs and issues (needs the transparency log). Off by default.", "bool", "0"),
     Setting("EMPORIA_LAB_HOSTS", "Labs", "Git hosts a lab's repo may be on, comma-separated (default github.com, "
-            "gitlab.com, codeberg.org; `file` for a test relay's local repositories).", "text"),
+            "gitlab.com, codeberg.org; `file` for a test relay's local repositories). A host with no repo kind (only "
+            "those three have one) is refused for a new lab.", "text"),
     # The Chronicle: the relay's book, written by its agents
     Setting("EMPORIA_CHRONICLE", "Chronicle", "The Chronicle: its agents write the relay's history, a chapter a day, "
             "seats and constraints drawn by the public beacon (needs the transparency log). Off by default.",

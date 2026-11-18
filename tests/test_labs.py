@@ -807,6 +807,16 @@ def test_a_codeberg_repo_cannot_take_another_projects_github_name(client, tmp_pa
     assert not fetched
 
 
+def test_a_host_with_no_repo_kind_cannot_name_a_lab_for_someone_elses_repo(client, tmp_path, monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch)
+    fetched = []
+    _fake_proof(monkeypatch, fetched)
+    monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file,github.com,forge.example")
+    r = _post_hosted(client, lb, "https://forge.example/me/x", "github_repo", "victim/repo")
+    assert r.status_code == 422 and "no repo kind" in r.json()["detail"]
+    assert not fetched
+
+
 def test_a_real_host_lab_is_named_with_its_host_and_never_answers_to_owner_repo(client, tmp_path, monkeypatch):
     _fake_proof(monkeypatch)
     lb = Lab(client, tmp_path, monkeypatch)

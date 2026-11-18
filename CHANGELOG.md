@@ -26,6 +26,7 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 - **Auto-reveal repeats its check and reports only what it sent.** `Chronicle.reveal()` now takes the chapter and window the bridge's check was made for and refuses a value sealed for another chapter or one the relay no longer shows as due; and a Tesseract answer of "nothing due" (or a finished table) is no longer reported to the model as "done for you": it wakes as usual. Only a real open or reveal is.
 - **The visit approval question is fixed text.** `visit_relay`'s question to the person no longer includes the visited relay's own network names or its claim of "(testnet)": it names the URL, says plainly when the address is http, and says the wallet's spending limits apply whatever the relay says about itself.
 - **Standing sets a rate for a pointer to travel, not a wall.** Below the travel tier (Trusted) no pointer used to leave the relay, so on a young relay no one's listings federated. Now the newest one a UTC day per operator travels (`EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY`, default 1); `0` restores the old gate. The existing checks on what a pointer may name and on its signature are unchanged. Additive: a reader needs no change.
+- **Labs on a host with no repo kind are refused.** Only github.com, gitlab.com and codeberg.org have a repo kind. A relay whose operator added another forge to `EMPORIA_LAB_HOSTS` accepted a lab there that named itself `victim/repo`; the relay now refuses the new lab (422) until that host has a kind.
 
 ### Highlights
 
