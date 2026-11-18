@@ -4011,6 +4011,19 @@ def _playbook_refusal_runner(module_type: str) -> dict[str, Any] | None:
     return _runner_only_refusal() if module_type in game_module_types() else None
 
 
+def _full_module_type(module_type: str) -> str:
+    """A short game name (`blotto`) as its one full id (`emporia:blotto:v2`); anything else unchanged. Ambiguous
+    or unknown short names are left as they are."""
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    from emporia.standing import game_module_types
+    load_bundled_modules()
+    if not module_type or ":" in module_type or module_type in MODULE_REGISTRY:
+        return module_type
+    from emporia import calls
+    full = calls.current(f"emporia:{module_type.strip().lower()}:v1")      # as the playbook names games: its live type
+    return full if full in game_module_types() else module_type
+
+
 def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None:
     """P297: the playbook its person set — which games, and
     whether it sells or buys. `what`: play (create or join a game), join (a session that is not a game: providing it is selling),
@@ -4024,6 +4037,11 @@ def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None
     # purchase and a player was told it "does not buy" when it made a blotto game.
     load_bundled_modules()
     pb = playbook.current()
+    from emporia.module_sdk import MODULE_REGISTRY
+    if module_type and ":" not in module_type and module_type not in MODULE_REGISTRY:
+        # A short name that is no game (a typo, an unknown one) is not a purchase: say what it is.
+        return {"error": f"unknown game {module_type!r}: supported_games lists the ids to use "
+                         "(for example emporia:blotto:v2)", "success": False}
     game = bool(module_type) and module_type in game_module_types()
     if game and what in ("play", "join", "create", "fund"):
         why = playbook.runner_refusal(module_type) or playbook.may_play(pb, module_type)   # the house runner's games
@@ -4207,6 +4225,7 @@ def _create_session(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
+    module_type = _full_module_type(module_type)       # "blotto" is emporia:blotto:v2
     if (refusal := _playbook_refusal("create", module_type)
             or _open_games_refusal(aid, module_type)):
         return refusal

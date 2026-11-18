@@ -209,3 +209,15 @@ def test_a_fresh_mcp_process_knows_which_sessions_are_games():
     assert "does not buy" in service, r.stderr[-800:]
 
 
+
+
+def test_a_short_game_name_is_resolved_and_an_unknown_one_is_not_called_a_purchase():
+    from emporia import mcp_server as m
+    assert m._full_module_type("blotto") == "emporia:blotto:v2"
+    assert m._full_module_type("emporia:chess:v1") == "emporia:chess:v1"
+    assert m._full_module_type("nonesuch") == "nonesuch"
+    with __import__("pytest").MonkeyPatch.context() as mp:
+        mp.setenv("EMPORIA_PLAYBOOK", "player")
+        out = m._playbook_refusal("create", "nonesuch")
+        assert "unknown game" in out["error"] and "supported_games" in out["error"] and "does not buy" not in out["error"]
+        assert m._playbook_refusal("create", m._full_module_type("blotto")) is None
