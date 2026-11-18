@@ -910,3 +910,20 @@ def test_the_one_numeral_shape_does_not_count_digits_inside_handles_mentions_or_
     one = C.SHAPES["one_numeral"]
     assert one("e21c kept 7 lanterns for @bob2 and pst_9f2.")
     assert not one("e21c kept 7 lanterns and 8 more.") and not one("No number at all, only e21c.")
+
+
+def test_the_act_draw_ranks_by_declared_base_operator_age_before_the_beacon():
+    """A later arrival (merged by network, or a copied label) never outranks the agent that was there, whatever the beacon
+    draws; with no ranks (a roster from before the field) the beacon alone ranks, as before."""
+    scope = C.chapter_scope("r", {"n": 1, "label": "Chapter 1", "tags": []}, "live")
+    old = C.Member("old", "u", PREV - 100 * DAY, PREV - 10 * DAY, base_since=PREV - 100 * DAY)
+    copy = C.Member("copy", "u", PREV - 50 * DAY, PREV - 10 * DAY, base_since=PREV - 100 * DAY)      # same label, later
+    merged = C.Member("merged", "u", PREV - 70 * DAY, PREV - 10 * DAY, base_since=PREV - 70 * DAY)    # other base
+    ranks = {m.agent_id: C.act_rank(m) for m in (old, copy, merged)}
+    beacon_first = set()
+    for k in range(40):
+        s = sig("act", k)
+        assert C.act_order(["merged", "copy", "old"], scope, s, ranks) == ["old", "merged", "copy"]
+        beacon_first.add(C.act_order(["merged", "copy", "old"], scope, s)[0])
+    assert len(beacon_first) > 1, "without ranks the beacon alone decides"
+    assert C.act_rank(C.Member("x", "u", 5.0, 1.0)) == (0.0, 0.0)

@@ -68,7 +68,7 @@ class World:
         self.start = start if start is not None else (real // epoch_s) * epoch_s - 60 * DAY
         self.clock = Clock(self.start - 3 * 3600)
         with rs.DB_LOCK, rs.get_db() as conn:        # a throwaway book: nothing of an earlier one is on this roster
-            for t in ("join", "seals", "reveals", "ballots", "verdicts"):
+            for t in ("join", "seals", "reveals", "ballots", "verdicts", "rosters"):
                 conn.execute(f"DELETE FROM chronicle_{t}")
             conn.commit()
         self._env: dict[str, str | None] = {}

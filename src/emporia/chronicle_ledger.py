@@ -9,7 +9,9 @@ A **ledger** is plain JSON-able data (the relay builds it from its tables; a ver
 the public routes):
 
     relay_id, start, epoch_s, practice, prologue        the clock and the book's first post
-    agents   [{agent_id, unit, registered_at, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
+    agents   [{agent_id, unit, registered_at, base_since, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
+    rosters  {"<slot>": {members: [Member dicts], source: "call" | "late"}}    each called slot's members, taken
+             once at its call and used for that slot for ever (below); a slot with none uses `agents` as they are now
     events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
     (each chapter's inputs carry `recent`: the cards of the earlier chapters of its kind that its draw avoids)
     beacons  {"<round>": "<hex signature>"}              every drand round the chapters drew from
@@ -19,12 +21,21 @@ Chapter `i` is called at `start + i * epoch_s` (so a chapter is called as the on
 a day, a quiet or empty slot simply uses no number). `slots` returns one dict per slot up to `now`; a slot that was
 called has `inputs` (everything `resolve_inputs` needs, serialisable: this is what a chapter's public page carries)
 and the `verdict`.
+
+**Rosters are snapshots.** A unit token comes from the *present* operator grouping (label, key, network), which
+moves: a member re-registers with a new label, or an unrelated agent registers from the same network. The relay
+therefore takes each slot's members (agent, unit token, registration, join time, house, base-operator age) once, at
+the slot's call (`routes/chronicle.take_rosters`), and every later recomputation of the slot, the relay's and a
+verifier's, uses that snapshot: it is carried in the chapter's published `inputs["members"]`. A snapshot taken more
+than `SNAPSHOT_GRACE_S` after the call is marked `late` (the draw may already have been public); a slot with no
+snapshot at all (a database from before they existed) uses the present grouping and is marked `current`.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from dataclasses import asdict
 from typing import Any
 
@@ -32,6 +43,8 @@ from emporia.modules import chronicle as C
 
 #: Events a quiet or failed chapter hands to the next one are kept this many epochs, so the carry cannot grow for ever.
 CARRY_EPOCHS = 3
+#: A roster taken later than this after its slot's call is marked `late`: the call round, and so the draw, is public.
+SNAPSHOT_GRACE_S = 30
 #: Reasons that end a called chapter without canon: its window carries over (2.7).
 CARRIES = ("quorum", "none_won", "no_candidates")
 
@@ -80,8 +93,16 @@ def members_at(agents: list[dict[str, Any]], before_ts: float) -> list[C.Member]
             elif not on:
                 since = None
         if since is not None:
-            out.append(C.Member(a["agent_id"], a["unit"], float(a["registered_at"]), float(since), "", bool(a["house"])))
+            base = a.get("base_since")
+            out.append(C.Member(a["agent_id"], a["unit"], float(a["registered_at"]), float(since), "", bool(a["house"]),
+                                None if base is None else float(base)))
     return out
+
+
+def roster_hash(members: list[dict[str, Any]]) -> str:
+    """A fingerprint of a chapter's roster as published (`inputs["members"]`), which the frozen receipt binds."""
+    body = json.dumps(sorted(members, key=lambda m: m["agent_id"]), sort_keys=True, separators=(",", ":"), default=list)
+    return hashlib.sha256(body.encode()).hexdigest()
 
 
 def _member_dict(m: C.Member) -> dict[str, Any]:
@@ -136,7 +157,13 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
     for i in range(last + 1):
         call_ts = slot_call(start, epoch, i)
         prev_call = call_ts - epoch
-        members = members_at(ledger["agents"], prev_call)
+        snap = (ledger.get("rosters") or {}).get(str(i))
+        if snap is not None:         # taken when the slot was called: later labels and groupings do not move it
+            members = [C.Member(**m) for m in snap["members"]]
+            roster_source = snap.get("source", "call")
+        else:                        # no snapshot (a ledger from before they existed): the present grouping
+            members = members_at(ledger["agents"], prev_call)
+            roster_source = "current"
         bench = C.benched(live_outcomes, len(live_outcomes))
         roster = C.eligible(members, prev_call)
         mode = C.mode_of(roster, params, bench)
@@ -152,7 +179,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
         rounds = C.call_rounds(call_ts, epoch)
         sigs = {k: ledger["beacons"].get(str(r), "") for k, r in rounds.items()}
         inputs = {
-            "relay_id": ledger["relay_id"], "numbering": numbering, "members": [_member_dict(m) for m in members],
+            "relay_id": ledger["relay_id"], "numbering": numbering, "members": [_member_dict(m) for m in members], "roster": roster_source,
             "prev_call_ts": prev_call, "call_ts": call_ts, "events": evs, "carry": carry,
             "sigs": sigs, "rounds": rounds,
             "seals": _record_rows(ledger["seals"], cid), "reveals": _record_rows(ledger["reveals"], cid),

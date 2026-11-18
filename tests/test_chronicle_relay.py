@@ -10,6 +10,7 @@ import itertools
 import sys
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -460,7 +461,8 @@ def _ranked(w: E.World, c: str, agents: list[str]) -> list[str]:
     """The agents of one operator, highest-ranked first, from the public inputs only."""
     inp = chapter(w, c, include="inputs")["inputs"]
     scope = C.chapter_scope(inp["relay_id"], inp["numbering"], "live")
-    return C.act_order(agents, scope, bytes.fromhex(inp["sigs"]["call"]))
+    ranks = {m["agent_id"]: C.act_rank(C.Member(**m)) for m in inp["members"]}
+    return C.act_order(agents, scope, bytes.fromhex(inp["sigs"]["call"]), ranks)
 
 
 def _by_op(names: list[str]) -> dict[str, list[str]]:
@@ -1146,3 +1148,175 @@ def test_re_registering_keeps_the_first_registered_at_and_the_member_stays_on_th
     assert {n: stamp(n) for n in names} == before
     did = day(w, names, 1)
     assert len(did["wrote"]) == 3 and len(did["picked"]) == 3
+
+
+# ── rosters are snapshots (review findings 1-3): a label or a grouping that moves later changes no chapter ─────────
+
+def _relabel(w: E.World, agent: str, label: str) -> None:
+    """What re-registering with a new operator label does to the row (`registered_at` is kept), and forget the caches."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (label, agent))
+        conn.commit()
+    rs.forget_who()
+    w.route._SEQ.update(key=None, value=None)
+
+
+def _present_unit(w: E.World, agent: str) -> str:
+    """The unit token the relay's present grouping gives an agent (what every chapter used to be recomputed with)."""
+    return w.route._who_units()[0][agent]
+
+
+def _members(w: E.World, c: str) -> list[dict]:
+    return sorted(chapter(w, c, include="inputs")["inputs"]["members"], key=lambda m: m["agent_id"])
+
+
+def test_a_label_change_after_the_call_changes_no_finished_chapter_and_the_verifier_agrees(mk):
+    """The review's probe: six operators, chapters 1 and 2 played and frozen; one member re-registers with a new label."""
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+    before = {c: (_members(w, c), chapter(w, c)["verdict"], chapter(w, c)["receipt"]) for c in ("1", "2")}
+    unit_before = _present_unit(w, names[0])
+    _relabel(w, names[0], "opnew" + uuid.uuid4().hex[:6])
+    assert _present_unit(w, names[0]) != unit_before, "the present grouping did move"
+    for c in ("1", "2"):
+        got = (_members(w, c), chapter(w, c)["verdict"], chapter(w, c)["receipt"])
+        assert got == before[c], f"chapter {c} moved"
+        assert chapter(w, c)["verdict"]["reason"] == "canon"
+    rep = verified(w)
+    assert len(rep["chapters"]) == 2
+
+
+def test_an_unrelated_agent_from_the_same_network_after_the_call_changes_nothing_for_past_chapters(mk):
+    from emporia.identity import get_public_key_hex
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    before = {c: (_members(w, c), chapter(w, c)["verdict"]) for c in ("1", "2")}
+    unit_before = _present_unit(w, names[0])
+    stranger = f"stranger_{uuid.uuid4().hex[:5]}"
+    r = w.client.post("/agents/register", json={"agent_id": stranger, "public_key_hex": get_public_key_hex(stranger)})
+    assert r.status_code == 200, r.text
+    with rs.DB_LOCK, rs.get_db() as conn:     # registered from the same network as a member: a permanent link to it,
+        conn.execute("UPDATE authorized_agents SET operator_label = '', network_group = ? WHERE agent_id = ?",
+                     (w.stable(names[0]), stranger))       # and `key:` sorts below `label:`, so the merged set is renamed
+        conn.commit()
+    rs.forget_who()
+    w.route._SEQ.update(key=None, value=None)
+    assert _present_unit(w, names[0]) != unit_before, "the present grouping did move"
+    for c in ("1", "2"):
+        assert (_members(w, c), chapter(w, c)["verdict"]) == before[c]
+    verified(w)
+
+
+def test_re_registering_after_the_draw_cannot_move_a_units_seat_in_that_chapter(mk):
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)                                   # chapter 1 is called and its draw is public
+    seats, members = chapter(w, "1")["seats"], _members(w, "1")
+    unit_before = _present_unit(w, names[0])
+    for k in range(4):                                # an operator grinding for a better seat
+        _relabel(w, names[0], f"opgrind{k}" + uuid.uuid4().hex[:6])
+        assert _present_unit(w, names[0]) != unit_before
+        assert chapter(w, "1")["seats"] == seats and _members(w, "1") == members
+
+
+def test_a_roster_is_taken_at_the_call_and_marked_by_when(mk):
+    w, names = mk(6)
+    w.clock.at(w.start + w.epoch + 5)                 # five seconds after chapter 1's call
+    w.route.take_rosters()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        src = {r["call_ts"]: r["source"] for r in conn.execute("SELECT call_ts, source FROM chronicle_rosters "
+                                                               "WHERE epoch_s = ?", (w.epoch,))}
+    assert src[w.start + w.epoch] == "call" and src[w.start] == "late"      # slot 0 was first resolved a day after its call
+    w.clock.at(w.start + 3.5 * w.epoch)               # a slot first resolved long after its call is marked late
+    w.route.take_rosters()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        late = conn.execute("SELECT source FROM chronicle_rosters WHERE epoch_s = ? AND call_ts = ?",
+                            (w.epoch, w.start + 3 * w.epoch)).fetchone()[0]
+    assert late == "late"
+
+
+def test_a_ledger_without_snapshots_still_resolves_from_the_present_grouping_and_says_so(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    ledger = w.route.build_ledger()
+    assert ledger["rosters"], "the relay snapshots every called slot"
+    old = {k: v for k, v in ledger.items() if k != "rosters"}      # a ledger from before rosters existed
+    called = [s for s in L.slots(old, w.clock()) if s["called"]]
+    assert called and all(s["inputs"]["roster"] == "current" for s in called)
+    assert called[0]["verdict"]["canon"] == chapter(w, "1")["verdict"]["canon"]
+    new = [s for s in L.slots(ledger, w.clock()) if s["called"]]
+    assert all(s["inputs"]["roster"] in ("call", "late") for s in new)
+    # a database whose snapshots were never taken: they are taken on the next read (marked late), and the chapter reads
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("DELETE FROM chronicle_rosters")
+        conn.commit()
+    w.route._SEQ.update(key=None, value=None)
+    assert chapter(w, "1", include="inputs")["inputs"]["roster"] == "late"
+
+
+def test_the_frozen_receipt_binds_the_roster_and_a_changed_roster_is_caught(mk):
+    w, names = mk(6)
+    day(w, names, 1)
+    verified(w)
+    assert chapter(w, "1")["receipt"]["roster"] is True
+
+    def other_units(path, j):
+        if path.startswith("/chronicle/chapters/1?include=inputs"):
+            j["inputs"]["members"][0] = {**j["inputs"]["members"][0], "operator": "u0000000000"}
+        return j
+    rep = V.verify(lambda p: other_units(p, w.get(p).json()), bls=False)
+    assert not rep["ok"]
+
+    def stranger_member(path, j):
+        if path.startswith("/chronicle/chapters/1?include=inputs"):
+            j["inputs"]["members"].append({**j["inputs"]["members"][0], "agent_id": "nobody_signed", "operator": "u1"})
+        return j
+    rep = V.verify(lambda p: stranger_member(p, w.get(p).json()), bls=False)
+    assert not rep["ok"] and any("roster:" in p for c in rep["chapters"] for p in c["problems"])
+
+
+def test_a_later_registered_agent_of_a_unit_never_outranks_the_original_in_the_act_draw(mk):
+    """Two agents per operator; the second of each registered 50 days later (a copied label, or merged by network): it
+    wakes first and seals, and still the original's seal counts, whatever the beacon says."""
+    w, names = mk(5, per_op=2)
+    later = [n for n in names if n.endswith("_1")]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for n in later:
+            conn.execute("UPDATE authorized_agents SET registered_at = ? WHERE agent_id = ?",
+                         (datetime.fromtimestamp(w.start - 50 * DAY, UTC).isoformat(), n))
+        conn.commit()
+    rs.forget_who()
+    order = _called(w, names, lambda ranked: list(reversed(ranked)))      # the lowest-ranked wakes and seals first
+    E.play_chapter(w, order, 1)
+    inp = chapter(w, "1", include="inputs")["inputs"]
+    v = chapter(w, "1")["verdict"]
+    assert any(sl["agent"] in later for sl in inp["seals"]), "a later arrival sealed too"
+    for rec in (*inp["reveals"], *inp["ballots"]):
+        assert rec["agent"].endswith("_0"), "only the original's seal is opened and counted"
+    assert v["canon"] and V.independent_count(inp)["canon"] == L.resolve_inputs(inp)["canon"] == v["canon"]
+    verified(w)
+
+
+def test_a_network_merged_agent_with_another_label_ranks_after_the_declared_original(mk):
+    """Merged into the unit by a permanent network link, but with its own declared label, first seen 60 days ago against
+    the original's 100: a different base operator, younger, so it ranks after the original."""
+    from emporia.identity import get_public_key_hex
+    w, names = mk(5)
+    victim = names[0]
+    merged = f"merged_{uuid.uuid4().hex[:5]}"
+    r = w.client.post("/agents/register", json={"agent_id": merged, "public_key_hex": get_public_key_hex(merged)})
+    assert r.status_code == 200, r.text
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET operator_label = 'opmerged', network_group = ?, registered_at = ? "
+                     "WHERE agent_id = ?", (w.stable(victim), datetime.fromtimestamp(w.start - 60 * DAY, UTC).isoformat(),
+                                            merged))
+        conn.commit()
+    rs.forget_who()
+    units, base = w.route._who_units()[0], w.route._base_since()
+    assert units[merged] == units[victim], "merged into the victim's unit"
+    assert base[victim] < base[merged]
+    assert C.act_rank(C.Member("a", "u", base[victim], 0.0, base_since=base[victim])) \
+        < C.act_rank(C.Member("b", "u", base[merged], 0.0, base_since=base[merged]))

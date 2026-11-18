@@ -7,6 +7,11 @@ beacon seats half the operators as scribes and half as jurors; scribes seal a sh
 constraint, jurors seal one pick; the passage with the most weighted picks is the canon. The relay counts by
 the formula below, which anyone can recompute from the signed records and the beacon (`resolve_chapter`).
 
+Who acts for a unit: of the agents of one unit (operator) that seal a kind, the highest-ranked counts. The rank is the
+agent's `act_rank` (seniority: the age of its *declared base operator*, that is its operator label, or its key when it
+has no label, before network grouping; then its own registration time) and then the beacon (`act_key`). A member merged
+into a unit only by network grouping, or by copying a label later, ranks after the agents that were there.
+
 Every function here is deterministic in its arguments. The beacon enters only as `sig` bytes (a drand round's
 signature) that the caller passes in, so a test or a simulation can stand a seeded hash in for it.
 
@@ -95,6 +100,19 @@ class Member:
     joined_at: float
     team: str = ""
     house: bool = False
+    #: When this agent's *declared* base operator was first seen (see `act_rank`); None for a roster from before the
+    #: field existed, which ranks by the beacon alone, as it did.
+    base_since: float | None = None
+
+
+def act_rank(m: Member) -> tuple[float, float]:
+    """The seniority that comes before the beacon in the act draw. The **declared base operator** of an agent is what
+    its own card declares: its operator label if it has one, else its key (`operators.operator_of`), before any
+    network grouping merges it with others. `base_since` is the earliest registration of any agent that declares that
+    base operator; the rank is `(base_since, the agent's own registered_at)`, lowest first. An agent that was merged
+    into a unit only by network grouping, or that copied a label later, has a later base or a later registration than
+    the agent that was there, so it never outranks it; the beacon breaks exact ties only (same base, same second)."""
+    return (m.base_since, m.registered_at) if m.base_since is not None else (0.0, 0.0)
 
 
 def unit_key(m: Member, params: Params = Params()) -> str:
@@ -339,16 +357,19 @@ def desk_roles(team_agents: list[str], scope: str, sig: bytes) -> dict[str, str]
     return dict(zip(order, ("writer", "researcher", "critic"), strict=False))
 
 
-def act_key(agent: str, scope: str, sig: bytes) -> tuple[bytes, str]:
-    """Who acts for an operator (one unit, several agents): the beacon ranks the unit's agents each chapter, from
-    published inputs only (scope, the call signature, the agent id). Of the agents of one unit that sealed a kind
+def act_key(agent: str, scope: str, sig: bytes, rank: tuple[float, float] = (0.0, 0.0)) -> tuple[Any, ...]:
+    """Who acts for an operator (one unit, several agents): the unit's agents are ranked each chapter by seniority
+    first (`act_rank`: the age of the declared base operator, then the agent's own registration), then by the beacon,
+    from published inputs only (scope, the call signature, the agent id). Of the agents of one unit that sealed a kind
     (passage, pick) in its window, the lowest key, the highest-ranked, is the one whose seal counts."""
-    return (rand.rand(scope, "act:" + agent, sig), agent)
+    return (rank, rand.rand(scope, "act:" + agent, sig), agent)
 
 
-def act_order(agents: list[str], scope: str, sig: bytes) -> list[str]:
-    """The agents of one unit, highest-ranked first."""
-    return sorted(set(agents), key=lambda a: act_key(a, scope, sig))
+def act_order(agents: list[str], scope: str, sig: bytes,
+              ranks: dict[str, tuple[float, float]] | None = None) -> list[str]:
+    """The agents of one unit, highest-ranked first. `ranks`: {agent: `act_rank`}; none given ranks by the beacon."""
+    ranks = ranks or {}
+    return sorted(set(agents), key=lambda a: act_key(a, scope, sig, ranks.get(a, (0.0, 0.0))))
 
 
 # ---------------------------------------------------------------- passage checks (4.3)
@@ -771,6 +792,7 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
     seats = seat(units, scope, sigs["call"], mode)
     unit_of = {m.agent_id: (m.agent_id if mode == "practice" else unit_key(m, params)) for m in roster}
     team_of = {m.agent_id: m.team for m in roster if m.team and params.unit == "operator" and mode == "live"}
+    rank_of = {m.agent_id: act_rank(m) for m in roster}
     refused: list[dict[str, str]] = []
 
     def refuse(agent: str, what: str, why: str) -> None:
@@ -793,7 +815,8 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
                 refuse(s["agent"], kind, "no seat for this")
             elif u in out and out[u]["agent"] != s["agent"] and not team_of.get(s["agent"]):
                 held = out[u]["agent"]
-                if act_key(s["agent"], scope, sigs["call"]) < act_key(held, scope, sigs["call"]):
+                if (act_key(s["agent"], scope, sigs["call"], rank_of.get(s["agent"], (0.0, 0.0)))
+                        < act_key(held, scope, sigs["call"], rank_of.get(held, (0.0, 0.0)))):
                     refuse(held, kind, "a higher-drawn agent of this operator sealed")
                     out[u] = s
                 else:

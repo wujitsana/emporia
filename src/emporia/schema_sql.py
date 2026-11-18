@@ -877,6 +877,15 @@ CREATE TABLE IF NOT EXISTS chronicle_verdicts (
                 frozen_at TEXT NOT NULL
             );
 
+CREATE TABLE IF NOT EXISTS chronicle_rosters (
+                epoch_s INTEGER NOT NULL,
+                call_ts REAL NOT NULL,
+                members_json TEXT NOT NULL,
+                source TEXT NOT NULL,
+                taken_at REAL NOT NULL,
+                PRIMARY KEY (epoch_s, call_ts)
+            );
+
 CREATE TABLE IF NOT EXISTS carried_topics (
                 topic_key TEXT PRIMARY KEY,
                 slug TEXT NOT NULL,

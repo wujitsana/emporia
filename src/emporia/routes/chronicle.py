@@ -97,13 +97,81 @@ def _who_units() -> tuple[dict[str, str], dict[str, float], frozenset[str]]:
     return units, {a: (w.registered_at or 0.0) for a, w in who.items()}, house
 
 
-def _agents(conn, units, regs, house) -> list[dict[str, Any]]:
+def _base_since() -> dict[str, float]:
+    """{agent: when its *declared* base operator was first seen}: the earliest registration of any agent that declares
+    the same operator label (or, with no label, the same key), before network grouping merges anyone
+    (`operators.operator_of_row`). The act draw ranks by it (`modules/chronicle.act_rank`)."""
+    from emporia import operators
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at FROM authorized_agents").fetchall()
+    base_of = {r["agent_id"]: operators.operator_of_row(r) for r in rows}
+    first: dict[str, float] = {}
+    for r in rows:
+        at = _ts(r["registered_at"]) or 0.0
+        b = base_of[r["agent_id"]]
+        first[b] = min(first.get(b, at), at)
+    return {a: first[b] for a, b in base_of.items()}
+
+
+def _agents(conn, units, regs, house, base=None) -> list[dict[str, Any]]:
     joins: dict[str, list] = {}
     for r in conn.execute("SELECT agent_id, on_flag, received_at FROM chronicle_join ORDER BY seq"):
         joins.setdefault(r["agent_id"], []).append([int(r["on_flag"]), r["received_at"]])
     rid = rs.relay_id()
+    base = base or {}
     return [{"agent_id": a, "unit": units.get(a) or L.unit_token(rid, a), "registered_at": regs.get(a, 0.0),
-             "house": a in house, "joins": e} for a, e in sorted(joins.items())]
+             "base_since": base.get(a), "house": a in house, "joins": e} for a, e in sorted(joins.items())]
+
+
+def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float) -> dict[str, dict[str, Any]]:
+    """Each called slot's roster, from `chronicle_rosters`; a slot called but not yet snapshotted is snapshotted now,
+    once, from `agents` (the present grouping) and never again. The first resolution after the call is the one that
+    counts: `take_rosters` runs every few seconds on a live relay and every read of the book runs it too, so the
+    snapshot is taken within seconds of the call. One taken more than `L.SNAPSHOT_GRACE_S` after it is marked `late`
+    (the draw may already have been public; a dev database's older chapters are all marked so). The members are
+    `members_at` the previous call: the joins are append-only, so only the unit token, the registration time and
+    the base-operator age can have moved since, and those are what is frozen."""
+    start, epoch = float(st["start"]), int(st["epoch_s"])
+    have = {r["call_ts"]: r for r in conn.execute("SELECT * FROM chronicle_rosters WHERE epoch_s = ?", (epoch,))}
+    out: dict[str, dict[str, Any]] = {}
+    added = False
+    for i in range(L.slot_at(start, epoch, at) + 1):
+        call_ts = L.slot_call(start, epoch, i)
+        row = have.get(call_ts)
+        if row is not None:
+            out[str(i)] = {"members": json.loads(row["members_json"]), "source": row["source"]}
+            continue
+        members = [L._member_dict(m) for m in L.members_at(agents, call_ts - epoch)]
+        source = "call" if at - call_ts <= L.SNAPSHOT_GRACE_S else "late"
+        cur = conn.execute("INSERT OR IGNORE INTO chronicle_rosters (epoch_s, call_ts, members_json, source, taken_at) "
+                           "VALUES (?,?,?,?,?)", (epoch, call_ts, json.dumps(members, sort_keys=True), source, at))
+        added = added or cur.rowcount > 0
+        out[str(i)] = {"members": members, "source": source}
+    if added:
+        conn.commit()
+    return out
+
+
+def take_rosters(at: float | None = None) -> None:
+    """Snapshot the roster of every slot called so far that has none (see `_rosters`). Cheap when nothing is due; the
+    relay runs it every few seconds so a slot's roster is taken right after its call, before anyone reads the draw."""
+    at = now() if at is None else at
+    try:
+        st = settings()
+    except HTTPException:
+        return                       # no Chronicle on this relay, or no start time
+    last = L.slot_at(st["start"], st["epoch_s"], at)
+    if last < 0:
+        return
+    with rs.DB_LOCK, rs.get_db() as conn:
+        due = conn.execute("SELECT COUNT(*) FROM chronicle_rosters WHERE epoch_s = ? AND call_ts <= ?",
+                           (st["epoch_s"], L.slot_call(st["start"], st["epoch_s"], last))).fetchone()[0]
+    if due > last:
+        return
+    units, regs, house = _who_units()
+    base = _base_since()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        _rosters(conn, _agents(conn, units, regs, house, base), st, at)
 
 
 def _op(units, house, agent: str) -> str | None:
@@ -298,8 +366,10 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
     at = now() if at is None else at
     st = settings()
     units, regs, house = _who_units()
+    base = _base_since()
     with rs.DB_LOCK, rs.get_db() as conn:
-        agents = _agents(conn, units, regs, house)
+        agents = _agents(conn, units, regs, house, base)
+        rosters = _rosters(conn, agents, st, at)
         events = _events(conn, units, house, st["start"] - st["epoch_s"])
         prologue = prologue_ref(conn)
         seals = [{"chapter": r["chapter"], "agent": r["agent_id"], "what": r["what"], "commitment": r["commitment"],
@@ -315,7 +385,7 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
                    "seq": r["seq"], "log_index": _log_index(conn, "chronicle_ballot", r["seq"])}
                    for r in conn.execute("SELECT * FROM chronicle_ballots ORDER BY seq")]
     return {"relay_id": rs.relay_id(), "start": st["start"], "epoch_s": st["epoch_s"], "practice": st["practice"],
-            "prologue": prologue, "agents": agents, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
+            "prologue": prologue, "agents": agents, "rosters": rosters, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
             "seals": seals, "reveals": reveals, "ballots": ballots, "units": units}
 
 
@@ -353,7 +423,8 @@ def _freeze(conn, slot: dict[str, Any]) -> None:
         return
     if conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = ?", (slot["id"],)).fetchone():
         return
-    body = json.dumps({"chapter": slot["id"], "call_ts": slot["call_ts"], "verdict": slot["verdict"]},
+    body = json.dumps({"chapter": slot["id"], "call_ts": slot["call_ts"], "verdict": slot["verdict"],
+                       "roster": L.roster_hash(slot["inputs"]["members"])},
                       sort_keys=True, separators=(",", ":"), default=list)
     conn.execute("INSERT OR IGNORE INTO chronicle_verdicts (chapter, body_json, body_hash, frozen_at) VALUES (?,?,?,?)",
                  (slot["id"], body, hashlib.sha256(body.encode()).hexdigest(), datetime.now(UTC).isoformat()))
@@ -395,6 +466,11 @@ def _unit_of(slot: dict[str, Any]) -> dict[str, str]:
     return {m["agent_id"]: (m["agent_id"] if practice else m["operator"]) for m in slot["inputs"]["members"]}
 
 
+def _act_ranks(slot: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    """{agent: `modules/chronicle.act_rank`} of the chapter's members, from its published inputs."""
+    return {m["agent_id"]: C.act_rank(C.Member(**m)) for m in slot["inputs"]["members"]}
+
+
 def _label(slot: dict[str, Any]) -> str:
     n = slot["inputs"]["numbering"]
     return n["label"] + (" (practice: " + PRACTICE_NOTE + ")" if slot["mode"] == "practice" else "")
@@ -426,7 +502,7 @@ def _outranked_by(slot: dict[str, Any], agent: str, sealed: set[str]) -> str | N
     if not mates:
         return None
     scope, sig = _act_scope_sig(slot)
-    order = C.act_order(mates, scope, sig)
+    order = C.act_order(mates, scope, sig, _act_ranks(slot))
     above = order[:order.index(agent)]
     return next((a for a in above if a in sealed), None)
 
@@ -802,9 +878,11 @@ def chapter_body(ledger: dict[str, Any], slot: dict[str, Any], at: float, with_i
                                                   "provisional") if k in v}
         body["awards"] = slot.get("awards", {})
         with rs.DB_LOCK, rs.get_db() as conn:
-            row = conn.execute("SELECT body_hash, frozen_at FROM chronicle_verdicts WHERE chapter = ?",
+            row = conn.execute("SELECT body_hash, body_json, frozen_at FROM chronicle_verdicts WHERE chapter = ?",
                                (slot["id"],)).fetchone()
-        body["receipt"] = {"hash": row["body_hash"], "frozen_at": row["frozen_at"]} if row else None
+        # `roster`: the receipt binds the chapter's roster (a receipt frozen before rosters were snapshotted does not)
+        body["receipt"] = ({"hash": row["body_hash"], "frozen_at": row["frozen_at"],
+                            "roster": '"roster":' in row["body_json"]} if row else None)
     if with_inputs:
         body["inputs"] = inp
         body["signed"] = _signed_records(slot)
@@ -1014,7 +1092,7 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     above: set[str] = set()
     if len(mates) > 1:
         scope_, sig_ = _act_scope_sig(cur)
-        order_ = C.act_order(mates, scope_, sig_)
+        order_ = C.act_order(mates, scope_, sig_, _act_ranks(cur))
         above = set(order_[:order_.index(agent_id)])
 
     def waits(kind: str) -> bool:
