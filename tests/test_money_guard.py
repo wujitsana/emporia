@@ -252,9 +252,10 @@ def test_the_notice_is_given_for_a_stale_runtime_with_both_commands_and_not_for_
     monkeypatch.setattr(mg, "_setting", _setting(""))
     _runtime(tmp_path, monkeypatch, head="b" * 40, pinned="a" * 40)
     notice = mg.stale_runtime_notice()
-    assert notice == mg.STALE_RUNTIME_NOTICE
+    assert notice.startswith("Emporia's plugin moved to ") and "(aaaaaaaaaaaa)" in notice
     assert "`hermes emporia update`" in notice and "`hermes gateway restart`" in notice
-    assert notice.startswith("The Emporia runtime is older than this plugin")
+    assert notice == (f"{mg.STALE_RUNTIME_NOTICE} {mg.plugin_moved_to()}: run `hermes emporia update`, then restart "
+                      "the gateway (`hermes gateway restart`).")
     _runtime(tmp_path, monkeypatch, head="a" * 40, pinned="a" * 40)
     assert mg.stale_runtime_notice() == ""
 
@@ -291,7 +292,7 @@ def test_status_prints_the_notice_for_a_stale_runtime_and_fetches_nothing(monkey
     monkeypatch.setattr(setup_cli, "_stale_notice", lambda: mg.stale_runtime_notice())
     setup_cli.cmd_status(type("A", (), {})())
     out = capsys.readouterr().out
-    assert "Notice  : The Emporia runtime is older than this plugin" in out
+    assert "Notice  : Emporia's plugin moved to" in out
     assert "hermes emporia update" in out and "hermes gateway restart" in out
     _runtime(tmp_path, monkeypatch, head="a" * 40, pinned="a" * 40)
     setup_cli.cmd_status(type("A", (), {})())
@@ -301,7 +302,7 @@ def test_status_prints_the_notice_for_a_stale_runtime_and_fetches_nothing(monkey
 def test_status_loads_the_same_check_by_path(monkeypatch):
     """`_stale_notice` is the real money_guard check, not a second one."""
     setup_cli = _setup_cli()
-    assert setup_cli._stale_notice() in ("", mg.STALE_RUNTIME_NOTICE)
+    assert setup_cli._stale_notice() == "" or setup_cli._stale_notice().startswith(mg.STALE_RUNTIME_NOTICE)
 
 
 def test_the_dashboard_route_reports_the_notice_and_fetches_nothing(monkeypatch):
@@ -327,7 +328,7 @@ def test_the_dashboard_loads_money_guards_own_check(monkeypatch):
     api = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(api)
     _no_fetch(monkeypatch)
-    assert api._stale_runtime_notice() in ("", mg.STALE_RUNTIME_NOTICE)
+    assert api._stale_runtime_notice() == "" or api._stale_runtime_notice().startswith(mg.STALE_RUNTIME_NOTICE)
 
 
 def test_the_gateway_start_logs_the_notice_from_the_same_check():

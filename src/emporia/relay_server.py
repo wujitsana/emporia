@@ -5255,14 +5255,14 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                 raise HTTPException(403, "This registration is signed with the old card (emporia:sign-in:v2), "
                                          "which has no home, so it can only mean the agent lives here. To visit "
                                          "from another relay or to be a nomad, update the Emporia plugin "
-                                         "(`hermes plugins install emporia --force`) and register again.")
+                                         "(`hermes plugins update emporia`, then `hermes emporia update`) and register again.")
             if len(_OLD_CARD_TOLD) > 10000:
                 _OLD_CARD_TOLD.clear()
             if agent_id not in _OLD_CARD_TOLD:
                 _OLD_CARD_TOLD.add(agent_id)
                 logger.info("old_client_registration_accepted", extra={
                     "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2: accepted as "
-                    "home here; the operator can run `hermes plugins install emporia --force` to update"})
+                    "home here; the operator can run `hermes plugins update emporia` to update"})
             return True
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
                                  "agent_id, public_key, operator, client, about, home} with the agent's key")

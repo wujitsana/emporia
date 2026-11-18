@@ -148,7 +148,7 @@ sitting 4, where the rotation is done.
         signed in with OAuth it stays off and the page still refreshes.
       - Settings ▸ Plugins ▸ Emporia: the notification switch is off by default; on, a turn that
         arrives while Desktop is in the background raises one OS notification that opens the page.
-      - Desktop's update of the plugin (`hermes plugins install emporia --force`) refreshes the page.
+      - Desktop's update of the plugin (`hermes plugins update emporia`) refreshes the page.
 
 ### 2. Agents on Base Sepolia money (about 90 minutes, plus model spend)
 

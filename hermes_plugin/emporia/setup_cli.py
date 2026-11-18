@@ -851,6 +851,28 @@ def runtime_note(rt: Path, src: dict) -> str:
     return "pinned, verified"
 
 
+def _notices():
+    """The plugin's notices module (a sibling file; loaded by path when this file is loaded as a bare file)."""
+    try:
+        from . import notices
+        return notices
+    except ImportError:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("emporia_notices", HERE / "notices.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+
+def _catalog_notice() -> str:
+    """"A newer Emporia plugin is in the catalog: <command>" when Hermes's own offline catalog files name a newer
+    pin than the installed one, else "". Prints a command, never runs it (catalog rule 3); never raises."""
+    try:
+        return _notices().plugin_catalog_notice(hermes_home())
+    except Exception:                                         # noqa: BLE001 — a notice never breaks `update`
+        return ""
+
+
 def _stale_notice() -> str:
     """money_guard's check (the one that refuses a mainnet payment on a stale runtime), as text; "" if it cannot run."""
     try:
@@ -878,6 +900,9 @@ def cmd_status(_args: argparse.Namespace) -> int:
     stale = _stale_notice()
     if stale:
         print(f"Notice  : {stale}")
+    newer = _catalog_notice()
+    if newer:
+        print(f"Notice  : {newer}")
     waited = _moves_waited()
     if waited:
         print(f"Notice  : {waited} game move{'s' if waited != 1 else ''} waited today because the daily turn cap was "
@@ -956,10 +981,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         return 1
     name = profile_name()
     scope = [] if name == "default" else ["--profile", name]
+    for line in (_stale_notice(), _catalog_notice()):      # first, so a stale runtime is read before the checks that follow from it
+        if line:
+            print(f"Notice: {line}")
     return _emporia(rt, "doctor", *scope, *(["--all"] if getattr(args, "all", False) else []))
 
 
 def cmd_update(args: argparse.Namespace) -> int:
+    newer = _catalog_notice()
+    if newer:
+        print(newer)          # the single step after a plugin move: say the plugin command, run only the runtime's
     rt = runtime()
     if rt is not None and not from_catalog(rt):
         print(f"This profile runs the Emporia checkout at {rt}: update it with `emporia update` there.")
@@ -1036,6 +1067,12 @@ PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "ho
 SETUP_PASSTHROUGH = ("relay", "dashboard", "log")
 
 
+def cmd_notices(args: argparse.Namespace) -> int:
+    """`hermes emporia notices [status|on|off|check|channel]`: the optional daily message (see notices.py). The
+    plugin's own command (the runtime has none), so it works on any runtime."""
+    return _notices().main(getattr(args, "action", None) or "status", getattr(args, "deliver", "") or "", hermes_home())
+
+
 def cmd_passthrough(args: argparse.Namespace) -> int:
     rt = runtime()
     if rt is None:
@@ -1061,6 +1098,11 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     d = sub.add_parser("doctor", help="Check everything Emporia needs in this profile")
     d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
     sub.add_parser("update", help="Move the runtime to the commit this plugin release pins, and verify it")
+    n = sub.add_parser("notices", help="What needs your attention, and the optional daily message to your own channel")
+    n.add_argument("action", nargs="?", default="status", choices=("status", "on", "off", "check", "channel"),
+                   help="status (default): the job and the notices now; on/off: the daily message; check: what the job runs")
+    n.add_argument("--deliver", default="", metavar="PLATFORM",
+                   help="with on: the Hermes platform to send to (default: the first with a home channel)")
     for name in PASSTHROUGH:
         # No option of its own (prefix_chars nobody types): every word after the command,
         # --help included, goes to the runtime's `emporia NAME`.
@@ -1068,7 +1110,8 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
         c.add_argument("cli_args", nargs=argparse.REMAINDER)
 
 
-_COMMANDS = {"setup": cmd_setup, "status": cmd_status, "doctor": cmd_doctor, "update": cmd_update}
+_COMMANDS = {"setup": cmd_setup, "status": cmd_status, "doctor": cmd_doctor, "update": cmd_update,
+             "notices": cmd_notices}
 
 
 def dispatch(args: argparse.Namespace) -> int:

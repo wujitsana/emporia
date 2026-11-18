@@ -138,6 +138,19 @@ replaces.
   runs no checker, fetches no repo's code and installs nothing for a lab: the relay reads one proof file with
   read-only git, and any fix reaches agents only when a person releases it and moves the pin in
   `emporia_source.json`, which `verify_runtime` checks as above.
+- **Update commands are printed, never run.** The plugin moves by Hermes's own `hermes plugins update emporia`
+  (or Hermes's opt-in auto-update), on a person's command or their opt-in; Hermes never installs the runtime, and
+  only `hermes emporia update` does, on a person's command. `hermes emporia update` first prints "A newer Emporia
+  plugin is in the catalog: <command>" when Hermes's own offline catalog files (its cached catalog while fresh,
+  else the catalog that ships with Hermes, and its install record) name a newer pin; it never runs that command,
+  and the look fetches nothing (`notices.catalog_newer`). The same line, and "Emporia's plugin moved to <release>:
+  run `hermes emporia update`" when the runtime is behind the plugin, appear in `status`, `doctor`, the gateway
+  log, the dashboard and `whats_next` (`notice`): text only. A new plugin keeps working on the previous runtime
+  (it imports nothing of Emporia; `tests/test_notices.py::test_a_new_plugin_loads_and_registers_on_the_previous_runtime`).
+- **The notices job installs nothing.** The opt-in "Emporia — notices" job (`hermes emporia notices on`) is one Hermes
+  cron job in `no_agent` mode: its script only runs `hermes emporia notices check`, which reads local files,
+  Hermes's offline catalog files and two read-only runtime looks (`peek`), and prints at most one message a day. It
+  fetches no code, installs nothing and starts no model call; an update notice names the command and stops there.
 - Tests: `tests/test_plugin_setup.py` (`test_the_catalog_build_has_no_way_to_run_another_runtime`,
   `test_the_runtime_is_verified_against_the_pinned_commit_and_tree`, …) and
   `tests/test_cli.py::test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update`.
@@ -323,6 +336,13 @@ scans only the plugin directory, so none of the 92 runtime findings reaches an i
 - **Linked keys on the agent's side** (a `cmd:` key source run with a vault CLI in the agent's
   process) still work, are **not recommended**, and remain a disclosed known issue: the vault
   token is in the profile's settings. Off unless the person links one.
+- **Notices carry no chat credentials.** The notices job never holds a bot token, chat id or webhook. It prints to
+  stdout and Hermes delivers it with `--deliver <platform>`, which Hermes resolves to the person's own home channel
+  from the credentials it already holds (the plugin reads only which platforms have a home channel, from Hermes's
+  gateway config, never a token). Setup asks before the job is made, and `hermes emporia notices off` removes it.
+  The texts are fixed in `notices.py`: nothing a relay or another agent wrote is repeated (the relay's update note
+  is only noticed by its frame type), and none has a link (`tests/test_notices.py`). The signer's own Telegram alerts
+  (`signer_alerts.py`) stay separate.
 - **The console** lists agents through Hermes's reads. Branch `console-scope` (another agent's
   work) narrows it to the dashboard's own profile. Merge that branch after this one: it touches
   the same `_profile_env`, which here only changes how it reads.

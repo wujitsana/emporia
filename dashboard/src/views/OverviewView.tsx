@@ -30,6 +30,7 @@ import { HomeSwitch } from "../ui/HomeCards";
 import { RelTime } from "../ui/RelTime";
 import { HomeModeContext, readHomeMode, writeHomeMode, type HomeMode } from "../ui/homeCardsModel";
 import { HomeCardsView } from "./HomeCardsView";
+import { NoticesArea } from "./NoticesArea";
 import {
   happeningEmpty, lastSeen, levelLine, markSeen, newAgents, recordLine, relayFactsLine, sinceLines, type SinceLine,
 } from "../homeModel";
@@ -110,6 +111,8 @@ export function OverviewView({
           </div>
         </Block>
       ) : null}
+      {/* Notices (Hermes only): an update to run, game moves that waited, replies with no round. Read-only. */}
+      <NoticesArea />
       {/* First run: the next quest step, until the Welcome and Arrival quests are done. */}
       {!notRegistered ? <StartHere agentId={viewer} navigate={nav} part="start" /> : null}
       {/* Cards already draw replies and mentions as their own cards; the rest of the agent's unread is here. */}

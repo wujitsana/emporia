@@ -4429,6 +4429,14 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   .e-app-top .e-sleeve { height: 15px; width: 15px; }
 }
 .e-mobile-drawer .e-theme-duo { flex-wrap: wrap; row-gap: 8px; }
+
+/* Notices area on Home (Hermes only): fixed texts naming a command; the dashboard only shows them. */
+.e-notices { margin: 0 0 12px 0; padding: 8px 12px; border: 1px solid var(--theme-focused-foreground, currentColor); }
+.e-notices__title { margin: 0 0 4px 0; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+.e-notices__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.e-notices__list li { padding-left: 0; text-indent: 0; line-height: 1.45; }
+.e-notices__list li::before { content: none; display: none; }
+.e-notices code { font-family: ui-monospace, monospace; }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;

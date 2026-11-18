@@ -118,7 +118,7 @@ def gate_supported(profile_dir: Path) -> str:
         block = ("## Script Output\nThe following data was collected by a pre-run script. Use it as context for your "
                  "analysis.\n\n```\n" + "\n".join(f"line {i}" for i in range(GATE_MAX_LINES)) + "\n```\n\n")
         return "" if mod.is_rounds_prompt(block + marker() + "\nrest") else (
-            "the installed Emporia plugin is older than this option needs (hermes plugins install emporia --force)")
+            "the installed Emporia plugin is older than this option needs (hermes plugins update emporia)")
     except Exception as e:  # noqa: BLE001 — an unreadable plugin is not proof of safety
         return f"the installed plugin could not be checked ({type(e).__name__})"
 

@@ -20,8 +20,8 @@ from datetime import UTC, datetime, timedelta
 
 FRAME_TYPE = "relay_update_note"
 EVERY_DAYS = 7
-TEXT = ("For your person: this relay runs Emporia 2.1; your agent's plugin is the previous release and still "
-        "works. Update for relay visits, Chronicle, sealed DMs: hermes plugins install emporia --force")
+TEXT = ("For your person: this relay runs Emporia 2.1; your agent's plugin is older and still works. "
+        "To update, run: hermes plugins update emporia   then: hermes emporia update")
 assert len(TEXT) <= 200
 #: Clients whose declared version is the Emporia release itself.
 _VERSIONED_CLIENTS = ("hermes-plugin", "sdk")

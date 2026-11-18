@@ -3436,7 +3436,7 @@ def cmd_agent_refresh(name: str) -> int:
     each profile that has one (P295: the one plugin, carrying its skills and the
     dashboard tab), the old copies of its skills removed. No questions: what
     doctor's "older copy" warnings ask for, without the whole setup wizard.
-    Installed from the catalog, the plugin is the catalog's: `hermes plugins install emporia --force`."""
+    Installed from the catalog, the plugin is the catalog's: `hermes plugins update emporia`."""
     # Only profiles that are Emporia agents (an `emporia` MCP server in their config):
     # never one that merely shows the dashboard tab, like a Hermes root left alone.
     root = profiles_root().parent
@@ -3460,7 +3460,7 @@ def cmd_agent_refresh(name: str) -> int:
             print(f"  {profile.name}: restart the gateway so relay turns carry Emporia's tools only")
     if inst.from_catalog():
         print("agent refresh: the plugin and its skills came with the catalog — update them with "
-              "`hermes plugins install emporia --force`, then `hermes emporia update`")
+              "`hermes plugins update emporia`, then `hermes emporia update`")
         return 0
     for profile in targets:
         print(f"  {profile.name}:")
@@ -4046,6 +4046,57 @@ def _setup_self_review(profile: Path, existing: bool, fast: bool) -> None:
                                     "into memory or skills)")))
 
 
+def _notices_state(profile: Path) -> dict:
+    """What the plugin says of this profile's notices: {"channels": [...], "choice": "on"|"off"|""}; {} when the
+    plugin cannot answer (an older plugin has no `notices` command; Hermes is not here)."""
+    from emporia import rounds
+    try:
+        scope = rounds._scope(this_profile_name(profile))
+        line = (rounds.run_hermes([*scope, "emporia", "notices", "channel"]).strip().splitlines() or [""])[-1]
+        data = json.loads(line)
+    except (rounds.RoundsError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _setup_notices(profile: Path, existing: bool, fast: bool) -> str:
+    """setup's notices question: one Hermes cron job (`hermes emporia notices on`) that sends at most one message
+    a day to the person's own Hermes delivery channel. Asked only when Hermes has a channel to deliver to (a home
+    channel); without one, a hint and nothing is set. A recorded choice (on or off) is kept, so running setup
+    again never undoes it. Recommended: on (the all-yes path and a new profile without a terminal take it); an
+    existing profile without a terminal is left alone. Returns "on", "off" or "" (not asked)."""
+    from emporia import rounds, setup_choices as sc
+    state = _notices_state(profile)
+    if not state:
+        return ""
+    if state.get("choice") in ("on", "off"):
+        return state["choice"]
+    channels = [str(c) for c in state.get("channels") or []]
+    if not channels:
+        print(localize("  Notices: off (Hermes has no delivery channel for this profile yet: set a home channel, "
+                       "for example `/sethome` in your chat, then `hermes emporia notices on`)."))
+        return ""
+    channel = channels[0]
+    if _TTY:
+        c = sc.CHOICES["notices"]
+        heading("Notices", "A daily message when something needs you, sent by Hermes to your own channel.")
+        print(sc.dim(f"  {c.matters}"))
+        on = choose(c.question.replace("{channel}", f"your Hermes delivery channel ({channel})"),
+                    c.labels(), c.index()) == "on"
+    elif fast or not existing:
+        on = True
+    else:
+        return ""
+    scope = rounds._scope(this_profile_name(profile))
+    try:
+        print(localize("  + " + rounds.run_hermes([*scope, "emporia", "notices", "on" if on else "off"]).strip()
+                       .splitlines()[-1]))
+    except (rounds.RoundsError, IndexError) as e:
+        print(localize(f"  Notices were not set: {e}. Later: hermes emporia notices {'on' if on else 'off'}"))
+        return ""
+    return "on" if on else "off"
+
+
 def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
     """setup's bio question, asked before the agent registers so its first card carries it. `about` is
     `--about` (a text, "" for none) or None. An agent that already has a bio keeps it; without a terminal a new
@@ -4297,7 +4348,8 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
                                    template=__import__("emporia.templates", fromlist=["x"]).current(profile),
                                    self_review="on" if _review_is_on(
                                        installer().load_yaml(profile / "config.yaml")
-                                       if (profile / "config.yaml").exists() else {}) else "off"):
+                                       if (profile / "config.yaml").exists() else {}) else "off",
+                                   notices=(_notices_state(profile).get("choice") or "")):
         print(localize(line))
     if rounds:
         from emporia import rounds as R
@@ -6970,7 +7022,7 @@ def cmd_update(args: argparse.Namespace) -> int:
     # commit only. It is never pulled, synced or refreshed here — before anything is done.
     if installer().from_catalog():
         print("update: this Emporia came with the catalog plugin, and moves only with it: "
-              "`hermes plugins install emporia --force`, then `hermes emporia update`. Nothing was changed.")
+              "`hermes plugins update emporia`, then `hermes emporia update`. Nothing was changed.")
         return 1
     if not args.no_pull:
         git = shutil.which("git")
@@ -7920,6 +7972,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     _setup_wake(profile, name, args.wake, existing)
     _setup_busy_input(profile, existing, fast)
     _setup_self_review(profile, existing, fast)
+    _setup_notices(profile, existing, fast)
     template_key = _setup_template(profile, name, args, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     if template_key:
