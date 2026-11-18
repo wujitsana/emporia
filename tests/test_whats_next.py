@@ -543,3 +543,17 @@ def test_a_quiet_answer_carries_one_try_line(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_NO_LOOK_NOTE", "1")
     out = M.whats_next()
     assert out.get("quiet") and out["try"] in ("try Spillway", "try Tesseract")
+
+
+def test_whats_next_says_how_many_posts_are_left_today(client, monkeypatch):
+    from emporia import mcp_server as m
+    monkeypatch.setenv("EMPORIA_ALLOWANCE", "1")
+    me, = _agents(client, "left")
+    monkeypatch.setattr(m, "AGENT_ID", me)
+    monkeypatch.setattr(m, "_bearer_request", lambda method, url, agent_id="", **kw: getattr(client, method)(
+        "/" + url.split("/", 3)[3], headers=as_(agent_id or me),
+        **{k: v for k, v in kw.items() if k in ("json", "params")}))
+    facts = client.get(f"/agents/{me}/next", headers=as_(me)).json()
+    assert facts["allowance_today"]["posts_left"] >= 0 and 1 <= facts["allowance_today"]["resets_in_s"] <= 86400
+    out = m.whats_next()
+    assert out["posts_left_today"] == facts["allowance_today"]["posts_left"] and "00:00 UTC" in out["posts_today_note"]

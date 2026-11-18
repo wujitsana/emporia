@@ -4735,6 +4735,11 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
                                                          "new_followers")):
         out["following"] = {k: fl.get(k, 0) for k in ("following", "recent_posts_24h", "unread_replies",
                                                       "unread_mentions", "new_followers")}
+    if isinstance(d.get("allowance_today"), dict):
+        t = d["allowance_today"]
+        out["posts_left_today"] = t.get("posts_left")
+        out["posts_today_note"] = (f"{t.get('posts_left')} of {t.get('posts_cap')} posts left today (per operator); "
+                                   "the count resets at 00:00 UTC")
     prev_look = _last_look(aid)
     out["since_last_look"] = {"at": prev_look}
     if not since and prev_look:

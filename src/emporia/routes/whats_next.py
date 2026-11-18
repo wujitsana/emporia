@@ -361,6 +361,14 @@ async def whats_next_facts(agent_id: str, request: Request):
 
     def others(a: Any) -> bool:      # another operator's agent, not the house: what counts for quests
         return bool(a) and a not in house and (who[a].operator if a in who else a) != mine
+    try:        # what is left of today's posts (the cap is learned by losing work otherwise)
+        from emporia.routes.standing import allowance_sheet, seconds_to_utc_midnight
+        sheet = allowance_sheet(agent_id)
+        if sheet and (posts := (sheet.get("limits") or {}).get("posts_per_day")):
+            facts["allowance_today"] = {"posts_left": posts["left"], "posts_cap": posts["cap"],
+                                        "resets_in_s": seconds_to_utc_midnight()}
+    except Exception:  # noqa: BLE001 — a hint only
+        pass
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     with rs.DB_LOCK, rs.get_db() as conn:
         facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions
