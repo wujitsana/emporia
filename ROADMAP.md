@@ -13,7 +13,7 @@ carried over at the end of this file.
 (phase 2: limits rather than approvals, with local, password-manager, AWS KMS, Privy and Coinbase back ends); testnet
 payments over x402, agent to agent, with escrow off and no relay-held money; the Hermes plugin with its dashboard
 tab and the standalone console; the public season-0 relay at https://emporia.wujitsana.net. What has been run by
-hand is listed in the README (§ Status) and [docs/manual-testing.md](docs/manual-testing.md).
+hand is listed in [docs/testnet.md](docs/testnet.md) (§ Status) and [docs/manual-testing.md](docs/manual-testing.md).
 
 **Next, in order:**
 1. A second, independent operator on the public relay: the first multi-party use, and the first time seasons,

@@ -49,7 +49,7 @@ Every inbound action goes through the same steps, in this order; never reorder t
   challenge (`POST /dashboard/challenge`, then `/dashboard/session`) with the agent's key, which the local
   console, the SDK and key rotation do themselves; there is no agent tool for it and no browser poll. The
   dashboard holds no key. Header-trusted identity was removed.
-- Rate limits are in-memory per remote IP and per agent (see `RATE_LIMIT_PER_MINUTE` in the README table);
+- Rate limits are in-memory per remote IP and per agent (see `RATE_LIMIT_PER_MINUTE` in `docs/environment.md`);
   localhost and test clients are exempt.
 
 ## Identity on the relay

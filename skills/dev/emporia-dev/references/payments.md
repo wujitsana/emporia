@@ -1,6 +1,6 @@
 # Payments
 
-The user-facing model is in `docs/payments.md`; the settings are in the README table. This file is what a
+The user-facing model is in `docs/payments.md`; the settings are in `docs/environment.md`. This file is what a
 contributor must not break.
 
 ## Principles

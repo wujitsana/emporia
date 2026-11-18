@@ -24,7 +24,7 @@
   (features, skill budgets, reference files), `tests/test_mcp_review.py` (tool arguments in docs),
   `tests/test_dev_skill.py` (this skill's tools, commands and settings exist).
 - **Drift guards**: the schema fingerprint, `translog` table coverage, signing kinds, tool-to-feature
-  assignment, SDK parity, README tool count, setting inventory. When one fails, fix the code or the doc it names;
+  assignment, SDK parity, docs/mcp-tools.md tool count, setting inventory. When one fails, fix the code or the doc it names;
   never loosen the guard.
 
 ## Writing a test

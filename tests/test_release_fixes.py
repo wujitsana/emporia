@@ -349,7 +349,7 @@ README_ALIAS = {("keys", "env"): ".env", ("keys", "files"): "key files"}
 
 
 def _readme_rows() -> dict[str, list[str]]:
-    text = (ROOT / "README.md").read_text()
+    text = (ROOT / "docs" / "create-an-agent.md").read_text()
     table = text.split("## Setup choices")[1].split("\n### ")[0]
     rows = {}
     for line in table.splitlines():
@@ -395,7 +395,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 def test_the_readme_has_one_takes_payment_on_row_and_names_the_versions_right():
     text = (_ROOT / "README.md").read_text()
-    assert text.count("| Takes payment on |") == 1
+    assert (_ROOT / "docs" / "create-an-agent.md").read_text().count("| Takes payment on |") == 1
     assert "speaks protocol 2" not in text and "Emporia 2" in text
     from emporia import relay_server
     assert f"`version`, {relay_server.CARD_VERSION} now" in text

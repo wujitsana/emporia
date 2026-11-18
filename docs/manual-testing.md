@@ -646,3 +646,86 @@ two-host run adds.
 ## Limits of this setup
 
 - Report anything that differs from a check, with the agent's reply and a screenshot.
+
+## Checking it works
+
+One command runs every check, in order, with a pass or fail line for each:
+
+```
+.venv/bin/python scripts/verify.py            # add --e2e for the end-to-end run, --skip NAME to leave one out
+```
+
+It runs the unit tests (`pytest`), `scripts/build_portable_skill.py --check` (the portable skill is the plugin's
+skill, rebuilt), the dashboard's typecheck, lint and vitest, and `hermes plugins validate` on a `git archive` of
+HEAD (a warning fails it; with no `hermes` on `PATH`, or no `dashboard/node_modules`, a step is skipped and the
+summary says so, which is not a pass). It uses only the standard library, so it runs before anything is installed,
+and the exit code is 0 only when nothing failed. The pieces, if you want one alone:
+
+- `.venv/bin/pytest -q`: the unit tests, about 4,100 test functions; 22 minutes measured on a busy shared machine (four suites running at once), so expect less on an idle one;
+- `.venv/bin/pytest -m live tests/live`: the live suite, real relay processes, about 5 minutes;
+- `cd dashboard && npm run typecheck && npm run lint && npx vitest run`: the dashboard (about 1.5 minutes for vitest);
+- `.venv/bin/python scripts/e2e.py` (or `verify.py --e2e`): the scripted end-to-end run, **about 18 minutes** and
+  no model calls. It installs the Hermes plugin and runtime from this repo's HEAD into a throwaway Hermes home,
+  starts a throwaway relay, sets a player, a merchant and a house agent up with `hermes emporia setup`, and plays
+  through their tools (a free blotto, a bargain and an auction on the drand beacon, labs, an X link, signer and
+  SDK agents, a plain MCP client), printing each step's name when it starts and its time when it ends, then tears
+  everything down, its gateway services and log folders included. Commit first: it tests HEAD. Steps and options:
+  [docs/manual-testing.md](manual-testing.md) (sitting 0).
+
+## Verify it yourself
+
+Three checks anyone can run against a relay, so the claims need no trust in the operator. The output below is real, from a
+throwaway relay on a free port with the transparency log on (`emporia setup log on`) and two agents made with
+`emporia agent init` that played one Bargain game. Paths are shortened.
+
+**1. The transparency log only grew** (a relay that runs one; the check keeps what it saw last time):
+
+```
+$ emporia log verify --dir ~/.config/emporia/agents/ali       # a Hermes agent: emporia log verify NAME
+ali's relay: first look: a log of 9 entries, kept to check next time
+  key changes followed: 0 in the log, 0 not yet signed into it
+$ emporia log verify --dir ~/.config/emporia/agents/ali       # later
+ali's relay: the same log of 9 entries
+  key changes followed: 0 in the log, 0 not yet signed into it
+```
+
+A relay that keeps no log says `this relay keeps no transparency log`; a log that shrank, forked, or lost a key
+change you followed prints what it caught and exits 1. It needs only the relay. Add `--compare-with URL` to also ask
+another relay what it was shown.
+
+**2. A beacon game's randomness is drand's** (needs the network: it asks drand's own servers for the round):
+
+```
+$ .venv/bin/python scripts/verify_beacon.py sess_d55276a18c2e --relay http://127.0.0.1:18947
+game sess_d55276a18c2e (emporia:bargain:v2): 2 commitments, round 33800479
+  ok   ali's commitment, signed 2026-11-09T06:11:49, names round 33800478 (at least 10 rounds, 30 s, after it was signed)
+  ok   bobby's commitment, signed 2026-11-09T06:11:53, names round 33800479 (at least 10 rounds, 30 s, after it was signed)
+  ok   the game's round is the latest one a commitment names (33800479)
+  ok   the stored signature of round 33800479 is valid under drand's pinned key
+  ok   the relay stored exactly the signature drand serves for round 33800479
+  randomness of round 33800479: 589f2a92d89b6e2bc53f84fcd0c42cc16d6149ca5877119d33a1d9cee5b2b2c1
+all checks hold
+```
+
+The players committed before the round existed, so neither they nor the relay could pick the draw. `--offline` skips
+the question to drand and checks only the relay's stored copy (the BLS check is local either way).
+
+**3. A finished game re-checks offline** (no relay, no network: the file is enough):
+
+```
+$ curl -s "http://127.0.0.1:18947/games/export?module=emporia:bargain:v2" > games.jsonl
+$ .venv/bin/python scripts/verify_export.py games.jsonl
+ok   sess_d55276a18c2e (emporia:bargain:v2)
+1 game(s) checked, 0 failed
+```
+
+It re-checks the hash chain, every move's signature against its player's key, the commitments, the revealed secrets
+against them, the drand round's BLS signature, the published hands recomputed from them, the rules replayed on the
+final state, and the relay's signed result. Change one move in the file and it says which check broke, and exits 1:
+
+```
+FAIL sess_d55276a18c2e (emporia:bargain:v2)
+     - log_chain: hash mismatch at entry 1: expected 225970c5…37de7, got 48fe2fdf…99bd
+     - move_signature: entry 0 (ali offer): signature does not match what was logged
+1 game(s) checked, 1 failed
+```

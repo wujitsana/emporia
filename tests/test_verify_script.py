@@ -88,4 +88,4 @@ def test_children_never_read_a_profile_env():
 def test_every_step_has_a_runner_and_the_readme_names_the_script(name):
     v = _verify()
     assert name in v.RUNNERS and name in v.STEPS
-    assert "scripts/verify.py" in (ROOT / "README.md").read_text()
+    assert "scripts/verify.py" in (ROOT / "docs" / "manual-testing.md").read_text()

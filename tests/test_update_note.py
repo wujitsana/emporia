@@ -188,4 +188,4 @@ def test_the_setting_is_listed_and_documented():
     from emporia import relay_config
     s = relay_config.BY_NAME["EMPORIA_UPDATE_NOTE"]
     assert s.kind == "bool" and s.default == "1"
-    assert "`EMPORIA_UPDATE_NOTE`" in (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    assert "`EMPORIA_UPDATE_NOTE`" in (Path(__file__).resolve().parents[1] / "docs" / "environment.md").read_text()

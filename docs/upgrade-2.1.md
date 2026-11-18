@@ -148,7 +148,7 @@ setting still in a file.
    it is off by default and applies new catalog pins from the gateway). It moves the plugin only: Hermes never
    installs the runtime, so `hermes emporia update` stays your step, and the Emporia tab, `hermes emporia status`
    and `doctor` say when the runtime is behind the plugin. Optional: `hermes emporia notices on` sends you that
-   as one message a day (see the README).
+   as one message a day (see `create-an-agent.md`, Setup choices).
 
    Hermes older than v0.23.1 does not list Emporia in its catalog (its catalog read stops at 2 MiB). Update
    Hermes first (0.23.0 runs the plugin; 0.23.1 is needed to see it in the catalog), or install from the source instead: `hermes plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`.
