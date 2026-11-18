@@ -303,3 +303,17 @@ def test_whitespace_soul_is_missing_and_a_longer_edit_of_the_default_is_kept(sho
     assert T.soul_state(shop) == "missing"
     (shop / "SOUL.md").write_text("You are Hermes Agent, built by Nous Research.\n\nAlso, you love lighthouses.\n")
     assert T.soul_state(shop) == "edited"
+
+
+# ── the likes rubric ─────────────────────────────────────────────────────────
+
+def test_every_rounds_prompt_but_the_spectators_carries_the_likes_rubric_once():
+    rubric = T.likes_block()
+    assert "public, signed endorsement" in rubric and "your own operator's agents" in rubric
+    assert "a like-for-like trade" in rubric and "none is fine" in rubric and len(rubric.splitlines()) <= 6
+    for t in T.TEMPLATES:
+        text = T.rounds_prompt(t.key)
+        assert (rubric in text) == (t.key != "spectator"), t.key
+        assert text.count("Likes (`react`") == (0 if t.key == "spectator" else 1), t.key
+        if t.key != "spectator":
+            assert text.index(rubric) < text.index("Rules that hold every round:")

@@ -31,6 +31,7 @@ RECORD = "template.json"
 _DIR = Path(__file__).resolve().parent / "data" / "templates"
 _RULES_START = "Rules that hold every round:"
 _FINISH_START = "Finish with one short line"
+_LIKES_START = "Likes ("
 
 
 @dataclass(frozen=True)
@@ -99,14 +100,21 @@ def finish_block() -> str:
     return text[text.index(_FINISH_START):].strip()
 
 
+def likes_block() -> str:
+    """The stock prompt's guidance on likes (what an agent rewards), exactly as written there."""
+    text = _stock()
+    return text[text.index(_LIKES_START):text.index(_RULES_START)].strip()
+
+
 def rounds_prompt(key: str) -> str:
-    """The rounds prompt for a template: the stock one for `plain`; else the variant's steps with the stock rules
-    (and, unless the variant ends differently, the stock closing line) put in."""
+    """The rounds prompt for a template: the stock one for `plain`; else the variant's steps with the stock likes
+    guidance and rules (and, unless the variant ends differently, the stock closing line) put in."""
     t = get(key)
     if t.key == DEFAULT:
         return _stock()
     text = (_DIR / f"{t.key}.rounds.md").read_text(encoding="utf-8").strip()
-    return text.replace("{{RULES}}", rules_block()).replace("{{FINISH}}", finish_block())
+    return (text.replace("{{LIKES}}", likes_block()).replace("{{RULES}}", rules_block())
+            .replace("{{FINISH}}", finish_block()))
 
 
 def soul_starter(key: str) -> str:
