@@ -3721,7 +3721,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
                 if rounds_to == "off":
                     R.turn_off(name, profile)
                 else:
-                    R.turn_on(name, rounds_to, profile_dir=profile, skip_quiet=R.has_gate(profile))
+                    R.turn_on(name, rounds_to, profile_dir=profile, skip_quiet=None)
             except R.RoundsError as e:
                 print(f"agent settings: rounds: {e}")
                 return 1
@@ -3770,7 +3770,7 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
         try:
             if s.kind == "rounds":
                 (R.turn_off(name, profile) if S.rounds_value(value) == "off" else
-                 R.turn_on(name, S.rounds_value(value), profile_dir=profile, skip_quiet=R.has_gate(profile)))
+                 R.turn_on(name, S.rounds_value(value), profile_dir=profile, skip_quiet=None))
             else:
                 changed_env = bool(merge_env_file(profile / ".env",
                                                   S.plan(s.key, value, installer().harvest_env(profile), name))) or changed_env
@@ -4152,7 +4152,7 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
             lines.append(f"Rounds: not checked ({e}); `emporia rounds on --every {t.cadence}` will use this template's prompt.")
         else:
             if job:
-                lines.append("Rounds: " + R.turn_on(pname, t.cadence, profile_dir=profile, skip_quiet=R.has_gate(profile),
+                lines.append("Rounds: " + R.turn_on(pname, t.cadence, profile_dir=profile, skip_quiet=None,
                                                     template=("" if t.key == T.DEFAULT else t.key)) + ".")
             else:
                 lines.append(f"Rounds: off, so nothing was scheduled. `emporia rounds on --every {t.cadence}` turns them on "
@@ -4235,7 +4235,7 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     if not every:
         return ""
     try:
-        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=R.has_gate(profile),
+        print("  " + R.turn_on(this_profile_name(profile), every, profile_dir=profile, skip_quiet=None,
                                template=getattr(args, "template_key", "")))
         print("  " + R.estimate(every))
     except R.RoundsError as e:
@@ -4361,13 +4361,16 @@ def cmd_rounds(args: argparse.Namespace) -> int:
     try:
         if args.action == "on":
             print("  " + R.estimate(args.every))
-            print("  " + R.turn_on(pname, args.every, profile_dir=profile, skip_quiet=getattr(args, "skip_quiet", False),
+            print("  " + R.turn_on(pname, args.every, profile_dir=profile, skip_quiet=getattr(args, "skip_quiet", None),
                                    model=getattr(args, "model", ""),
                                    reasoning_effort=getattr(args, "reasoning_effort", ""),
                                    template=_current_template(profile)))
-            if getattr(args, "skip_quiet", False):
-                print("  A round whose `whats_next` is quiet is skipped before any model call; it does not touch "
-                      "the agent's last-look cursor. Without the flag (`emporia rounds on`) every round runs.")
+            if R.has_gate(profile):
+                print("  A round whose `whats_next` is quiet is skipped before any model call (one quiet round a day "
+                      "still runs, so a `try` line can start something); it does not touch the agent's last-look "
+                      "cursor. `emporia rounds on --no-skip-quiet` runs every round.")
+            else:
+                print("  Every round runs, even when nothing is new (`emporia rounds on --skip-quiet` skips quiet ones).")
             print("  Rounds work on small models: every round reads `whats_next`, takes at most three actions "
                   "and ends in one line, so --model can name a cheap one.")
             print("  Each round is the agent's own turn; it never pays or accepts a deal. `emporia rounds off` removes it.")
@@ -10419,9 +10422,10 @@ def build_parser() -> argparse.ArgumentParser:
     rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
     rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
     rd.add_argument("--agent", default="", help="the agent's profile (default: this one)")
-    rd.add_argument("--skip-quiet", action="store_true",
-                    help="(on) skip a round when nothing is waiting: one small script in the profile's scripts/ "
-                         "folder, no model call for a quiet round; `rounds off` or `on` without it removes the script")
+    rd.add_argument("--skip-quiet", action=argparse.BooleanOptionalAction, default=None,
+                    help="(on) skip a round when nothing is waiting, before any model call (one still runs a day): "
+                         "one small script in the profile's scripts/ folder. On by default for a new job; "
+                         "--no-skip-quiet runs every round and removes the script; `rounds off` removes it too")
     rd.add_argument("--model", default="", help="(on) pin the rounds job to this model (e.g. a cheap one); "
                                                  "default: the profile's own")
     rd.add_argument("--reasoning-effort", default="", help="(on) pin the rounds job's reasoning effort (none, low, "

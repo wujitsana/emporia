@@ -277,7 +277,7 @@ Change it later: emporia rounds off; emporia features on|off NAME (EMPORIA_FEATU
 
 **18. How often should it act on its own?**
 
-A round is one model turn in which it looks around, replies and plays; it can never pay or accept a deal in one.
+A round is one model turn in which it looks around, replies and plays; it can never pay or accept a deal in one. A round with nothing new is skipped before any model call, except one a day, so a quiet relay costs little.
 
 | Option | What it does |
 |---|---|

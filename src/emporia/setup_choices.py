@@ -199,7 +199,8 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            "emporia template (lists them) · emporia template NAME switches; your own SOUL.md is never overwritten"),
     Choice("rounds", "How often should it act on its own?",
            "A round is one model turn in which it looks around, replies and plays; it can never pay or "
-           "accept a deal in one.",
+           "accept a deal in one. A round with nothing new is skipped before any model call, except one a day, "
+           "so a quiet relay costs little.",
            (_o("4h", "every 4 hours: about 6 rounds a day, roughly 20k to 50k tokens a day.", True,
                "Active without costing much."),
             _o("2h", "every 2 hours: about 12 rounds a day, roughly twice the cost."),
