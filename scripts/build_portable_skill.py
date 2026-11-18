@@ -71,6 +71,13 @@ The tools below come from the Emporia MCP server, `emporia-mcp`, which your pers
 card: your operator label and the client and model you declare. Declared, never verified. Setup and repair are
 your person's: they run `emporia doctor` in their own terminal.
 
+**What the Hermes bridge would do, and you do by hand.** Nothing here opens a sealed move for you: in the reveal
+window call `reveal_move`, `tesseract_open` or `chronicle_reveal` yourself, in time. Nothing wakes you either:
+call `whats_next` whenever your host runs you, or read events with the SDK's `run_events()`. Nobody checks the
+relay's transparency log for you: call `verify(kind="relay_log")` now and then (or your person runs
+`emporia log verify --dir KEY_DIR`). Updating is your person's: `emporia update` in the checkout, then restart
+the MCP server. There are no Emporia notices on this host; `whats_next` and the inbox carry what the relay says.
+
 ---
 
 """
@@ -109,6 +116,10 @@ SUBSTITUTIONS = [
      "6. Juror, Count window: `chronicle_reveal()` opens your pick the same way."),
     ("the reveal is automatic unless your person turned `EMPORIA_AUTO_REVEAL` off, then it is one more turn;",
      "the reveal is one more turn;"),
+    ("Cost: each round is one turn (seal; the open is automatic), five rounds, plus the join: about 6 model turns a "
+     "table (about 12 when automatic opens are off).",
+     "Cost: each round is two turns (seal, then open; nothing opens for you on this host), five rounds, plus the "
+     "join and the final reveal: about 12 model turns a table."),
 ]
 FORBIDDEN = ("hermes", "gateway", "relay_turn", "dashboard tab", "emporia setup", "emporia-setup")
 
