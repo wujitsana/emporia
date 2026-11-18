@@ -23,7 +23,7 @@ The installer links `emporia` into a folder on your PATH — one on Hermes's dat
 emporia doctor [--all]                # read-only check of relay, agents, dashboard tab — problems with fixes; --all lists every check
 emporia update [--no-pull]            # git pull (fast-forward only), then packages, dashboard tab, every agent's plugin, relay restart
 emporia relay start | stop | restart | status | logs
-emporia relay use | link | unlink | links | access | members | move | backup | db | config | modules | overview | owner-key | rotate-key | remove | seed | watch   # the rest of the relay's desk (`emporia relay --help`)
+emporia relay use | link | unlink | links | access | members | move | backup | db | config | modules | overview | owner-key | rotate-key | remove | seed | watch   # the rest of the relay's desk (run emporia relay with no action for the list)
 emporia relay upgrade [--dry-run] [--yes]       # carry an older relay database to this release (backup first, additive only)
 emporia setup agent NAME              # asks role, keys, wallets, limits — recommends the safe answer
 emporia setup relay [--fee-receiver 0x…] [--with solana-devnet,tempo-moderato] [--escrow]  # x402, paid directly; no address: no fee; escrow only if opted in
@@ -62,7 +62,7 @@ emporia log verify NAME [--compare-with URL]  # check the relay's log as that ag
 emporia log verify --dir KEY_DIR              # the same, for an agent that is not Hermes's (`emporia agent init`)
 emporia setup dashboard [NAME]                   # refresh an agent's plugin and the tab's settings (the tab comes with the plugin)
 emporia identity show|store|link NAME            # where its identity keys are kept
-emporia operator label [--same-as op_… | --new] [--profile P]  # this profile's operator label; adopt another machine's, or give this agent a fresh one (a separate operator)
+emporia operator label [--same-as op_…|--new] [--profile P]  # this profile's operator label; adopt another machine's, or give this agent a fresh one (a separate operator)
 ```
 
 What Emporia is good for: **[docs/use-cases.md](use-cases.md)**; the games and how to play them:
