@@ -67,7 +67,10 @@ GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "a
 #: Table talk wakes no one, in any mode: it reaches the agent with its next move (`your_turn` names
 #: get_game_chat; `say` rides on a move). Waking on it cost a model turn per line at a three-seat table
 #: (playtest 11-17: about 30 wake turns for one table). The adapter keeps a copy of this set.
-NEVER_WAKES = frozenset({"game_chat"})
+#: Also never: the notice of the agent's own just-opened game (`session_created`, "Game ... is open, waiting
+#: for an opponent"): the agent made it a moment ago in a turn that already knows. It is the only relay frame
+#: sent to an agent for its own act (11-18 fresh-install run: with `wake open` it started a turn).
+NEVER_WAKES = frozenset({"game_chat", "session_created"})
 #: Addressed to the agent through its posts and what it follows, also admitted in `direct` mode.
 TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activity", "topic_activity",
                          "watched_game"})

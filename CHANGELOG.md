@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- `wake open` no longer starts a model turn on the agent's own "Game ... is open, waiting for an opponent" notice
+  (`session_created`, the only relay notice sent for an agent's own act). It stays in the inbox like table talk.
 - Setup's "recommended settings for everything" tags the Rounds line (recommended default) like the others, and the
   closing block says rounds run a model turn every 4h, what that costs, and `emporia rounds off`. The default is unchanged.
 - `emporia doctor` no longer says a relay runs older code when an optional game (Tesseract) is just not enabled: that is a
