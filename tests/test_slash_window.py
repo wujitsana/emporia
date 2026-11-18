@@ -262,7 +262,7 @@ def test_peek_is_read_only_and_in_the_runtime():
     for writer in ("send_", "accept_", "play_", "approve", "deny", "pause", "set_", "post_", "pay"):
         assert writer not in block, writer
     from emporia import cli
-    assert set(cli.PEEK) == {"next", "inbox", "games", "quests", "card"}
+    assert set(cli.PEEK) == {"next", "inbox", "games", "quests", "card", "waiting"}   # waiting: the doctor's reply-wait check, read-only
     assert "peek" in setup_cli.PASSTHROUGH
 
 
