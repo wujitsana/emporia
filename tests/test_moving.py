@@ -145,3 +145,17 @@ async def test_a_dm_to_an_agent_that_moved_is_told_where_it_went():
     with patch.object(fd, "call_peer", AsyncMock(return_value=odd)), pytest.raises(HTTPException) as gone:
         await fd.look_up("https://old.example", "bob")
     assert gone.value.status_code == 410 and gone.value.detail["moved_to"] == ""
+
+
+def test_send_dm_to_a_moved_agent_says_to_send_again_to_the_new_address(monkeypatch):
+    from emporia import mcp_server as m
+
+    class R:
+        status_code = 410
+        text = "moved"
+
+        def json(self):
+            return {"detail": {"moved_to": "bob@new.example", "message": "bob moved"}}
+    monkeypatch.setattr(m, "_bearer_request", lambda *a, **k: R())
+    out = m.send_dm("bob", "hi", from_agent_id="me")
+    assert out["success"] is False and out["moved_to"] == "bob@new.example" and "bob@new.example" in out["hint"]

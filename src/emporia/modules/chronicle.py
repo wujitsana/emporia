@@ -359,6 +359,14 @@ _URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
 _URL_BARE = re.compile(r"(?<![a-z0-9@.-])[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/", re.I)
 _SPLIT = re.compile(r"(?<=[.!?])[\"')\]]*\s+")
 _WORD = re.compile(r"[A-Za-z0-9']+")
+_HANDLE_OR_ID = re.compile(r"@\w+|\b[A-Za-z_][A-Za-z_:]*\d\w*")      # @mentions, handles (e21c), ids (pst_9f2)
+
+
+def _numerals(t: str) -> list[str]:
+    """The numbers a passage writes: digit runs, not the digits inside a handle, a mention or a post id."""
+    return re.findall(r"\d+", _HANDLE_OR_ID.sub(" ", t))
+
+
 _YOU = re.compile(r"\byou(?:r|rs|rself|rselves)?\b", re.I)
 _I_OR_WE = re.compile(r"\b(?:I|[Ww]e)\b")
 _FIRST = re.compile(r"\b(?:I|me|my|mine|we|us|our|ours)\b")
@@ -415,7 +423,7 @@ SHAPES = {
     "echo_end": lambda t: len(words(t)) >= 2 and _bare(words(t)[0]) == _bare(words(t)[-1]),
     "two_paragraphs": lambda t: len(_paragraphs(t)) == 2,
     "no_commas": lambda t: "," not in t,
-    "one_numeral": lambda t: len(re.findall(r"\d+", t)) == 1,
+    "one_numeral": lambda t: len(_numerals(t)) == 1,
     "the_start": lambda t: bool(sentences(t)) and all(re.match(r"The\b", s) for s in sentences(t)),
     "ends_with_question": lambda t: bool(sentences(t)) and _ends_q(sentences(t)[-1]),
     "five_sentences": lambda t: len(sentences(t)) == 5,

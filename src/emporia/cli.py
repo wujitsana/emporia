@@ -3911,8 +3911,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         profile, name = found
         held = installer().harvest_env(profile)
         key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
-        restart = ("restart the gateway: `hermes gateway restart` "
-                   "(or `/reload-mcp` in its chat)")
+        restart = "restart the gateway: `hermes gateway restart`"
 
         def save(value: str) -> None:
             merge_env_file(profile / ".env", {F.SETTING: value})
@@ -3946,7 +3945,7 @@ def cmd_features(args: argparse.Namespace) -> int:
         if new != now:
             save(F.render(new, F.read_only(held.get(F.SETTING, ""))))      # a read-only agent stays read-only
             print(f"  Saved. {F.summary(new)}.")
-            print(f"  It applies on the next MCP start: {restart}.")
+            print(f"  It applies after a restart, not on its own (a running MCP server keeps the features it started with): {restart}.")
         now = new
     print(f"  Features    {F.summary(now)}")
     if F.read_only(held.get(F.SETTING, "")):
@@ -4203,7 +4202,8 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
             lines.append(f"Features: kept only {', '.join(F.parse(new_raw)) or 'core'} (this template turns tools off, never on).")
         else:
             lines.append(f"Features: {', '.join(F.parse(new_raw)) or 'core only'}.")
-        lines.append("It applies on the next MCP start (restart the gateway, or /reload-mcp in its chat).")
+        lines.append("It applies after a gateway restart, not on its own (the running MCP server keeps its old features): "
+                     "hermes gateway restart.")
     else:
         lines.append("Tools: unchanged.")
     how, where = T.write_soul(profile, t.key)

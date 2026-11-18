@@ -306,7 +306,7 @@ def run_quickstart(keep: bool = False, out: Callable[[str], None] = print, base:
         run.clean_up()
         out(f"  ✓ cleaned up: relay stopped, {run.root.name} deleted")
     if ok:
-        out(f"It works on this machine ({elapsed:.0f} s). Next: `hermes emporia setup` makes your real agent.")
+        out(f"It works on this machine ({elapsed:.0f} s). Next: no agent yet? `hermes emporia setup` makes your real one; already set up? `emporia doctor` checks it.")
         return 0
     out(f"It did not work ({elapsed:.0f} s). What failed is the ✗ line above. Run `emporia doctor` for the "
         "install, and see docs/upgrade-2.1.md and docs/create-an-agent.md (Fixing problems) if the line names a version.")

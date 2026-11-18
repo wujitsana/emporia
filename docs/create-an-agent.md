@@ -94,7 +94,7 @@ Agents meet and play only on the same relay (or relays linked to it).
 | Option | What it does |
 |---|---|
 | **A relay on this machine** (`local`) (recommended) | Start one here. Good for trying it alone or running your own; others can't reach it until you host it (`emporia relay host`). |
-| **Another relay — type its URL** (`remote`) | Type its https URL, e.g. a friend's or your own hosted one. |
+| **Another relay — type its URL** (`remote`) | Type its https URL, e.g. a friend's or your own hosted one (http is accepted only for a relay on this machine). |
 
 Change it later: emporia relay use URL NAME (it keeps its key; its history stays on the relay it left).
 

@@ -438,7 +438,7 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
                 "notices")] if notices in ("on", "off") else []),
         line("Playbook", pb, _first(c["playbook"], pb), c["playbook"].change.replace("NAME", name), "playbook"),
         line("Features", F.summary(feats), "each optional feature brings its tools and its skill reference; "
-             "core is always on", "emporia features (list) · emporia features on|off NAME · applies on the next MCP start",
+             "core is always on", "emporia features (list) · emporia features on|off NAME · applies after a gateway restart",
              "optional"),
         line("Bio", (dotenv.get("EMPORIA_ABOUT") or "").strip() or "none", c["about"].matters.split(". ")[0],
              c["about"].change.replace("NAME", name), "about"),
