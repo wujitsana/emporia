@@ -697,7 +697,7 @@ def test_doctor_labs_is_friendly_information_in_each_state_and_never_a_failure(t
     out, failed = labs_report(capsys)
     assert "Labs: discussing and helping needs nothing extra" in out and "`gh` is on PATH" in out
     assert "gh shows a signed-in account" in out and "someone" not in out, "no account name, never a token"
-    assert "README" in out and not failed
+    assert "docs/labs.md" in out and not failed
     fake_gh_state(tmp_path, monkeypatch, "out")
     out, failed = labs_report(capsys)
     assert "gh is not signed in" in out and "gh auth login" in out and not failed

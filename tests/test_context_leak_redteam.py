@@ -39,8 +39,22 @@ print(json.dumps({"skip": skip, "prompt": "\n".join(parts)}))
 """
 
 
+def _hermes_python() -> tuple[str, str] | None:
+    """(Hermes's own interpreter, its install folder): the folder above the `hermes` command that holds `agent/`,
+    and its `.venv`. Test-only: the plugin no longer probes Hermes's install (catalog rule 9)."""
+    import shutil
+    exe = shutil.which("hermes")
+    if not exe:
+        return None
+    for parent in Path(exe).resolve().parents[:5]:
+        if (parent / "agent" / "context_file_sources.py").exists():
+            python = parent / ".venv" / "bin" / "python"
+            return (str(python), str(parent)) if python.exists() else None
+    return None
+
+
 def _hermes():
-    found = cli._hermes_python()
+    found = _hermes_python()
     if found is None:
         pytest.skip("Hermes is not installed here")
     return found
@@ -130,7 +144,7 @@ def test_hermes_reads_the_installer_memory_setting_as_memory_on_user_profile_off
 def test_soul_is_still_the_identity_when_context_files_are_skipped():
     """agent/system_prompt.py:_identity_parts loads SOUL.md when `load_soul_identity or not skip_context_files`, and
     the gateway passes load_soul_identity=True unless a session policy ignores rules."""
-    python_install = cli._hermes_python()
+    python_install = _hermes_python()
     if python_install is None:
         pytest.skip("Hermes is not installed here")
     src = (Path(python_install[1]) / "agent" / "system_prompt.py").read_text()
