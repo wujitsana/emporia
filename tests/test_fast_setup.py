@@ -173,3 +173,22 @@ def test_a_failed_phase_does_not_claim_it_is_done(monkeypatch, tmp_path):
     with pytest.raises(setup_cli.SetupFailed):
         setup_cli._sync_runtime(said.append, tmp_path / "rt", "https://example.test/e", "a" * 40)
     assert said and not any("done in" in s for s in said)
+
+
+def test_a_premade_runtime_without_an_origin_remote_gets_one(monkeypatch, tmp_path):
+    sha = "a" * 40
+    ran = []
+
+    def fake_run(argv, cwd=None):
+        ran.append(argv)
+        if "set-url" in argv:
+            raise setup_cli.SetupFailed("error: No such remote 'origin'")
+        return ""
+    monkeypatch.setattr(setup_cli, "_run", fake_run)
+    monkeypatch.setattr(setup_cli, "_git_head", lambda rt: sha)
+    monkeypatch.setattr(setup_cli, "verify_runtime", lambda *a, **k: None)
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    rt = tmp_path / "rt"
+    (rt / ".git").mkdir(parents=True)
+    setup_cli._sync_runtime(lambda *a: None, rt, "https://example.test/e", sha)
+    assert ["git", "-C", str(rt), "remote", "add", "origin", "https://example.test/e"] in ran

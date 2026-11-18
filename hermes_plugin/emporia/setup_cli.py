@@ -481,7 +481,11 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
             _run(["git", "-C", str(rt), "remote", "add", "origin", repo])
             _run(["git", "-C", str(rt), "fetch", "--quiet", "--depth=1", repo, sha])
         fetched = True
-    _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # the pinned source, nothing else
+    try:
+        _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # the pinned source, nothing else
+    except SetupFailed:
+        # A runtime made by hand (`git init`, no remote): there is no `origin` to change, so add it.
+        _run(["git", "-C", str(rt), "remote", "add", "origin", repo])
     if not fetched and _git_head(rt) != sha:
         with _Phase(say, f"Fetching Emporia {sha[:12]} from {repo}"):
             _run(["git", "-C", str(rt), "fetch", "--quiet", "--depth=1", repo, sha])
