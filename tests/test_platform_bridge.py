@@ -449,6 +449,14 @@ spec = importlib.util.spec_from_file_location("emporia_platform", d / "__init__.
                                               submodule_search_locations=[str(d)])
 mod = importlib.util.module_from_spec(spec); sys.modules["emporia_platform"] = mod
 spec.loader.exec_module(mod)
+from gateway.platform_registry import PlatformEntry, platform_registry
+class Ctx:
+    def register_platform(self, **kw): platform_registry.register(PlatformEntry(**kw))
+    def register_hook(self, *a, **kw): pass
+    def register_skill(self, *a, **kw): pass
+    def register_cli_command(self, *a, **kw): pass
+    def register_command(self, *a, **kw): pass
+mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
 from agent.secret_scope import reset_secret_scope, set_secret_scope
