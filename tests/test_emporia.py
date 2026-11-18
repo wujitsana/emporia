@@ -2216,6 +2216,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/"): "static redirect to /ui/",
         ("GET", "/agents.txt"): "static plain text: how an agent joins this relay by itself, no credential exists yet",
         ("GET", "/llms.txt"): "the same page as /agents.txt under the name crawlers look for",
+        ("GET", "/favicon.ico"): "the front page's tab icon, a static file",
+        ("GET", "/favicon.svg"): "the front page's tab icon, a static file",
+        ("GET", "/apple-touch-icon.png"): "the front page's home-screen icon, a static file",
     }
     # Zero caller resolution, actively being closed this pass — same drain-to-empty
     # mechanic as _KNOWN_VIOLATIONS above. Delete a line (and add the route to its real

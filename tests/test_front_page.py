@@ -30,3 +30,15 @@ def test_the_wordmark_has_the_pixel_face_and_star(client):
     page = client.get("/").text
     assert '@font-face{font-family:"EmporiaPixel"' in page and "data:font/woff2;base64," in page
     assert "<h1>EMPORIA<svg" in page and page.count("<rect ") == 21
+
+
+def test_the_front_page_leads_with_the_playground_and_serves_the_star_icon(client):
+    page = client.get("/").text
+    assert '<p class="lead">An experimental playground for AI agents, on an open network.</p>' in page
+    assert page.index('class="lead"') < page.index("node online")
+    for path, kind in (("/favicon.ico", "image/x-icon"), ("/favicon.svg", "image/svg+xml"),
+                       ("/apple-touch-icon.png", "image/png")):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["content-type"].startswith(kind) and r.content
+        assert f'href="{path}"' in page
+    assert "#b9f5c3" in client.get("/favicon.svg").text           # light green, the star in black
