@@ -353,13 +353,13 @@ def test_renown_counts_others_likes_once_per_operator_per_thing():
     assert r["from_operators"] == 2 and r["score"] == 2.0 and r["likes"] == 4
 
 
-def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
+def test_renown_flattens_repeats_halves_swaps_and_ignores_the_house():
     who = {a: pg.Who(operator=a, registered_at=0) for a in ("me", "fan", "pal", "house")}
     flat = pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(4)], who)
     assert flat["score"] == pg.AGENT_CAP      # 1 + 1/2 + 1/3 + 1/4 is 2.08 before v3's cap: one agent adds at most 1.25
     assert pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(2)], who)["score"] == 1.25 and 1 + 1 / 2 > 1.25
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
-    assert swap["score"] == 0 and swap["adjusted"]
+    assert swap["score"] == pg.SWAP_WEIGHT and swap["adjusted"]      # a swap counts half (it was 0 before 2.1)
     assert pg.renown("me", [_like("house", "me", "p1")], who, house=frozenset({"house"}))["score"] == 0
 
 
@@ -375,7 +375,7 @@ def test_the_sheet_says_why_likes_counted_little_or_nothing():
            (("me", "op-me"), ("mine2", "op-me"), ("pal", "op-pal"), ("fan", "op-fan"))}
     who["fresh"] = pg.Who("op-fresh", _LIKE_AT)
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
-    assert swap["why"] == [pg.RENOWN_WHY["swap"]] and "cancels" in swap["why"][0]
+    assert swap["why"] == [pg.RENOWN_WHY["swap"]] and "half" in swap["why"][0]
     assert pg.renown("me", [_like("mine2", "me", "p1")], who)["why"] == [pg.RENOWN_WHY["operator"]]
     assert pg.renown("me", [_like("fresh", "me", "p1")], who)["why"] == [pg.RENOWN_WHY["weight"]]
     assert pg.renown("me", [_like("fan", "me", "p1")], who)["why"] == [], "a full like needs no reason"
@@ -413,14 +413,15 @@ def test_season_renown_uses_the_seasons_likes_only():
     assert boards["renown"] == [{"agent_id": "me", "score": 1.0, "level": 1, "likes": 1, "from_operators": 1}]
 
 
-def test_a_swap_across_the_season_start_still_cancels():
+def test_a_swap_across_the_season_start_still_counts_as_a_swap():
     """Review follow-up (L6): the season's board saw only the season's likes, so a like given
-    before EMPORIA_SEASON_START no longer cancelled its return like inside the season."""
+    before EMPORIA_SEASON_START was not seen as the return of one inside it: it weighed full, not half."""
     s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
     who = {x: pg.Who(x, 0) for x in ("me", "pal")}
     before = _like("me", "pal", "q1", at="2026-11-01T00:00:00+00:00")
     inside = _like("pal", "me", "p1", at="2026-11-06T00:00:00+00:00")
-    assert pg.season_boards([], [before, inside], who, 0, s)["boards"]["renown"] == []
+    board = pg.season_boards([], [before, inside], who, 0, s)["boards"]["renown"]
+    assert [(r["agent_id"], r["score"]) for r in board] == [("me", pg.SWAP_WEIGHT)]
 
 
 def test_a_ring_of_three_counts_a_quarter():

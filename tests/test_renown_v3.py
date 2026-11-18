@@ -85,11 +85,45 @@ def test_the_honest_small_relay_can_still_reach_level_two():
     assert pg.renown("me", [like("b", "me", "p1")], who, tiers={"op-b": 1})["score"] == 0.5
 
 
-def test_the_swap_rule_is_unchanged_so_honest_mutual_likes_still_cancel():
-    """Softening reciprocity (a half weight for Known givers) is left for 2.1.1: noted in the review, not built."""
+def test_a_swap_counts_half_so_honest_reciprocity_on_a_small_relay_counts():
+    """Two operators who like each other's things: 0 before the softer rule, half now."""
     who = {"me": pg.Who("op-me", 0), "b": pg.Who("op-b", 0)}
-    swap = pg.renown("me", [like("b", "me", "p1"), like("me", "b", "q1")], who, tiers={"op-b": 3})
-    assert swap["score"] == 0 and pg.RENOWN_WHY["swap"] in swap["why"]
+    mutual = [like("b", "me", "p1"), like("me", "b", "q1")]
+    swap = pg.renown("me", mutual, who, tiers={"op-b": 3})
+    assert swap["score"] == 0.62 and pg.RENOWN_WHY["swap"] in swap["why"]       # 1 x 1.25 x 0.5 = 0.625, rounded
+    assert pg.renown("me", mutual, who, tiers={"op-b": 2})["score"] == 0.5     # was 0
+    assert pg.renown("me", [like("b", "me", "p1")], who, tiers={"op-b": 2})["score"] == 1.0, "no return like, no swap"
+    assert "half" in pg.RENOWN_WHY["swap"] and "cancel" not in pg.RENOWN_WHY["swap"]
+
+
+def test_the_honest_two_operator_relay_is_no_longer_stuck_at_zero():
+    who = {"me": pg.Who("op-me", 0), "b": pg.Who("op-b", 0)}
+    likes = [like("b", "me", "sess1", "session"), like("me", "b", "sess1", "session")]
+    r = pg.renown("me", likes, who, tiers={"op-b": 2})
+    assert r["score"] == pg.SWAP_OPERATOR_CAP == 0.75       # a finished game both were in (it was 0)
+
+
+def test_a_colluding_pair_gets_no_more_than_one_honest_pair_at_its_best():
+    who = {"me": pg.Who("op-me", 0), "b": pg.Who("op-b", 0)}
+    tiers = {"op-b": 3}
+    honest = pg.renown("me", [like("b", "me", "sess1", "session"), like("me", "b", "sess1", "session")], who, tiers=tiers)
+    spam = [like("b", "me", f"p{i}") for i in range(60)] + [like("b", "me", f"g{i}", "session") for i in range(60)]
+    spam += [like("me", "b", f"q{i}") for i in range(60)]
+    colluding = pg.renown("me", spam, who, tiers=tiers)
+    assert colluding["score"] <= honest["score"] == pg.SWAP_OPERATOR_CAP
+    assert colluding["level"] == 1 and pg.RENOWN_WHY["cap"] in colluding["why"]
+    sybil = pg.renown("me", spam, who, tiers={"op-b": 1})                       # the same pair as Newcomer labels
+    assert sybil["score"] <= honest["score"]
+
+
+def test_a_swap_and_a_ring_each_keep_their_own_discount_and_a_liked_back_crowd_stays_at_level_two():
+    who = {x: pg.Who(f"op-{x}", 0) for x in ("a", "b", "c")}
+    ring = [like("a", "b", "pb"), like("b", "c", "pc"), like("c", "a", "pa"), like("b", "a", "qa")]
+    assert pg.renown("a", ring, who)["score"] == 0.75        # c -> a closes a ring (0.25); b <-> a is a swap (0.5)
+    names, w2, tiers = labels(18, tier=1)
+    back = [like("me", x, "q", "agent") for x in names]                         # every label is liked back: all swaps
+    attack = pg.renown("me", [like(x, "me", "stable-me", "agent") for x in names] + back, w2, tiers=tiers)
+    assert attack["level"] <= 2 and attack["score"] <= 4.0
 
 
 def test_no_tier_data_weighs_every_giver_as_known_and_the_sheet_carries_the_breakdown():

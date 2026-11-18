@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, post-hackathon]
+    branches: [main, post-hackathon, "rel-*"]   # rel-* branches are pushed at milestones: CI runs on them
   pull_request:
     branches: [main, post-hackathon]
 
@@ -12,24 +12,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Fast and apart from the tests, so a lint error shows in about a minute and pytest is not held up by it.
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv (with its cache, keyed on uv.lock)
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install ruff
+        run: uv sync --frozen --extra dev
+
+      - name: Ruff (correctness rules — E9, F)
+        run: uv run python -m ruff check src/ tests/ installer/ scripts/ relay/ hermes_plugin/
+
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv (with its cache, keyed on uv.lock)
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        run: pip install uv
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev --extra x402 --extra relay --extra solana
-
-      - name: Ruff (correctness rules — E9, F)
-        run: uv run python -m ruff check src/ tests/ installer/ scripts/ relay/ hermes_plugin/
 
       - name: Pytest
         # No path: pyproject.toml's [tool.pytest.ini_options] testpaths = ["tests"] is the

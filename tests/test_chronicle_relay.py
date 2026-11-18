@@ -236,6 +236,61 @@ def test_a_relay_that_runs_the_module_needs_the_log_and_a_start_time(monkeypatch
     assert any("needs the log module" in p for p in relay_modules.problems())
 
 
+def _test_relay(monkeypatch, *, epoch="300", host="127.0.0.1", url="http://127.0.0.1:8088"):
+    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
+    monkeypatch.setenv("EMPORIA_CHRONICLE_START", "2026-12-01T00:00:00+00:00")
+    monkeypatch.delenv("EMPORIA_CHRONICLE_EPOCH", raising=False)
+    monkeypatch.setenv("EMPORIA_CHRONICLE_TEST_EPOCH", epoch)
+    monkeypatch.setenv("EMPORIA_RELAY_HOST", host)
+    monkeypatch.setenv("EMPORIA_RELAY_URL", url)
+
+
+def _chronicle_problems():
+    return [p for p in relay_modules.problems() if "EMPORIA_CHRONICLE" in p]
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8088", "http://localhost:9000", "http://localhost"])
+def test_a_test_epoch_runs_on_a_loopback_relay_and_the_card_says_so(monkeypatch, url):
+    _test_relay(monkeypatch, url=url)
+    assert _chronicle_problems() == []
+    assert relay_modules._chronicle_epoch() == 300
+    detail = relay_modules.advertise()["chronicle"]
+    assert detail["epoch_s"] == 300 and detail["test_epoch"] is True
+    client = TestClient(rs.app, client=("127.0.0.1", 51691))
+    assert client.get("/chronicle").json()["test_epoch"] == "test epoch"
+
+
+@pytest.mark.parametrize("host,url", [
+    ("0.0.0.0", "http://127.0.0.1:8088"),                       # listening beyond this machine
+    ("127.0.0.1", "https://relay.example.org"),                 # a public address
+    ("127.0.0.1", "https://localhost"),                         # not plain http
+    ("127.0.0.1", "http://127.0.0.1.example.org"),              # a look-alike host name
+    ("192.168.1.5", "http://localhost:8088"),
+])
+def test_a_test_epoch_is_refused_on_a_relay_that_is_not_local_only(monkeypatch, host, url):
+    _test_relay(monkeypatch, host=host, url=url)
+    [why] = _chronicle_problems()
+    assert "EMPORIA_CHRONICLE_TEST_EPOCH" in why and "this machine only" in why
+
+
+def test_a_test_epoch_is_at_least_five_minutes_and_a_number(monkeypatch):
+    for bad in ("299", "0", "-5", "soon"):
+        _test_relay(monkeypatch, epoch=bad)
+        [why] = _chronicle_problems()
+        assert "at least 300" in why, bad
+    _test_relay(monkeypatch, epoch="300")
+    assert _chronicle_problems() == []
+
+
+def test_without_a_test_epoch_the_floor_is_unchanged_and_the_card_has_no_label(monkeypatch):
+    _test_relay(monkeypatch, epoch="")
+    monkeypatch.delenv("EMPORIA_CHRONICLE_TEST_EPOCH", raising=False)
+    monkeypatch.setenv("EMPORIA_CHRONICLE_EPOCH", "600")
+    assert any("at least 3600" in p for p in _chronicle_problems())
+    monkeypatch.setenv("EMPORIA_CHRONICLE_EPOCH", "3600")
+    assert _chronicle_problems() == [] and "test_epoch" not in relay_modules.advertise()["chronicle"]
+
+
 # ── what the chapters do ──────────────────────────────────────────────────────────────────────────
 
 def test_a_thin_jury_of_two_needs_one_pick_and_is_labelled_in_the_record_and_the_book(mk):

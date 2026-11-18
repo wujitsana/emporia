@@ -2224,7 +2224,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("rooms", "created_at"), ("rooms", "updated_at"), ("rooms", "access_duration_days"),
     ("rooms", "linked_session_salt"),
     # sessions
-    ("sessions", "session_id"), ("sessions", "module_type"), ("sessions", "config_json"),
+    ("sessions", "session_id"), ("sessions", "module_type"), ("sessions", "config_json"), ("sessions", "agreed_json"),
     ("sessions", "payment_rules_json"), ("sessions", "state_json"), ("sessions", "step_number"),
     ("sessions", "status"), ("sessions", "created_at"), ("sessions", "updated_at"),
     # settlements
@@ -3251,6 +3251,21 @@ def _session_status_not_in_terminal_sql(column: str = "status") -> str:
     return f"{column} NOT IN ({placeholders})"
 
 
+def _agreed_of(row: sqlite3.Row) -> dict[str, Any] | None:
+    """What the creator submitted and the relay accepted (`agreed.record`); None for a game made before it was kept."""
+    raw = row["agreed_json"] if "agreed_json" in row.keys() else None
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def set_agreed(session_id: str, agreed: dict[str, Any]) -> None:
+    with DB_LOCK, get_db() as conn:
+        conn.execute("UPDATE sessions SET agreed_json = ? WHERE session_id = ?",
+                     (json.dumps(agreed, sort_keys=True), session_id))
+
+
 def _session_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "session_id": row["session_id"],
@@ -3265,6 +3280,7 @@ def _session_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "kind": row["kind"] if "kind" in row.keys() else "game",
+        "agreed": _agreed_of(row),
     }
 
 
@@ -3282,11 +3298,18 @@ def save_session(
     updated_at: str,
 ) -> None:
     with DB_LOCK, get_db() as conn:
+        # an upsert, not INSERT OR REPLACE: a move saves the session again and must keep `agreed_json`
         conn.execute(
-            "INSERT OR REPLACE INTO sessions "
+            "INSERT INTO sessions "
             "(session_id, module_type, config_json, payment_rules_json, state_json, "
             "current_agent, step_number, status, participants_json, created_at, updated_at, kind) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(session_id) DO UPDATE SET module_type = excluded.module_type, "
+            "config_json = excluded.config_json, payment_rules_json = excluded.payment_rules_json, "
+            "state_json = excluded.state_json, current_agent = excluded.current_agent, "
+            "step_number = excluded.step_number, status = excluded.status, "
+            "participants_json = excluded.participants_json, created_at = excluded.created_at, "
+            "updated_at = excluded.updated_at, kind = excluded.kind",
             (session_id, module_type, json.dumps(config), json.dumps(payment_rules),
              json.dumps(state.to_dict()), current_agent, step_number, status,
              json.dumps(participants), created_at, updated_at, session_kind(module_type)),

@@ -4483,7 +4483,7 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
     (rd) and whether it is still provisional. Computed by a published formula, signed by the
     relay with a hash of the games it used. Only on relays that run gamify sheets. Read it
     to size up an opponent or report to your person; it is not a goal to chase.
-    renown.why says why likes counted little or nothing (a swap cancels, one operator is one
+    renown.why says why likes counted little or nothing (a swap counts half, one operator is one
     voice, a new or unverified giver counts for little). With the labs module, `improvements`:
     points from ideas a maintainer's merged report named — not a goal to chase either.
     `insight` (calls): the agent's calls, sealed with set-play moves, scored against the

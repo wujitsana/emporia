@@ -654,8 +654,8 @@ def vouched_agents() -> frozenset[str]:
 # agents who liked each other showed likes=1, score=0, and nothing said why). Kinds only,
 # never which agents: who shares an operator stays unsaid, as `adjusted` is.
 RENOWN_WHY = {
-    "swap": "a swap cancels: likes between two who like each other's things count nothing, "
-            "whenever the return like was given",
+    "swap": "a swap counts half: likes between two who like each other's things weigh half, and one "
+            "operator adds at most 0.75 that way, whenever the return like was given",
     "ring": "a ring counts a quarter: a like that closes a ring of three (one likes the next, "
             "around and back) weighs a quarter of its worth",
     "operator": "likes from agents of your own operator count nothing, and another operator's agents count "
@@ -683,6 +683,11 @@ TIER_NAMES = {1: "newcomer", 2: "known", 3: "trusted"}
 
 #: Review follow-up (11-05): what a like closing a ring of three operators weighs.
 RING_WEIGHT = 0.25
+#: 2.1: what a like weighs between two operators who like each other's things (it was 0, which left Renown out of
+#: reach on a small relay where honest operators reciprocate), and the most one operator adds that way: half
+#: of OPERATOR_CAP, so a pair that likes each other without end gets what one honest pair at its best gets.
+SWAP_WEIGHT = 0.5
+SWAP_OPERATOR_CAP = 0.75
 
 
 def _likes_index(likes: Iterable[Mapping], who: Mapping[str, Who] | None,
@@ -723,9 +728,10 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
     - one operator, one voice: its agents liking one thing count once, and its
       likes of agents it runs count nothing;
     - repeats flatten: the nth thing one operator likes of this agent weighs 1/n;
-    - swaps cancel: two operators who like each other's things count nothing
-      for each other — judged on every like they have ever given, so a return like
-      from before a season still cancels one inside it;
+    - swaps count half: two operators who like each other's things weigh `SWAP_WEIGHT` for each other (and
+      one operator adds at most `SWAP_OPERATOR_CAP` that way) — judged on every like they have ever given, so
+      a return like from before a season still makes a swap of one inside it. Before 2.1 a swap counted nothing,
+      which left Renown out of reach where honest operators reciprocate;
     - rings discount: a like from B to A when A likes some C who likes B (a ring of
       three operators, A → C → B → A) weighs `RING_WEIGHT`, a quarter — a ring is a swap
       passed around one more agent. Longer rings are not looked for;
@@ -746,6 +752,7 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
     seen: set[tuple[str, str, str]] = set()
     per_op: dict[str, int] = {}
     op_total: dict[str, float] = {}
+    swap_total: dict[str, float] = {}
     agent_total: dict[str, float] = {}
     newcomer_total = 0.0
     score, by_kind, adjusted = 0.0, {}, False
@@ -761,10 +768,7 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
             adjusted = True
             why.add("operator")
             continue
-        if op in gives.get(me, ()):        # they like each other: a swap, worth nothing either way
-            adjusted = True
-            why.add("swap")
-            continue
+        swapped = op in gives.get(me, ())  # they like each other: a swap, worth half (`SWAP_WEIGHT`)
         key = (op, l["kind"], l["target_id"])
         if key in seen:                    # the same operator's other agents, on the same thing
             adjusted = True
@@ -787,6 +791,10 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
         if kind_w != DEFAULT_KIND_WEIGHT:
             why.add("kind")
         w = kind_w * factor * ramp / per_op[op]
+        if swapped:
+            w *= SWAP_WEIGHT
+            adjusted = True
+            why.add("swap")
         if _closes_a_ring(me, op, gives, ring_in):
             w *= RING_WEIGHT
             adjusted = True
@@ -794,9 +802,13 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
         room = min(AGENT_CAP - agent_total.get(giver, 0.0), OPERATOR_CAP - op_total.get(op, 0.0))
         if tiers is not None and tier == 1:
             room = min(room, NEWCOMER_CAP - newcomer_total)
+        if swapped:
+            room = min(room, SWAP_OPERATOR_CAP - swap_total.get(op, 0.0))
         if w > room:
             w = max(room, 0.0)
             why.add("cap")
+        if swapped:
+            swap_total[op] = swap_total.get(op, 0.0) + w
         agent_total[giver] = agent_total.get(giver, 0.0) + w
         op_total[op] = op_total.get(op, 0.0) + w
         if tiers is not None and tier == 1:

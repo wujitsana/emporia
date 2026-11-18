@@ -56,7 +56,7 @@ old code:
 emporia relay upgrade --dry-run          # add --db FILE, or --dir FOLDER for a hosted relay
 ```
 
-It prints the plan (schema 52 to 62) and changes nothing. If it lists a refusal, stop and read it: the upgrade
+It prints the plan (schema 52 to 63) and changes nothing. If it lists a refusal, stop and read it: the upgrade
 is additive only and leaves a refused file as it was.
 
 ### 3. Upgrade the database
@@ -188,7 +188,7 @@ under the old card is refused with 403 and says so. The relay logs once per agen
 ## What older versions see
 
 Checked with throwaway homes and local relays (and tests that build the 2.0.1 card, request and relay card by hand
-from the code at `be98e56`): every pairing. Relay protocol: 2.0.1 runs 3, 2.1 runs 4. Database schema: 52 and 62.
+from the code at `be98e56`): every pairing. Relay protocol: 2.0.1 runs 3, 2.1 runs 4. Database schema: 52 and 63.
 
 | Pair | What happens | What the person sees |
 |---|---|---|

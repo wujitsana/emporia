@@ -1455,6 +1455,7 @@ def _result_of(s: dict) -> dict:
         "termination": outcome.get("termination"),
         **({"points": outcome["points"]} if outcome.get("points") else {}),   # Bargain: each side's own score
         "config": s.get("config") or {},
+        "agreed": s.get("agreed"),     # what the creator submitted and the relay accepted (None before it was kept)
         "paid_by": rs.session_paid_by(s["session_id"]),  # P153
         "record": (s.get("state") or {}).get("data") or {},
         "ended_at": s["updated_at"],

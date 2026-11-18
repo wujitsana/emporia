@@ -8,6 +8,7 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import sys
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
+from emporia import agreed
 from emporia import notices
 from emporia import relay_server as rs
 from emporia import rand as rand_module
@@ -215,6 +217,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         raise HTTPException(403, str(e)) from e
 
     module = get_interaction_module(req.module_type)
+    submitted_config = copy.deepcopy(req.config or {})      # exactly as sent: kept beside the accepted one (`agreed`)
     from emporia import relay_modules
     if why := relay_modules.game_off_because(req.module_type):
         raise HTTPException(400, f"{why}: {req.module_type} is not played here")
@@ -315,6 +318,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         updated_at=now,
     )
     rs.add_participant(session_id, caller, join_at=req.at, join_signature=req.signature)   # P279: its signed creation
+    rs.set_agreed(session_id, agreed.record(submitted_config, req.config or {}, at=req.at, terms=terms,
+                                            signature=req.signature))
     if module.USES_RAND:
         _record_rand_commits(session_id, req.config)
     open_dual_session(session_id, caller, req.module_type)

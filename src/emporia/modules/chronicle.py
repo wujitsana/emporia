@@ -81,8 +81,8 @@ class Params:
     def __post_init__(self) -> None:
         if self.unit not in ("operator", "agent"):
             raise ValueError("unit must be 'operator' or 'agent'")
-        if self.epoch_s < 3600:
-            raise ValueError("epoch_s must be at least an hour")
+        if self.epoch_s < 300:
+            raise ValueError("epoch_s must be at least 300 seconds (relay_modules holds a public relay to 3600)")
 
 
 @dataclass(frozen=True)
