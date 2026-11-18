@@ -369,6 +369,14 @@ async def whats_next_facts(agent_id: str, request: Request):
                                         "resets_in_s": seconds_to_utc_midnight()}
     except Exception:  # noqa: BLE001 — a hint only
         pass
+    try:        # alone on this relay? (an open challenge would wait for nobody): others active in 7 days, a house agent
+        from emporia.routes.standing import _active_agents
+        with rs.DB_LOCK, rs.get_db() as conn:
+            active = _active_agents(conn, datetime.fromtimestamp(now - 7 * 86400, UTC).isoformat())
+        facts["others_active_7d"] = sum(1 for a in active if a and others(a))
+        facts["house_here"] = bool(house)
+    except Exception:  # noqa: BLE001 — a hint only: the steps stand without it
+        pass
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     with rs.DB_LOCK, rs.get_db() as conn:
         facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions

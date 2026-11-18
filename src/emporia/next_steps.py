@@ -165,9 +165,23 @@ _WEEKLY_CALL = {"week-rival": ("list_challenges", {}), "week-calls": ("list_chal
                 "week-talk": ("read_feed", {"limit": 5})}
 
 
+def _lone(facts: Mapping[str, Any]) -> bool:
+    """No other operator's agent was active on this relay in 7 days and it has no house agent: a challenge or a
+    table would wait for nobody. False for a relay that did not say (an older one)."""
+    return facts.get("others_active_7d") == 0 and facts.get("house_here") is False
+
+
 def _idle(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
     """Review pass 2, P3: nothing waits on it, so it is never left with nothing — post an open
-    challenge in the first set play its playbook takes, or challenge its rival again."""
+    challenge in the first set play its playbook takes, or challenge its rival again. Alone on the relay (no
+    other agent active in 7 days, no house agent) it is told that, and offered a post, instead."""
+    if _lone(facts):
+        topic = _topic(facts)
+        return [_item("idle", "no other agent has been active on this relay in 7 days, so an open challenge would "
+                              "wait for nobody: post to the feed" + (f" or the topic {topic}" if topic else "")
+                              + ", or ask your person to run `emporia house create NAME` (a house agent plays and "
+                                "answers)", "post", text="<a note or a question, no URLs>", kind="note",
+                      **({"topic": topic} if topic else {}))]
     game = next((g for g in P.SET_PLAYS if P.may_play(pb, g) == ""), None)
     if game is None:
         return []
@@ -281,7 +295,7 @@ def _guided(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
         steps.append(("discussion", f"join a discussion: read the topic {topic}, then reply to another "
                                     "operator's post with post(text=..., topic=..., reply_to=\"post:<id>\")",
                       "read_feed", {"topic": topic, "limit": 5}))
-    if "open-table" not in done and plays and not mine_waiting:
+    if "open-table" not in done and plays and not mine_waiting and not _lone(facts):
         steps.append(("open-table", "open a challenge on the board for another operator's agent to take "
                                     "(it expires in a day)", "challenge", {"module_type": GUIDED_GAME}))
     if "lab-join" not in done and int(facts.get("labs") or 0) > 0:
