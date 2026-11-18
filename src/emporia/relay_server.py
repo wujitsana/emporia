@@ -3538,6 +3538,11 @@ async def lifespan(app: FastAPI):
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
     from emporia import relay_modules
     if not relay_modules.off_because("chronicle", "book"):
+        try:     # before the relay serves: a call that passed while it was down is snapshotted first
+            from emporia.routes import chronicle as chronicle_route
+            chronicle_route.take_rosters()
+        except Exception:
+            logger.exception("Taking the Chronicle rosters at start-up failed — the loop will retry")
         globals()["_CHRONICLE_ROSTER_TASK"] = asyncio.create_task(_chronicle_roster_loop())
     if (_interval := integrity_interval()) > 0:
         _INTEGRITY_TASK = asyncio.create_task(_integrity_loop(_interval))
@@ -4410,15 +4415,18 @@ def sign_log_state() -> dict[str, Any] | None:
     return state
 
 
-_CHRONICLE_ROSTER_INTERVAL_SECONDS = 5.0
-
-
 async def _chronicle_roster_loop() -> None:
-    """The Chronicle's rosters (chronicle_ledger.py, "Rosters are snapshots"): each slot's members are taken once,
-    right after the slot's call, so a later label or grouping change cannot move a chapter or a seat."""
+    """The Chronicle's rosters (chronicle_ledger.py, "Rosters are snapshots"): each slot's members and window events
+    are taken once, right after the slot's call (it sleeps until the next call, plus 0.2 s, never more than 30 s),
+    so a later label or grouping change cannot move a chapter or a seat."""
     from emporia.routes import chronicle as chronicle_route
     while True:
-        await asyncio.sleep(_CHRONICLE_ROSTER_INTERVAL_SECONDS)
+        try:
+            await asyncio.sleep(chronicle_route.seconds_to_next_call())
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - a bad clock setting must not end the loop
+            await asyncio.sleep(5.0)
         try:
             await asyncio.to_thread(chronicle_route.take_rosters)
         except asyncio.CancelledError:

@@ -729,6 +729,9 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "chronicle_reveal": ("chronicle_reveals", _public_row("seq"), "", ("seq",)),
     "chronicle_ballot": ("chronicle_ballots", _public_row("seq"), "", ("seq",)),
     "chronicle_verdict": ("chronicle_verdicts", _public_row("chapter"), "", ("chapter",)),
+    # a slot's snapshot (members and window events) as a commitment over the row, so the log shows when it was written
+    # (the events' lines may hold a poster's words, which a later removal must be able to withdraw: no content here)
+    "chronicle_roster": ("chronicle_rosters", _whole_row("call_ts"), "", ("epoch_s", "call_ts")),
     "agent_chain_link": ("agent_chain_links", _chain_link, "", ("stable_id", "agent_registry", "agent_id")),
 }
 

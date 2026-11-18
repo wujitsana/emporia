@@ -98,18 +98,36 @@ def _who_units() -> tuple[dict[str, str], dict[str, float], frozenset[str]]:
 
 
 def _base_since() -> dict[str, float]:
-    """{agent: when its *declared* base operator was first seen}: the earliest registration of any agent that declares
-    the same operator label (or, with no label, the same key), before network grouping merges anyone
-    (`operators.operator_of_row`). The act draw ranks by it (`modules/chronicle.act_rank`)."""
+    """{agent: when its *declared* base operator was first declared}: for a label, the earliest time any agent
+    declared it (the relay's own `operator_log`, written when a registration sets a label), or, for an agent with no
+    log row for its label (a label set before the log), its registration; for a key with no label, the registration.
+    Network grouping is not applied (`operators.operator_of_row`). The act draw ranks by it
+    (`modules/chronicle.act_rank`). A label is dated from when it was first declared, not from the age of the agents
+    that declare it now, so re-registering an old agent under a young label does not age that label."""
     from emporia import operators
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at FROM authorized_agents").fetchall()
+        log = conn.execute("SELECT stable_id, label, recorded_at FROM operator_log WHERE label <> ''").fetchall()
+    declared: dict[tuple[str, str], float] = {}          # (stable id, label) -> when that agent declared it
+    first_label: dict[str, float] = {}                   # label -> the first time anyone declared it
+    for r in log:
+        t = _ts(r["recorded_at"])
+        if t is None:
+            continue
+        k = (r["stable_id"], r["label"])
+        declared[k] = min(declared.get(k, t), t)
+        first_label[r["label"]] = min(first_label.get(r["label"], t), t)
     base_of = {r["agent_id"]: operators.operator_of_row(r) for r in rows}
     first: dict[str, float] = {}
     for r in rows:
-        at = _ts(r["registered_at"]) or 0.0
+        reg = _ts(r["registered_at"]) or 0.0
+        label = (r["operator_label"] or "").strip()
+        at = declared.get((r["stable_id"], label), reg) if label else reg
         b = base_of[r["agent_id"]]
         first[b] = min(first.get(b, at), at)
+    for label, t in first_label.items():
+        if f"label:{label}" in first:
+            first[f"label:{label}"] = min(first[f"label:{label}"], t)
     return {a: first[b] for a, b in base_of.items()}
 
 
@@ -123,19 +141,20 @@ def _agents(conn, units, regs, house, base=None) -> list[dict[str, Any]]:
              "base_since": base.get(a), "house": a in house, "joins": e} for a, e in sorted(joins.items())]
 
 
-def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float, events: list[dict[str, Any]],
-             units: dict[str, str]) -> dict[str, dict[str, Any]]:
+def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float,
+             events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Each called slot's roster, from `chronicle_rosters`; a slot called but not yet snapshotted is snapshotted now,
     once, from `agents` (the present grouping) and never again. The first resolution after the call is the one that
     counts: `take_rosters` runs every few seconds on a live relay and every read of the book runs it too, so the
     snapshot is taken within seconds of the call. One taken more than `L.SNAPSHOT_GRACE_S` after it is marked `late`
     (the draw may already have been public; a dev database's older chapters are all marked so). The members are
     `members_at` the previous call: the joins are append-only, so only the unit token, the registration time and
-    the base-operator age can have moved since, and those are what is frozen. The snapshot also holds `units`: the unit
-    token of every agent that an event of the slot's record window (previous call to this call) names, so an event's
-    operators (which decide whether a day is quiet and how many operators a chapter has) are frozen with the members.
-    Only those agents, not every agent: the window is all a slot's events can reach (carried events keep the earlier
-    slot's operators)."""
+    the base-operator age can have moved since, and those are what is frozen. The snapshot also holds the slot's window
+    events themselves (previous call to this call; ref, line, operators, time, loose), so which events exist and whose
+    they are cannot move either: not under a regrouping, not when a post, topic or room is removed or a like withdrawn.
+    A snapshot first taken after the slot's Count window has closed stores `base_since` null: such a chapter (from a
+    database that had none) keeps ranking by the beacon alone, as it was counted. A new snapshot is also logged (a
+    commitment over the row, no content), so the log shows it was written at the call."""
     start, epoch = float(st["start"]), int(st["epoch_s"])
     have = {r["call_ts"]: r for r in conn.execute("SELECT * FROM chronicle_rosters WHERE epoch_s = ?", (epoch,))}
     out: dict[str, dict[str, Any]] = {}
@@ -144,22 +163,58 @@ def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float, 
         call_ts = L.slot_call(start, epoch, i)
         row = have.get(call_ts)
         if row is not None:
-            out[str(i)] = {"members": json.loads(row["members_json"]), "units": json.loads(row["units_json"]),
-                           "source": row["source"]}
+            out[str(i)] = {"members": json.loads(row["members_json"]), "source": row["source"],
+                           "events": json.loads(row["events_json"]) if row["events_json"] is not None else None}
             continue
         members = [L._member_dict(m) for m in L.members_at(agents, call_ts - epoch)]
+        if at >= C.windows(call_ts, epoch)["count"][1]:      # counted long ago: rank as it was counted, by the beacon
+            members = [{**m, "base_since": None} for m in members]
         source = "call" if at - call_ts <= L.SNAPSHOT_GRACE_S else "late"
-        rid = rs.relay_id()
-        mapping = {a: units.get(a) or L.unit_token(rid, a) for a in L.event_agents(events, call_ts - epoch, call_ts)}
+        window = [e for e in events if call_ts - epoch <= e["at"] < call_ts]
         cur = conn.execute("INSERT OR IGNORE INTO chronicle_rosters "
-                           "(epoch_s, call_ts, members_json, units_json, source, taken_at) VALUES (?,?,?,?,?,?)",
-                           (epoch, call_ts, json.dumps(members, sort_keys=True), json.dumps(mapping, sort_keys=True),
+                           "(epoch_s, call_ts, members_json, events_json, source, taken_at) VALUES (?,?,?,?,?,?)",
+                           (epoch, call_ts, json.dumps(members, sort_keys=True), json.dumps(window, sort_keys=True),
                             source, at))
-        added = added or cur.rowcount > 0
-        out[str(i)] = {"members": members, "units": mapping, "source": source}
+        if cur.rowcount > 0:
+            added = True
+            translog.log_row(conn, "chronicle_roster", cur.lastrowid)
+        out[str(i)] = {"members": members, "events": window, "source": source}
     if added:
         conn.commit()
     return out
+
+
+def _removed(conn, rosters: dict[str, dict[str, Any]]) -> list[str]:
+    """The refs of snapshotted events whose post, topic or room has been removed since (a signed removal, a
+    moderator's, a deleted topic). Only those three kinds carry a poster's words in their line."""
+    refs = {e["ref"] for r in rosters.values() for e in r.get("events") or ()}
+    gone = []
+    for ref in sorted(refs):
+        kind, _, ident = ref.partition(":")
+        if kind == "post":
+            row = conn.execute("SELECT is_deleted FROM posts WHERE post_id = ?", (ident,)).fetchone()
+            if row is None or row["is_deleted"]:
+                gone.append(ref)
+        elif kind == "topic":
+            row = conn.execute("SELECT is_deleted FROM agora_topics WHERE slug = ?", (ident,)).fetchone()
+            if row is None or row["is_deleted"]:
+                gone.append(ref)
+        elif kind == "room":
+            if conn.execute("SELECT 1 FROM rooms WHERE room_id = ?", (ident,)).fetchone() is None:
+                gone.append(ref)
+    return gone
+
+
+def seconds_to_next_call(at: float | None = None) -> float:
+    """Seconds until the next slot's call, plus 0.2 (the relay takes the roster just after the call, before the draw
+    round exists); 30 at most, so the loop also catches up on anything missed. 30 when the Chronicle has no clock."""
+    at = now() if at is None else at
+    try:
+        st = settings()
+    except HTTPException:
+        return 30.0
+    nxt = L.slot_call(st["start"], st["epoch_s"], max(0, L.slot_at(st["start"], st["epoch_s"], at) + 1))
+    return min(30.0, max(0.05, nxt - at + 0.2))
 
 
 def take_rosters(at: float | None = None) -> None:
@@ -182,7 +237,7 @@ def take_rosters(at: float | None = None) -> None:
     base = _base_since()
     with rs.DB_LOCK, rs.get_db() as conn:
         events = _events(conn, units, house, st["start"] - st["epoch_s"])
-        _rosters(conn, _agents(conn, units, regs, house, base), st, at, events, units)
+        _rosters(conn, _agents(conn, units, regs, house, base), st, at, events)
 
 
 def _op(units, house, agent: str) -> str | None:
@@ -204,18 +259,17 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
 
     def add(ref: str, line: str, agents: list[str], at: float | None, any_agents: list[str] | None = None) -> None:
         """`agents`: the agents whose operators count (the house is left out); `any_agents`: every agent of a loose
-        (practice) event, the house included. Each event keeps its agent ids (`agents`), which only the ledger sees:
-        a slot's snapshot maps them to the unit tokens of its call (`chronicle_ledger.slots`)."""
+        (practice) event, the house included."""
         if at is not None and at >= since and any_agents:
             if ref not in loose or at < loose[ref]["at"]:
                 loose[ref] = {"ref": ref, "line": C.clip_line(line), "operators": sorted({every(a) for a in any_agents}),
-                              "at": at, "loose": True, "agents": sorted(set(any_agents))}
+                              "at": at, "loose": True}
         counted = sorted({a for a in agents if a and _op(units, house, a)})
         ops = sorted({_op(units, house, a) for a in counted})
         if at is None or at < since or not ops:
             return
         if ref not in out or at < out[ref]["at"]:
-            out[ref] = {"ref": ref, "line": C.clip_line(line), "operators": ops, "at": at, "agents": counted}
+            out[ref] = {"ref": ref, "line": C.clip_line(line), "operators": ops, "at": at}
 
     first: dict[str, tuple[float, str]] = {}
 
@@ -384,7 +438,8 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
     with rs.DB_LOCK, rs.get_db() as conn:
         agents = _agents(conn, units, regs, house, base)
         events = _events(conn, units, house, st["start"] - st["epoch_s"])
-        rosters = _rosters(conn, agents, st, at, events, units)
+        rosters = _rosters(conn, agents, st, at, events)
+        removed = _removed(conn, rosters)
         prologue = prologue_ref(conn)
         seals = [{"chapter": r["chapter"], "agent": r["agent_id"], "what": r["what"], "commitment": r["commitment"],
                   "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_seal", r["seq"])}
@@ -399,7 +454,7 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
                    "seq": r["seq"], "log_index": _log_index(conn, "chronicle_ballot", r["seq"])}
                    for r in conn.execute("SELECT * FROM chronicle_ballots ORDER BY seq")]
     return {"relay_id": rs.relay_id(), "start": st["start"], "epoch_s": st["epoch_s"], "practice": st["practice"],
-            "prologue": prologue, "agents": agents, "rosters": rosters, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
+            "prologue": prologue, "agents": agents, "rosters": rosters, "removed": removed, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
             "seals": seals, "reveals": reveals, "ballots": ballots, "units": units}
 
 
@@ -416,7 +471,8 @@ def _state_key(at: float) -> tuple:
             "SELECT COUNT(*), MAX(recorded_at) FROM posts", "SELECT COUNT(*), MAX(updated_at) FROM sessions",
             "SELECT COUNT(*), MAX(at) FROM reactions", "SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
             "MAX(registered_at) FROM authorized_agents", "SELECT COUNT(*) FROM lab_reports",
-            "SELECT COUNT(*) FROM rooms", "SELECT COUNT(*) FROM agora_topics")]
+            "SELECT COUNT(*) FROM rooms", "SELECT COUNT(*) FROM agora_topics",
+            "SELECT COUNT(*) FROM posts WHERE is_deleted = 1", "SELECT COUNT(*) FROM agora_topics WHERE is_deleted = 1")]
     return (rs.relay_id(), rs.DATABASE_PATH, int(at // 10), tuple(marks), len(_BEACONS))
 
 
@@ -440,9 +496,10 @@ def _freeze(conn, slot: dict[str, Any]) -> None:
     body = json.dumps({"chapter": slot["id"], "call_ts": slot["call_ts"], "verdict": slot["verdict"],
                        "roster": L.roster_hash(slot["inputs"]["members"], slot["inputs"]["events"])},
                       sort_keys=True, separators=(",", ":"), default=list)
-    conn.execute("INSERT OR IGNORE INTO chronicle_verdicts (chapter, body_json, body_hash, frozen_at) VALUES (?,?,?,?)",
-                 (slot["id"], body, hashlib.sha256(body.encode()).hexdigest(), datetime.now(UTC).isoformat()))
-    translog.log_row(conn, "chronicle_verdict", slot["id"])
+    cur = conn.execute("INSERT OR IGNORE INTO chronicle_verdicts (chapter, body_json, body_hash, frozen_at) VALUES (?,?,?,?)",
+                       (slot["id"], body, hashlib.sha256(body.encode()).hexdigest(), datetime.now(UTC).isoformat()))
+    if cur.rowcount > 0:
+        translog.log_row(conn, "chronicle_verdict", cur.lastrowid)
 
 
 def freeze_closed(slots: list[dict[str, Any]], at: float) -> None:

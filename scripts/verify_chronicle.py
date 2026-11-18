@@ -288,6 +288,40 @@ def check_log_order(get: Callable[[str], dict], inp: dict[str, Any]) -> list[str
     return bad
 
 
+def check_receipt_in_log(get: Callable[[str], dict], chapter: str, receipt: dict[str, Any],
+                         inp: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """The receipt is the relay's word until the transparency log's own record of the frozen verdict says the same:
+    `/log/entries?ref=chronicle_verdict:<chapter>` holds the row (its `body_hash`). Returns (problems, notes). A relay
+    with its log off has no such entry and, with nothing else of the chapter logged either, is noted, not failed."""
+    got = get(f"/log/entries?ref=chronicle_verdict:{chapter}&limit=1000").get("entries") or []
+    recs = [e.get("record") or {} for e in got]
+    recs = [r for r in recs if str(r.get("chapter")) == str(chapter) and r.get("body_hash")]
+    if recs:
+        if not any(r["body_hash"] == receipt.get("hash") for r in recs):
+            return [f"the log's frozen verdict of chapter {chapter} is not the receipt the relay serves"], []
+        distinct = {r["body_hash"] for r in recs}
+        if len(distinct) > 1:
+            # the log is append-only: a verdict frozen once and rewritten later leaves both entries in it
+            return [], [f"chapter {chapter}: the log holds {len(distinct)} different frozen verdicts under this id "
+                        f"(a rewrite, or a relay whose chapter ids restarted); the receipt matches one of them"]
+        return [], []
+    logged = any(r.get("log_index") is not None for k in ("seals", "reveals", "ballots") for r in inp.get(k, []))
+    if logged:
+        return [f"the log holds no frozen verdict for chapter {chapter}, which the relay serves a receipt for"], []
+    return [], [f"chapter {chapter}: the relay has no transparency log, so its receipt is the relay's word"]
+
+
+def roster_notes(chapter: str, inp: dict[str, Any], receipt: dict[str, Any] | None) -> list[str]:
+    """What a reader should know about how far a chapter's roster is bound."""
+    out = []
+    if inp.get("roster") in ("late", "current"):
+        out.append(f"chapter {chapter}: roster {inp['roster']} (taken after the draw may have been public, or from the "
+                   f"present grouping): its units are the relay's word")
+    if receipt is not None and not receipt.get("roster"):
+        out.append(f"chapter {chapter}: the receipt does not bind the roster (frozen before rosters were snapshotted)")
+    return out
+
+
 def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> dict[str, Any]:
     """Check every finished chapter. `get(path)` returns the public JSON at `path` (query string included)."""
     state = get("/chronicle")
@@ -323,7 +357,11 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
         problems += check_log_order(get, inp)
         problems += check_signatures(body.get("signed", {}), state["relay_id"], state.get("post_origin", ""))
         problems += check_roster(inp, body.get("signed", {}))
+        notes = roster_notes(row["id"], inp, body.get("receipt"))
         if body.get("receipt"):
+            bad_log, log_notes = check_receipt_in_log(get, row["id"], body["receipt"], inp)
+            problems += bad_log
+            notes += log_notes
             h = receipt_hash(row["id"], inp["call_ts"], v,
                              L.roster_hash(inp["members"], inp["events"]) if body["receipt"].get("roster") else None)
             if h != body["receipt"]["hash"]:
@@ -352,7 +390,7 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
         if not only or only == row["id"]:
             out.append({"id": row["id"], "label": row["label"], "ok": not problems, "problems": problems,
                         "canon": v.get("canon"), "reason": v.get("reason"), "independent": ind,
-                        "thin_jury": bool(v.get("thin_jury")), "mode": mode})
+                        "thin_jury": bool(v.get("thin_jury")), "mode": mode, "notes": notes})
     return {"relay_id": state["relay_id"], "formula": state["formula"], "chapters": out,
             "ok": all(c["ok"] for c in out), "bls": bls}
 
@@ -385,6 +423,8 @@ def main(argv: list[str] | None = None) -> int:
               f"{', canon ' + c['canon'] if c['canon'] else ''}{' (thin jury)' if c['thin_jury'] else ''}")
         for p in c["problems"]:
             print(f"     - {p}")
+        for n in c.get("notes", []):
+            print(f"     note: {n}")
     print("every chapter agrees" if rep["ok"] else "DISAGREEMENT")
     return 0 if rep["ok"] else 1
 
