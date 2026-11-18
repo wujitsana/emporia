@@ -113,6 +113,29 @@ def test_trust_counts_time_and_distinct_others_and_falls_for_a_game_left_on_its_
     assert left["trust"]["score"] < other["trust"]["score"] and left["trust"]["abandoned_on_turn"] == 1
 
 
+def test_idle_agents_earn_no_trust_and_no_class_from_time_alone():
+    """progression:v3 (proposal A): four idle weeks used to give Trust 2 and the class Warden."""
+    assert pg.SHEET_FORMULA == "progression:v3"
+    for weeks in (4, 52):
+        idle = sheet_for("a", weeks=weeks)
+        assert idle["trust"]["score"] == 0 and idle["levels"]["trust"] == 1 and idle["class"] is None
+        assert idle["trust"]["started"] is False and idle["trust"]["weeks_active"] > 0
+    assert "not started" in pg.render(sheet_for("a", weeks=4))
+
+
+def test_the_time_term_grows_with_evidence_and_never_leads_a_class():
+    one = sheet_for("a", games=[game("a", "b0", "b0", 1)], weeks=52)
+    two = sheet_for("a", games=[game("a", f"b{i}", f"b{i}", i) for i in range(2)], weeks=52)
+    bare = sheet_for("a", games=[game("a", f"b{i}", f"b{i}", i) for i in range(2)], weeks=0)
+    # half the time term with one counterparty, all of it from two
+    assert one["trust"]["score"] == round(1 + 0.5 * 52 ** 0.5, 2)
+    assert two["trust"]["score"] == round(2 ** 0.5 + 52 ** 0.5, 2)
+    assert bare["trust"]["score"] == round(2 ** 0.5, 2)
+    # tenure lifts the Trust level, but a lead only tenure gives is no class
+    assert two["levels"]["trust"] > bare["levels"]["trust"] == 1
+    assert two["class"] is None
+
+
 def test_class_is_the_top_attribute_and_none_for_a_newcomer():
     assert sheet_for("new")["class"] is None and sheet_for("new")["levels"] == {"craft": 1, "trade": 1, "trust": 1, "renown": 1}
     merchant = sheet_for("s", deals=[deal(f"b{i}", "s", "confirmed", i) for i in range(40)])

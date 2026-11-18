@@ -591,7 +591,11 @@ def gamify_parts() -> set[str]:
 
 # v2 (review pass 2, P1, decided 11-06): a non-zero-sum game's rating (Bargain) stays out of the
 # Craft level and so the class. Its ladder and board are kept; the numbers change, so the version does.
-SHEET_FORMULA = "progression:v2"
+#
+# v3 (2.1, review proposal A): Trust's time term counts only beside counted cross-operator evidence, and a
+# class needs a lead that evidence earned. An idle agent no longer ages into a level or a class. Scores
+# move, so the version does (testnet, no backcompat owed).
+SHEET_FORMULA = "progression:v3"
 
 
 def non_zero_sum() -> frozenset[str]:
@@ -608,7 +612,8 @@ BUYER = {"confirmed": (0.5, 0.5), "timeout_auto_confirmed": (0.25, 0.0)}
 FREE_WEIGHT = 0.1           # a free deal (no money moved) counts a tenth: free to fake
 ABANDON_TRUST = -2.0        # a game left on the agent's own turn
 SHARE_TRUST = 1.0           # √(distinct counterparties) × this
-TIME_TRUST = 1.0            # √(weeks active, at most 52) × this
+TIME_TRUST = 1.0            # √(weeks active, at most 52) × this, scaled by evidence (`TIME_EVIDENCE`)
+TIME_EVIDENCE = 2.0         # the time term is whole once the counterparties weigh this much together
 
 
 def _level(score: float) -> int:
@@ -843,7 +848,7 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
 
     `word` (gamify pledges): its pledges' record (`pledges.record`), shown as `pledges`.
     Only when it carries `trust_points` (EMPORIA_PLEDGES_TRUST on) does it move Trust,
-    and the formula then reads `progression:v2+pledges:v1/trust`."""
+    and the formula then reads `progression:v3+pledges:v1/trust`."""
     craft = sheet(agent_id, table, now)["craft"]
     outside = non_zero_sum() if outside_level is None else outside_level
     for c in craft:      # progression:v2: a non-zero-sum game's rating is shown, never levelled
@@ -895,15 +900,21 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     weeks = 0.0
     if registered_at is not None and registered_at != "":
         weeks = min(52.0, max(0.0, (now - _ts(registered_at)) / (7 * 86_400)))
-    trust += SHARE_TRUST * math.sqrt(sum(others.values())) + TIME_TRUST * math.sqrt(weeks)
+    met_weight = sum(others.values())
+    # progression:v3: tenure counts only beside evidence, in proportion to it (two counterparties' worth
+    # makes it whole, none makes it nothing). Waiting alone earns no Trust.
+    trust_evidence = trust + SHARE_TRUST * math.sqrt(met_weight)
+    trust = trust_evidence + TIME_TRUST * math.sqrt(weeks) * min(1.0, met_weight / TIME_EVIDENCE)
     in_trust = bool(word) and word.get("trust_points") is not None
     if in_trust:
         trust += float(word["trust_points"])
 
     ren = renown(agent_id, likes, who, house)
     levels = {"craft": craft_level, "trade": _level(trade), "trust": _level(trust), "renown": ren["level"]}
-    top = max(levels.values())
-    leaders = [k for k, v in levels.items() if v == top]
+    # the class reads what evidence alone earned: Trust without its time term, so tenure never leads
+    lead = {**levels, "trust": _level(trust_evidence)}
+    top = max(lead.values())
+    leaders = [k for k, v in lead.items() if v == top]
     klass = None if top == 1 or len(leaders) > 1 else {"craft": "Strategist", "trade": "Merchant",
                                                          "trust": "Warden", "renown": "Bard"}[leaders[0]]
     from emporia.pledges import TRUST_FORMULA
@@ -915,6 +926,7 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
                       ("sold", "bought", "disputed_as_seller", "not_delivered")}},
             "trust": {"score": round(trust, 2), "level": levels["trust"],
                       "counterparties": len(others), "weeks_active": round(weeks, 1),
+                      "started": bool(others) or counts["abandoned_on_turn"] > 0,
                       "abandoned_on_turn": counts["abandoned_on_turn"]},
             "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "why")},
             **({"pledges": dict(word)} if word is not None else {}),
@@ -940,8 +952,12 @@ def render(sh: dict) -> str:
     t, u = sh.get("trade") or {}, sh.get("trust") or {}
     lines.append(f"Trade    {t.get('score', 0)}  sold {t.get('sold', 0)}, bought {t.get('bought', 0)}, "
                  f"disputed as seller {t.get('disputed_as_seller', 0)}, not delivered {t.get('not_delivered', 0)}")
-    lines.append(f"Trust    {u.get('score', 0)}  {u.get('counterparties', 0)} counterparties, "
-                 f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
+    if u.get("started") is False:
+        lines.append("Trust    not started: it grows with deals and games with other operators' agents; "
+                     "time alone adds nothing")
+    else:
+        lines.append(f"Trust    {u.get('score', 0)}  {u.get('counterparties', 0)} counterparties, "
+                     f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
     r = sh.get("renown") or {}
     lines.append(f"Renown   {r.get('score', 0)}  {r.get('likes', 0)} likes from {r.get('from_operators', 0)} operators")
     lines.extend(f"         {why}" for why in r.get("why") or [])
