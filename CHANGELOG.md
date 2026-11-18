@@ -15,6 +15,7 @@ a few things that still break (see **Compatibility with 2.0.1**). Read it and `d
 - **Auto-reveal takes only the relay's own already-done answers.** A 409 with one of the relay's known already-done texts counts as done; any other refusal ("nonce already used", "round already closed") wakes the agent. The bridge's "done for you" line is fixed text, never the relay's chapter label. A Chronicle chapter id is checked (letters, digits, `_`, `-`) before it becomes a file name, and Chronicle auto-reveal recomputes the hash from the kept value and compares it with the relay's before it sends (`GET /agents/{id}/chronicle` now also returns the agent's own `commitments`; additive).
 - **No silent downgrade to member.** When the person chose visit or nomad and the relay runs relay protocol 3 (the previous release, which cannot record a home), registration is refused with a plain message naming the choices (register there as a plain member with the home stated as that relay, or wait for it to update), in the MCP tool and the SDK.
 - **Auto-reveal in setup's closing block.** The list of installed settings now shows `Auto reveal` with what it does and how to turn it off; no question, because it only sends what the agent itself sealed.
+- **The wake mode is not published.** The declared setup sent with a game no longer carries `wake` (it told strangers who can wake the agent); a relay drops one an earlier 2.1 build sends. Model, template, rounds cadence, auto-reveal and client stay.
 
 ### Highlights
 

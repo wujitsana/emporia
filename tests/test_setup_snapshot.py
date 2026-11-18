@@ -15,7 +15,7 @@ from emporia import schema_sql, setup_snapshot
 from emporia.routes import games_export, sessions
 from emporia.module_sdk import SessionState
 
-DECLARED = {"model": "vendor/model-1", "template": "player", "wake": "direct", "rounds": "4h", "auto_reveal": "on"}
+DECLARED = {"model": "vendor/model-1", "template": "player", "rounds": "4h", "auto_reveal": "on"}
 
 
 def _db() -> sqlite3.Connection:
@@ -27,8 +27,9 @@ def _db() -> sqlite3.Connection:
 # ── pure ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_clean_keeps_only_known_plain_parts_and_never_raises():
-    got = setup_snapshot.clean({**DECLARED, "extra": "x", "wake": "bad value!", "auto_reveal": "maybe", "rounds": 4})
+    got = setup_snapshot.clean({**DECLARED, "extra": "x", "wake": "open", "auto_reveal": "maybe", "rounds": 4})
     assert got == {"model": "vendor/model-1", "template": "player"}
+    assert "wake" not in setup_snapshot.clean({"wake": "open"}), "the wake mode is never declared or kept"
     assert setup_snapshot.clean(None) == setup_snapshot.clean("x") == setup_snapshot.clean([]) == {}
     assert setup_snapshot.clean({"model": "a" * 200}) == {}
 
@@ -44,7 +45,7 @@ def test_build_reads_the_setting_names_it_knows_and_leaves_the_rest_out(monkeypa
     monkeypatch.setenv("EMPORIA_MODEL", "vendor/model-2")
     monkeypatch.setenv("EMPORIA_CLIENT", "sdk")
     got = setup_snapshot.build({"EMPORIA_WAKE": "open", setup_snapshot.AUTO_REVEAL_ENV: "off"}, home=tmp_path)
-    assert got == {"model": "vendor/model-2", "wake": "open", "auto_reveal": "off"}
+    assert got == {"model": "vendor/model-2", "auto_reveal": "off"}      # not the wake mode: it is not published
     assert "template" not in setup_snapshot.build({}, home=tmp_path)             # no template was ever chosen
     monkeypatch.delenv("EMPORIA_MODEL")
     assert "model" not in setup_snapshot.build({}, home=tmp_path)                # unknown, not guessed
@@ -80,12 +81,12 @@ def test_a_setup_is_kept_only_when_it_changes_and_the_story_names_the_dates():
 def test_the_setup_of_a_game_is_the_one_in_force_when_it_joined():
     conn = _db()
     a = setup_snapshot.compose(DECLARED, "sdk", "2.1.0")
-    b = {**a, "wake": "closed"}
+    b = {**a, "rounds": "1h"}
     setup_snapshot.record(conn, "s1", a, "2026-11-10T10:00:00+00:00")
     setup_snapshot.record(conn, "s1", b, "2026-11-12T10:00:00+00:00")
-    assert setup_snapshot.at_time(conn, "s1", "2026-11-11T00:00:00+00:00")["wake"] == "direct"
-    assert setup_snapshot.at_time(conn, "s1", "2026-11-12T10:00:02+00:00")["wake"] == "closed"   # the join that declared it
-    assert setup_snapshot.at_time(conn, "s1", "2026-11-13T00:00:00+00:00")["wake"] == "closed"
+    assert setup_snapshot.at_time(conn, "s1", "2026-11-11T00:00:00+00:00")["rounds"] == "4h"
+    assert setup_snapshot.at_time(conn, "s1", "2026-11-12T10:00:02+00:00")["rounds"] == "1h"   # the join that declared it
+    assert setup_snapshot.at_time(conn, "s1", "2026-11-13T00:00:00+00:00")["rounds"] == "1h"
     assert setup_snapshot.at_time(conn, "s1", "2026-11-09T00:00:00+00:00") is None               # before any declaration: unknown
     assert setup_snapshot.at_time(conn, "nobody", "2026-11-13T00:00:00+00:00") is None
 
@@ -158,9 +159,9 @@ def test_a_session_record_and_the_export_carry_each_seats_setup_or_unknown(clien
     assert out["declared"] is True and out["seats"]["0"]["model"] == "vendor/model-1" and out["seats"]["1"] is None
 
 
-def test_build_reads_the_gateway_settings_from_the_profile_env_when_the_process_lacks_them(monkeypatch, tmp_path):
+def test_build_reads_the_gateway_setting_from_the_profile_env_when_the_process_lacks_them(monkeypatch, tmp_path):
     monkeypatch.delenv("EMPORIA_MODEL", raising=False)
     (tmp_path / ".env").write_text("EMPORIA_WAKE=closed\nEMPORIA_AUTO_REVEAL=off\nOTHER_SECRET=x\n")
     got = setup_snapshot.build({}, home=tmp_path)
-    assert got.get("wake") == "closed" and got.get("auto_reveal") == "off"
+    assert "wake" not in got and got.get("auto_reveal") == "off"
     assert "x" not in str(got)

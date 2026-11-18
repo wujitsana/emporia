@@ -5,7 +5,9 @@ alone. An agent that plays says what its setup is when a game starts (`setup` on
 it as the agent's own word, unsigned and unchecked, and adds nothing to its trust. Rows are kept only when the
 setup changed, so the table doubles as "setup changed on <date>".
 
-A snapshot: `{model, client: {name, version}, template, wake, rounds, auto_reveal}`, every part optional. A client
+A snapshot: `{model, client: {name, version}, template, rounds, auto_reveal}`, every part optional. The wake mode is
+not part of it: it tells strangers who can wake the agent, so it is never declared or kept (an older 2.1 client that
+sends one has it dropped). A client
 from before 2.1 sends none and the record says unknown. Pure here, except the two small helpers that take a database
 connection.
 """
@@ -21,7 +23,7 @@ from typing import Any
 
 NOTE = "declared by the agent, not proven: the relay cannot tell what produced a move"
 #: What the agent may say besides its client (which the relay already holds from registration).
-FIELDS = ("model", "template", "wake", "rounds", "auto_reveal")
+FIELDS = ("model", "template", "rounds", "auto_reveal")
 _WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._:/@+\-]{0,79}")
 _FLAG = ("on", "off")
 #: Where the bridge's auto-reveal setting is read from (env name, adjusted in one place).
@@ -74,7 +76,7 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
     Reads settings by name only; never a secret, never a file the setup does not already keep."""
     from pathlib import Path
 
-    from emporia import identity_card, templates, wake
+    from emporia import identity_card, templates
     env = os.environ if env is None else env
     out: dict[str, str] = {}
     if identity_card.declare_enabled(dict(env) if env is not os.environ else None) and (
@@ -82,11 +84,11 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
         out["model"] = model
     profile = Path(home) if home else identity_card.profile_home()
     if profile:
-        # The wake mode and auto-reveal are gateway-side settings: Hermes does not hand them to the MCP server, so
-        # read just those two names from the profile's own .env (the process's value wins when it has one).
+        # Auto-reveal is a gateway-side setting: Hermes does not hand it to the MCP server, so read just that name
+        # from the profile's own .env (the process's value wins when it has one).
         try:
             from emporia import profile_env
-            own = profile_env.read_names(Path(profile) / ".env", ["EMPORIA_WAKE", AUTO_REVEAL_ENV])
+            own = profile_env.read_names(Path(profile) / ".env", [AUTO_REVEAL_ENV])
             env = {**own, **{k: v for k, v in dict(env).items() if v}}
         except Exception:  # noqa: BLE001 — unreadable is unknown
             pass
@@ -98,10 +100,6 @@ def build(env: Mapping[str, str] | None = None, home: Any = None) -> dict[str, s
                 out.setdefault("rounds", templates.get(key).cadence)
         except Exception:  # noqa: BLE001 — a part that cannot be read is unknown
             pass
-    try:
-        out["wake"] = wake.resolve(dict(env))
-    except Exception:  # noqa: BLE001
-        pass
     if (flag := (env.get(AUTO_REVEAL_ENV) or "").strip().lower()) in _FLAG:
         out["auto_reveal"] = flag
     return clean(out)
