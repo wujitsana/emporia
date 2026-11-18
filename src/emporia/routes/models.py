@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from emporia import model_commit as mc
+from emporia import setup_snapshot
 from emporia import relay_server as rs
 from emporia import wire
 
@@ -42,6 +43,12 @@ def _player_standing(conn, session_id: str, stable_id: str) -> tuple[str, str, i
     status = mc.standing(commits, checked)
     model = mc.most_revealed({r["step"]: r["model"] for r in revealed if r["status"] == "ok"}) if status == mc.REVEALED else ""
     return status, model, len(commits), sum(1 for v in checked.values() if v == "ok")
+
+
+def _joined_at(conn, session_id: str, agent: str, s: dict[str, Any]) -> str:
+    row = conn.execute("SELECT joined_at FROM participants WHERE session_id = ? AND agent_id = ?",
+                       (session_id, agent)).fetchone()
+    return (row["joined_at"] if row else "") or s.get("created_at") or ""
 
 
 @router.post("/sessions/{session_id}/model-reveal")
@@ -101,10 +108,12 @@ async def game_models(session_id: str, request: Request):
             if not ended:
                 status = "committed" if committed else mc.NONE
             players[agent] = {"status": status, "model": model or None, "committed_steps": committed,
-                              "revealed_steps": ok, "declared": True}
+                              "revealed_steps": ok, "declared": True,
+                              # 2.1: the setup it declared when it joined (null = unknown: a client from before 2.1)
+                              "setup": setup_snapshot.at_time(conn, stable, _joined_at(conn, session_id, agent, s))}
     return {"session_id": session_id, "ended": ended, "players": players, "declared": True,
             "note": "model names are declared by the players and never verified; a missing or mismatched reveal "
-                    "never changes the outcome"}
+                    "never changes the outcome", "setup_note": setup_snapshot.NOTE}
 
 
 def results_by_model(games: list[dict[str, Any]], model_of: dict[tuple[str, str], str]) -> list[dict[str, Any]]:

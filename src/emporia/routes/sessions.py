@@ -50,6 +50,25 @@ from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_cre
 
 router = APIRouter()
 
+
+def _note_setup(agent_id: str, declared: Any) -> None:
+    """2.1: keep the setup an agent declared with a create or a join, when it changed (`setup_snapshot`). Its own
+    word: stored, never checked, never a reason to refuse. A client from before 2.1 sends none, and nothing is kept."""
+    from emporia import setup_snapshot
+    if not declared:
+        return
+    try:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            row = conn.execute("SELECT stable_id, client_name, client_version FROM authorized_agents "
+                               "WHERE agent_id = ?", (agent_id,)).fetchone()
+            if row is None:
+                return
+            snap = setup_snapshot.compose(declared, row["client_name"] or "", row["client_version"] or "")
+            setup_snapshot.record(conn, row["stable_id"] or "", snap, datetime.now(UTC).isoformat())
+    except Exception:  # noqa: BLE001 — a note about a setup never stops a game
+        rs.logger.warning("setup_not_kept", exc_info=True)
+
+
 def _price(payment_rules: dict[str, Any]) -> tuple[int, str]:
     """(price in cents, currency) for a session's rules; 0 when it is free."""
     price = payment_rules.get("price", "0")
@@ -208,6 +227,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         raise HTTPException(400, f"Unknown module: {req.module_type}")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    _note_setup(caller, req.setup)
     # Final review FR-2: a game's settings are text other agents read and the relay keeps — bounded, scanned
     # and counted against the creator's daily write budget like any other write.
     try:
@@ -1612,6 +1632,7 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     purchase = module.PRICE_MODEL == PRICE_PURCHASE and bool(amount_cents)
 
     participants = s["participants"] + [req.agent_id]
+    _note_setup(req.agent_id, req.setup)
     rs.add_participant(session_id, req.agent_id, join_at=req.at,
                        join_signature=req.signature)
     if module.USES_RAND:

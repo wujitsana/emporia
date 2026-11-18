@@ -622,10 +622,10 @@ def test_finish_reads_the_sheet_from_sessions_and_never_reaches_boards_or_allowa
     monkeypatch.setattr(st, "get_interaction_module", lambda _t: Module())
     monkeypatch.setattr(st.SessionState, "from_dict", classmethod(lambda cls, d: d))
     monkeypatch.setattr(rs, "_session_visibility", lambda s: "public")
-    row = st._finish_of(ann, sessions, frozenset())
+    row = st._finish_and_setup(ann, sessions, frozenset())[0]
     assert row["n"] == 10 and row["passed"] == 8 and row["shown"] and row["by_bridge"] == 1 and row["by_agent"] == 7
     assert row["missed"] == {"clock": 1, "game": 1}
-    assert st._finish_of(ann, sessions, frozenset({zed}))["n"] == 0                  # house games count nothing
+    assert st._finish_and_setup(ann, sessions, frozenset({zed}))[0]["n"] == 0                  # house games count nothing
     # never on a board, never in allowance
     for src in (inspect.getsource(allowance), inspect.getsource(caliber.board)):
         assert '"finish"' not in src and "'finish'" not in src and "caliber.finish" not in src
@@ -636,10 +636,10 @@ def test_an_old_sheet_without_finish_still_renders():
     text = progression.render({"agent_id": "ann", "craft": {}, "caliber": None})
     assert "Finish" not in text
     shown = caliber.finish([_ob("ann", True)] * 9 + [_ob("ann", True, "reveal", "bridge")])["ann"]
-    out = "\n".join(progression._render_finish(shown))
+    out = "\n".join(progression._render_finish(shown, None))
     assert "10 of 10 obligations completed" in out and "1 by its bridge" in out and "setup finishing" in out
-    assert "so far" in "\n".join(progression._render_finish(caliber.finish([_ob("ann", True)])["ann"]))
-    assert progression._render_finish(None) == []
+    assert "so far" in "\n".join(progression._render_finish(caliber.finish([_ob("ann", True)])["ann"], None))
+    assert progression._render_finish(None, None) == []
 
 
 def test_the_sheet_carries_finish_additively_and_hidden_for_a_new_agent(w):

@@ -1301,11 +1301,12 @@ def _standing_next(agent_id: str, sheet: dict) -> dict:
             "operators_here": others, "operators_met": met, "counting": others > 0}
 
 
-def _finish_of(agent_id: str, sessions: list[dict], house: set[str]) -> dict:
-    """Caliber's Finish (a floor: never ranked, never on a board, never feeds allowance). Finish counts the agent's public, non-practice games and its services, the Assay and the Chronicle, house
+def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> tuple[dict, dict]:
+    """Caliber's Finish (a floor: never ranked, never on a board, never feeds allowance) and the agent's declared
+    setup. Finish counts the agent's public, non-practice games and its services, the Assay and the Chronicle, house
     games excluded as Follow excludes them; it counts own-operator games too, because what it measures is whether the
     setup completes, not whom it played, and nothing is paid for it."""
-    from emporia import caliber
+    from emporia import caliber, setup_snapshot
     with rs.DB_LOCK, rs.get_db() as conn:
         acts: dict[str, list[tuple[str, Any]]] = {}
         for r in conn.execute("SELECT session_id, action_type, payload_json FROM actions WHERE agent_id = ?",
@@ -1315,6 +1316,9 @@ def _finish_of(agent_id: str, sessions: list[dict], house: set[str]) -> dict:
             except ValueError:
                 payload = {}
             acts.setdefault(r["session_id"], []).append((r["action_type"], payload))
+        stable = (conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+                  or {"stable_id": ""})["stable_id"] or ""
+        setup = setup_snapshot.story(conn, stable)
     obligations: list[dict] = []
     game_types = set(game_module_types())
     for sess in sessions:
@@ -1340,7 +1344,7 @@ def _finish_of(agent_id: str, sessions: list[dict], house: set[str]) -> dict:
     if relay_modules.on("assay", "trials") or relay_modules.on("chronicle", "book"):
         from emporia.routes import assay as assay_routes
         obligations += assay_routes.finish_obligations(agent_id)
-    return caliber.finish_row(caliber.finish(obligations), agent_id)
+    return caliber.finish_row(caliber.finish(obligations), agent_id), setup
 
 
 def _sheet_body(agent_id: str) -> dict:
@@ -1389,13 +1393,13 @@ def _sheet_body(agent_id: str) -> dict:
     if relay_modules.on("assay", "trials"):          # Caliber: a reading on the sheet, it moves nothing else
         from emporia.routes import assay as assay_routes
         cal = assay_routes.agent_caliber(agent_id)
-    finish = _finish_of(agent_id, kept, house)
+    finish, setup = _finish_and_setup(agent_id, kept, house)
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
                                       likes=likes, house=house, word=word, caliber=cal, tiers=_renown_tiers(),
                                       second_order=_second_order_of(agent_id)),
              **({"improvements": improvements} if improvements is not None else {}),
-             "finish": finish,                       # 2.1, additive: a floor (never ranked)
+             "finish": finish, "setup": setup,       # 2.1, additive: a floor (never ranked) and the declared setup
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              **({"overall_level": lv} if (lv := agent_level(agent_id)) is not None else {}),

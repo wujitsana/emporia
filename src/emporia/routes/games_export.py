@@ -43,6 +43,20 @@ def _seats(s: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _setups(s: dict[str, Any], seats: list[dict[str, Any]]) -> dict[str, Any]:
+    """2.1, additive: the setup each seat declared when it joined (null = unknown). Declared, never proven, and
+    outside everything `verify_line` checks."""
+    from emporia import setup_snapshot
+    out: dict[str, Any] = {"declared": True, "note": setup_snapshot.NOTE, "seats": {}}
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for seat in seats:
+            row = conn.execute("SELECT joined_at FROM participants WHERE session_id = ? AND agent_id = ?",
+                               (s["session_id"], seat["agent_id"])).fetchone()
+            at = (row["joined_at"] if row else "") or s.get("created_at") or ""
+            out["seats"][str(seat["seat"])] = setup_snapshot.at_time(conn, seat["stable_id"], at)
+    return out
+
+
 def _talk(session_id: str) -> dict[str, Any]:
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT message_id, agent_id, content, created_at, kind, reply_to, root, step "
@@ -68,6 +82,7 @@ def line_of(s: dict[str, Any]) -> dict[str, Any] | None:
     rand_part = data.get("rand") if module.USES_RAND else None
     body = game_export.referee_body(s["session_id"], s["module_type"], result)
     from emporia import identity
+    seats = _seats(s)
     return {
         "format": game_export.FORMAT,
         "session_id": s["session_id"],
@@ -77,7 +92,8 @@ def line_of(s: dict[str, Any]) -> dict[str, Any] | None:
         "status": s["status"],
         "created_at": s["created_at"],
         "ended_at": s["updated_at"],
-        "seats": _seats(s),
+        "seats": seats,
+        "setups": _setups(s, seats),
         "moves": get_public_log(s["session_id"]),
         "table_talk": _talk(s["session_id"]),
         "rand": rand_part,

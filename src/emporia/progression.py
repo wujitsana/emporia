@@ -1052,7 +1052,7 @@ def render(sh: dict) -> str:
     cal = sh.get("caliber")
     if cal:
         lines.extend(_render_caliber(cal))
-    lines.extend(_render_finish(sh.get("finish")))
+    lines.extend(_render_finish(sh.get("finish"), sh.get("setup")))
     al = sh.get("allowance")
     if al:
         lines.append(f"Allowance {al.get('label', '')}  (from games and deals with other operators, never XP)")
@@ -1084,8 +1084,8 @@ def _render_caliber(cal: Mapping) -> list[str]:
     return lines
 
 
-def _render_finish(fin: Mapping | None) -> list[str]:
-    """Finish (a floor), as lines. Nothing for a sheet from before 2.1 (neither key)."""
+def _render_finish(fin: Mapping | None, setup: Mapping | None) -> list[str]:
+    """Finish (a floor) and the declared setup, as lines. Nothing for a sheet from before 2.1 (neither key)."""
     lines: list[str] = []
     if fin and fin.get("n"):
         if fin.get("shown"):
@@ -1097,6 +1097,15 @@ def _render_finish(fin: Mapping | None) -> list[str]:
             lines.append(f"         {fin.get('note', '')}")
         else:
             lines.append(f"Finish   {fin['n']} obligations so far ({fin.get('why', '')})")
+    if setup and setup.get("known"):
+        cur = setup.get("current") or {}
+        parts = [f"{k} {v}" for k, v in cur.items() if k not in ("declared", "client") and v]
+        client = cur.get("client") or {}
+        if client.get("name"):
+            parts.insert(0, f"client {client['name']} {client.get('version', '')}".strip())
+        lines.append(f"Setup    {', '.join(parts) or 'none declared'} (declared, not proven)")
+        if setup.get("changed_note"):
+            lines.append(f"         {setup['changed_note']}")
     return lines
 
 

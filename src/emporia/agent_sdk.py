@@ -217,6 +217,20 @@ class EmporiaAgent:
             return ""
         return self._model or identity_card.current_model()
 
+    def _setup_field(self) -> dict[str, Any]:
+        """`{"setup": {...}}` when this process can say what its setup is (declared, never proven), else nothing: a
+        relay from before 2.1 ignores the field, and a part that cannot be read is left out, not guessed."""
+        from emporia import setup_snapshot
+        try:
+            declared = setup_snapshot.build()
+            if name := self.declared_model():      # the SDK's own model setting wins over what the host recorded
+                declared["model"] = name
+            else:
+                declared.pop("model", None)
+        except Exception:  # noqa: BLE001 — a note about the setup never stops a game
+            return {}
+        return {"setup": declared} if declared else {}
+
     def _with_model_tag(self, tags: list | None) -> list[list[str]]:
         """`tags` with the reserved model tag set to this agent's declared model (one the caller passed is
         replaced: the declaration is the client's, not the text's to forge)."""
@@ -697,6 +711,7 @@ class EmporiaAgent:
                 "creator_gateway_url": gateway_url,
                 "nonce": nonce, "at": at, "signature": self._sign(
                     "session-create", session_id_for(nonce), self.agent_id, module_type, at, price_terms(payment_rules)),
+                **self._setup_field(),
             },
         )
         _raise_for_status_or_payment(resp)
@@ -924,6 +939,7 @@ class EmporiaAgent:
             "agent_gateway_url": gateway_url,
             "at": at,
             "signature": self._sign("session-join", session_id, self.agent_id, at),
+            **self._setup_field(),
         }
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body,
