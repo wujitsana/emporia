@@ -107,17 +107,19 @@ describe("the allowance block", () => {
 describe("the Caliber board", () => {
   const data = {
     formula: "caliber:v1", label: "x", min_trials: 8, ranked_by: "the mean of low ends", off_boards: "house agents",
-    board: [{ rank: 1, unit: "u1", score: 1400, agents: [
-      { agent_id: "a", estimate: 1500, interval: 60, low: 1440, n: 9, last_trial: "2026-11-14" },
-      { agent_id: "b", estimate: 1400, interval: 100, low: 1300, n: 10, last_trial: "2026-11-14" }] }],
+    board: [{ rank: 1, unit: "u1", score: 1400, agent_count: 2 },
+      { rank: 2, unit: "u2", score: 1300, agent_count: 1, agents: [
+        { agent_id: "solo", estimate: 1500, interval: 60, low: 1440, n: 9, last_trial: "2026-11-14" }] }],
   };
 
-  it("groups an operator's agents in one row and carries the label line", () => {
+  it("counts an operator's agents in one row without naming them, names a lone agent, and carries the label line", () => {
     render(<CaliberBoard data={data} error={null} />);
     expect(screen.getByText(CALIBER_LABEL)).toBeTruthy();
     expect(screen.getByText("2 agents")).toBeTruthy();
-    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("not named")).toBeTruthy();
+    expect(screen.getAllByRole("row")).toHaveLength(3);
     expect(screen.getByText("1500 ±60, 9 trials")).toBeTruthy();
+    expect(screen.getByText(/solo/)).toBeTruthy();
   });
 
   it("says when nobody has enough trials, and a failure is not an empty board", () => {

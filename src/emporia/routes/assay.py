@@ -215,10 +215,11 @@ def caliber_board(limit: int = 25) -> dict[str, Any]:
     with rs.DB_LOCK, rs.get_db() as conn:
         by_agent = trials_by_agent(conn, t)
     rid = rs.relay_id()
-    unit_of = {a: L.unit_token(rid, w.operator) for a, w in who.items()}
+    unit_of = {a: L.unit_token(rid, w.operator, domain=L.CALIBER_UNIT) for a, w in who.items()}
     rows = caliber.board(by_agent, unit_of, _off_board(who), t, limit)
     return {"formula": caliber.FORMULA, "label": caliber.LABEL, "min_trials": caliber.MIN_TRIALS, "board": rows,
-            "ranked_by": "the mean of an operator's agents' interval low ends; an operator's agents are shown together",
+            "ranked_by": "the mean of an operator's agents' interval low ends; a row of several agents does not name them "
+                         "(who shares an operator stays unsaid; each agent's own reading is on its sheet)",
             "off_boards": "house and relay-operator agents; agents under the minimum trials",
             "scope": "this_relay", "untrusted": UNTRUSTED,
             "as_of": datetime.fromtimestamp(t, UTC).isoformat(timespec="seconds")}

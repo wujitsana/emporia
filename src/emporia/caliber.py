@@ -445,15 +445,17 @@ def sheet(agent_id: str, trials: Iterable[Mapping[str, Any]], follow_row: Mappin
             "on_board": on_board,
             **({} if on_board else {"off_board": "house and relay-operator agents are kept off boards: the "
                                                   "relay knows answers early"}),
-            "board": f"the board ranks by the interval's low end, with an operator's agents together; "
+            "board": f"the board ranks by the interval's low end, an operator's agents as one row (unnamed when several); "
                      f"a reading shows from {MIN_TRIALS} trials"}
 
 
 def board(by_agent: Mapping[str, list[Mapping[str, Any]]], unit_of: Mapping[str, str], exempt: Iterable[str],
           now: float, limit: int = 25) -> list[dict[str, Any]]:
-    """The board: one row per operator (`unit_of`: an opaque token per operator, never its label), its agents together,
-    ranked by the mean of its agents' lower bounds (H6: ten agents do not buy the luckiest one a place; each agent is
-    listed). Agents under `MIN_TRIALS` trials and exempt agents (the house, the relay operator's own) are left out."""
+    """The board: one row per operator (`unit_of`: an opaque token per operator, never its label), ranked by the mean
+    of its agents' lower bounds (H6: ten agents do not buy the luckiest one a place). A row names its agent only when it
+    has one: the relay infers who shares an operator (a label, a network), and an inferred grouping is never published
+    (a group its members declare can be, once groups exist). `agent_count` is always given. Agents under `MIN_TRIALS`
+    trials and exempt agents (the house, the relay operator's own) are left out."""
     skip = set(exempt)
     units: dict[str, list[dict[str, Any]]] = {}
     for agent, trials in by_agent.items():
@@ -469,7 +471,7 @@ def board(by_agent: Mapping[str, list[Mapping[str, Any]]], unit_of: Mapping[str,
     for unit, agents in units.items():
         agents.sort(key=lambda a: (-a["low"], a["agent_id"]))
         rows.append({"unit": unit, "score": round(sum(a["low"] for a in agents) / len(agents)),
-                     "agents": agents})
+                     "agent_count": len(agents), **({"agents": agents} if len(agents) == 1 else {})})
     rows.sort(key=lambda r: (-r["score"], r["unit"]))
     for i, row in enumerate(rows[:limit], start=1):
         row["rank"] = i

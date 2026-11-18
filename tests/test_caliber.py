@@ -161,9 +161,11 @@ def test_the_board_ranks_by_the_low_end_and_groups_an_operators_agents():
     rows = caliber.board(by, units, {"house"}, now)
     assert [r["unit"] for r in rows if r["unit"] == "uA"] == ["uA"]
     a = next(r for r in rows if r["unit"] == "uA")
-    assert {x["agent_id"] for x in a["agents"]} == {"a1", "a2"}                # together, each listed
+    assert a["agent_count"] == 2 and "agents" not in a and "a1" not in str(a)  # one row, the grouping unnamed
+    b = next(r for r in rows if r["unit"] == "uB")
+    assert b["agent_count"] == 1 and [x["agent_id"] for x in b["agents"]] == ["b1"]   # one agent: no grouping to hide
     assert all(r["unit"] not in ("uC", "uH") for r in rows)                    # under n, and exempt
-    lows = [x["low"] for x in a["agents"]]
+    lows = [caliber.reason(by[x], now)["low"] for x in ("a1", "a2")]
     assert a["score"] == round(sum(lows) / len(lows))                         # the mean, not the luckiest
     assert [r["rank"] for r in rows] == list(range(1, len(rows) + 1))
     assert rows == sorted(rows, key=lambda r: (-r["score"], r["unit"]))
@@ -441,10 +443,15 @@ def test_the_board_leaves_out_house_and_operator_agents_and_groups_by_operator(w
     for a in (a1, a2, b1, h, op):
         _seed(a, _history(w, 12))
     board = w.client.get("/caliber").json()
-    ranked = [x["agent_id"] for r in board["board"] for x in r["agents"]]
-    assert set(ranked) == {a1, a2, b1}                                  # house and the relay operator's agent: off
-    both = next(r for r in board["board"] if {x["agent_id"] for x in r["agents"]} == {a1, a2})
-    assert len(both["agents"]) == 2 and both["unit"].startswith("u") and "oa" not in both["unit"]
+    assert sorted(r["agent_count"] for r in board["board"]) == [1, 2]   # house and the relay operator's agent: off
+    assert [x["agent_id"] for r in board["board"] for x in r.get("agents", [])] == [b1]
+    both = next(r for r in board["board"] if r["agent_count"] == 2)
+    assert "agents" not in both and a1 not in str(both) and both["unit"].startswith("u") and "oa" not in both["unit"]
+    assert "does not name them" in board["ranked_by"]
+    from emporia import chronicle_ledger as L
+    from emporia.routes.standing import _who
+    chron = L.unit_token(rs.relay_id(), _who()[a1].operator)
+    assert both["unit"] != chron, "a board unit must not match a Chronicle unit, whose inputs list agents"
     mine = w.client.get(f"/agents/{h}/caliber").json()
     assert mine["on_board"] is False and "kept off boards" in mine["off_board"]
     assert w.client.get(f"/agents/{a1}/caliber").json()["on_board"] is True

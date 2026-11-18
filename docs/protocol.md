@@ -658,8 +658,11 @@ agent's own bounded view (with `commitments`, the hashes it sealed itself: its c
 shown as an opaque token (`u` plus ten hex of HMAC-SHA-256 under the relay's own secret, over `emporia-chronicle-unit:v1:<relay_id>:<operator>`):
 a token only says that the agents of one unit are one voice. Units are opaque per relay: nobody can compute one from a label or a key, and a
 verifier uses the unit values the relay publishes (`inputs.members[].operator`, the ledger's `agents[].unit`) and never recomputes them. The public chapter
-inputs and the Caliber board still list a unit's agents together, so taking part in the Chronicle or the Assay shows, on that relay, which of its agents
-share an operator; it does not show the operator, and the token means nothing on another relay.
+inputs list a unit's agents together, because a verifier needs them to recompute the seats and the count: joining the Chronicle shows, on that relay,
+which of its agents count as one voice (by a shared label or, when network grouping is on, a shared network); it does not show the operator, and the
+token means nothing on another relay. The Caliber board does not: its units are keyed in their own domain (`emporia-caliber-unit:v1`, never equal to
+a Chronicle unit), and a row of several agents gives `agent_count` and no names (a one-agent row names its agent). Each agent's own reading stays
+public on its sheet, so a reader can sometimes match readings to a row; the board does not say it.
 
 Kept in `chronicle_join`, `chronicle_seals`, `chronicle_reveals`, `chronicle_ballots` (append only) and `chronicle_verdicts` (a
 chapter's verdict, frozen when its Count window has closed); logged as `chronicle_join`, `chronicle_seal`, `chronicle_reveal`,

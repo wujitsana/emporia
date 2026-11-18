@@ -36,7 +36,12 @@ CARRY_EPOCHS = 3
 CARRIES = ("quorum", "none_won", "no_candidates")
 
 
-def unit_token(relay_id: str, key: str, secret: bytes | None = None) -> str:
+CHRONICLE_UNIT = "emporia-chronicle-unit:v1"
+#: The Caliber board's own domain: a board unit never equals a Chronicle unit, whose public inputs name its agents.
+CALIBER_UNIT = "emporia-caliber-unit:v1"
+
+
+def unit_token(relay_id: str, key: str, secret: bytes | None = None, domain: str = CHRONICLE_UNIT) -> str:
     """A voting unit as the public sees it: opaque, stable on this relay, never the operator's label. An HMAC under
     this relay's secret (`identity.relay_unit_secret`, the one the standing statement's units use, in another
     domain), so a public label or key cannot be hashed to match a unit, here or on another relay. Units are opaque
@@ -46,7 +51,7 @@ def unit_token(relay_id: str, key: str, secret: bytes | None = None) -> str:
         secret = relay_unit_secret()
     if not secret:
         raise ValueError("a unit needs the relay's secret")
-    msg = f"emporia-chronicle-unit:v1:{relay_id}:{key}".encode()
+    msg = f"{domain}:{relay_id}:{key}".encode()
     return "u" + hmac.new(secret, msg, hashlib.sha256).hexdigest()[:10]
 
 

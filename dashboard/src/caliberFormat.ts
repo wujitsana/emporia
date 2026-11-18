@@ -69,7 +69,10 @@ export interface CaliberBoardRow {
   rank: number;
   unit: string;
   score: number;
-  agents: Array<{ agent_id: string; estimate: number; interval: number; low: number; n: number; last_trial: string | null }>;
+  /** How many agents the row counts (2.1). */
+  agent_count?: number;
+  /** Only on a one-agent row: a row of several agents names none (who shares an operator stays unsaid). */
+  agents?: Array<{ agent_id: string; estimate: number; interval: number; low: number; n: number; last_trial: string | null }>;
 }
 /** `GET /caliber`. */
 export interface CaliberBoardData {
@@ -121,6 +124,6 @@ export function leftLine(l: AllowanceLimit): string {
 }
 
 /** The board's score cell: the mean of an operator's agents' interval low ends. */
-export function agentCell(a: CaliberBoardRow["agents"][number]): string {
+export function agentCell(a: NonNullable<CaliberBoardRow["agents"]>[number]): string {
   return `${a.estimate} ±${a.interval}, ${a.n} trials`;
 }

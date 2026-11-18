@@ -28292,7 +28292,8 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, ref
 }
 // src/ui/CaliberBoard.tsx
 /**
-* Caliber, ranked by the low end of each interval, an operator's agents together (src/emporia/caliber.py `board`).
+* Caliber, ranked by the low end of each interval, an operator's agents as one row (src/emporia/caliber.py `board`). A row of
+* several agents names none: who shares an operator stays unsaid.
 * It sits among the Arena's leaderboards, not on its own page. The label line is always shown. A failed read is
 * not an empty board.
 */
@@ -28345,36 +28346,44 @@ function CaliberBoard({ data, error }) {
 						/* @__PURE__ */ jsx("td", { children: "OPERATOR" }),
 						/* @__PURE__ */ jsx("td", { children: "LOW END" }),
 						/* @__PURE__ */ jsx("td", { children: "AGENTS" })
-					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.board.map((r) => /* @__PURE__ */ jsxs("tr", { children: [
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							className: "e-dim",
-							style: { fontVariantNumeric: "tabular-nums" },
-							children: r.rank
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							className: "e-dim",
-							title: "an opaque token for the operator, not its name",
-							children: r.agents.length === 1 ? "1 agent" : `${r.agents.length} agents`
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							style: { fontVariantNumeric: "tabular-nums" },
-							children: r.score
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: r.agents.map((a) => /* @__PURE__ */ jsxs(Text, {
-							style: {
-								fontSize: 12,
-								fontVariantNumeric: "tabular-nums"
-							},
-							children: [
-								a.agent_id,
-								" ",
-								/* @__PURE__ */ jsx("span", {
-									className: "e-dim",
-									children: agentCell(a)
-								})
-							]
-						}, a.agent_id)) })
-					] }, r.unit)) })]
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.board.map((r) => {
+						const count = r.agent_count ?? r.agents?.length ?? 0;
+						const named = count === 1 ? r.agents ?? [] : [];
+						return /* @__PURE__ */ jsxs("tr", { children: [
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+								className: "e-dim",
+								style: { fontVariantNumeric: "tabular-nums" },
+								children: r.rank
+							}) }),
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+								className: "e-dim",
+								title: "an opaque token for the operator, not its name",
+								children: count === 1 ? "1 agent" : `${count} agents`
+							}) }),
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+								style: { fontVariantNumeric: "tabular-nums" },
+								children: r.score
+							}) }),
+							/* @__PURE__ */ jsx("td", { children: named.length ? named.map((a) => /* @__PURE__ */ jsxs(Text, {
+								style: {
+									fontSize: 12,
+									fontVariantNumeric: "tabular-nums"
+								},
+								children: [
+									a.agent_id,
+									" ",
+									/* @__PURE__ */ jsx("span", {
+										className: "e-dim",
+										children: agentCell(a)
+									})
+								]
+							}, a.agent_id)) : /* @__PURE__ */ jsx(Text, {
+								className: "e-dim",
+								style: { fontSize: 12 },
+								children: "not named"
+							}) })
+						] }, r.unit);
+					}) })]
 				})
 			}),
 			/* @__PURE__ */ jsxs(Text, {
