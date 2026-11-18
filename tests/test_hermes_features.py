@@ -494,3 +494,59 @@ def test_the_dashboard_reads_the_rounds_state_through_two_read_only_cron_command
     monkeypatch.setattr(api, "_hermes_cron", boom)
     assert api._rounds_status()["error"]
     api._rounds_cache.update({"at": 0.0, "value": None})
+
+
+def test_setup_asks_self_review_recommends_off_and_keeps_the_persons_choice(tmp_path, monkeypatch):
+    from emporia import cli
+    asked = []
+    monkeypatch.setattr(cli, "choose_setting", lambda key, *a, **k: asked.append(key) or "on")
+    monkeypatch.setattr(cli, "heading", lambda *a, **k: None)
+    # a terminal: the person is asked, the answer is written to this profile's own config.yaml
+    monkeypatch.setattr(cli, "_TTY", True)
+    p = _profile(tmp_path, {"auxiliary": {"vision": {"model": "m"}}})
+    cli._setup_self_review(p, existing=True, fast=False)
+    cfg = yaml.safe_load((p / "config.yaml").read_text())
+    assert asked == ["self_review"]
+    assert cfg["auxiliary"] == {"vision": {"model": "m"}, "background_review": {"enabled": True}}
+    # running setup again does not ask and does not undo the choice
+    monkeypatch.setattr(cli, "choose_setting", lambda key, *a, **k: asked.append(key) or "off")
+    cli._setup_self_review(p, existing=True, fast=False)
+    assert asked == ["self_review"]
+    assert yaml.safe_load((p / "config.yaml").read_text())["auxiliary"]["background_review"]["enabled"] is True
+    # the all-yes path (no questions) and a new profile without a terminal take the recommended value: off
+    monkeypatch.setattr(cli, "_TTY", False)
+    q = _profile(tmp_path.parent / (tmp_path.name + "_fast"), {})
+    cli._setup_self_review(q, existing=True, fast=True)
+    assert yaml.safe_load((q / "config.yaml").read_text())["auxiliary"]["background_review"]["enabled"] is False
+    n = _profile(tmp_path.parent / (tmp_path.name + "_new"))
+    cli._setup_self_review(n, existing=False, fast=False)
+    assert yaml.safe_load((n / "config.yaml").read_text())["auxiliary"]["background_review"]["enabled"] is False
+    # an existing profile without a terminal is left alone (doctor says so)
+    o = _profile(tmp_path.parent / (tmp_path.name + "_old"), {"display": {"skin": "x"}})
+    cli._setup_self_review(o, existing=True, fast=False)
+    assert "auxiliary" not in yaml.safe_load((o / "config.yaml").read_text())
+    assert asked == ["self_review"], "never asked without a terminal"
+
+
+def test_the_self_review_question_explains_the_setting_and_marks_off_as_recommended():
+    from emporia import setup_choices as sc
+    c = sc.CHOICES["self_review"]
+    assert c.default == "off" and [o.value for o in c.options] == ["off", "on"]
+    assert "strangers" in c.matters and "auxiliary.background_review" in c.matters
+    assert all(o.effect for o in c.options) and "(recommended)" in "\n".join(label for _, label in c.labels())
+    lines = "\n".join(sc.installed_lines({}, role="marketplace", keys="env", wallets=[], rounds="", self_review="off"))
+    assert "Self-review" in lines and "auxiliary.background_review.enabled" in lines
+
+
+def test_doctor_warns_when_the_background_review_is_on(capsys):
+    from emporia import cli
+    cli.doctor_self_review(cli.Report(), {}, "alpha")          # no key: Hermes's default, on
+    out = capsys.readouterr().out
+    assert "automatic memory and skill review is on" in out
+    assert "hermes -p alpha config set auxiliary.background_review.enabled false" in out
+    cli.doctor_self_review(cli.Report(), {"auxiliary": {"background_review": {"enabled": True}}}, "default")
+    assert "hermes config set auxiliary.background_review.enabled false" in capsys.readouterr().out
+    for off in (False, "false", "off"):
+        cli.doctor_self_review(cli.Report(), {"auxiliary": {"background_review": {"enabled": off}}}, "alpha")
+        out = capsys.readouterr().out
+        assert "is on" not in out and "no automatic memory and skill review" in out

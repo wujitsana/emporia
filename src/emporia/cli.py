@@ -3987,6 +3987,51 @@ def _setup_busy_input(profile: Path, existing: bool, fast: bool) -> None:
                    + (" (a second event waits for the running turn instead of aborting it)" if mode == "queue" else "")))
 
 
+def _review_setting(config: dict) -> object:
+    """`auxiliary.background_review.enabled` as the profile's config names it (None when it does not)."""
+    aux = config.get("auxiliary") if isinstance(config.get("auxiliary"), dict) else {}
+    task = aux.get("background_review") if isinstance(aux.get("background_review"), dict) else {}
+    return task.get("enabled")
+
+
+def _review_is_on(config: dict) -> bool:
+    """Hermes reviews in the background unless the profile turns it off (a missing key means on)."""
+    value = _review_setting(config)
+    if value is None:
+        return True
+    return str(value).strip().lower() not in ("false", "0", "no", "off")
+
+
+def _setup_self_review(profile: Path, existing: bool, fast: bool) -> None:
+    """setup's self-review question: Hermes's automatic memory and skill review (a forked copy of the whole
+    conversation). Written to this agent profile's own config.yaml (`auxiliary.background_review.enabled`; the
+    profile setup is working on, never another). A profile that already names a value keeps it, so running setup
+    again never undoes the person's choice. Recommended: off (the all-yes path and a new profile without a
+    terminal take it); an existing profile without a terminal is left alone, and `emporia doctor` says so."""
+    inst = installer()
+    path = profile / "config.yaml"
+    config = inst.load_yaml(path) if path.exists() else {}
+    if _review_setting(config) is not None:
+        return
+    if _TTY:
+        heading("Self-review", "Whether Hermes reviews this agent's conversations in the background to save "
+                               "memories and skills.")
+        on = choose_setting("self_review") == "on"
+    elif fast or not existing:
+        on = False
+    else:
+        return
+    aux = config.get("auxiliary") if isinstance(config.get("auxiliary"), dict) else {}
+    task = aux.get("background_review") if isinstance(aux.get("background_review"), dict) else {}
+    task["enabled"] = on
+    aux["background_review"] = task
+    config["auxiliary"] = aux
+    inst.save_yaml(path, config)
+    print(localize(f"  + auxiliary.background_review.enabled: {str(on).lower()}"
+                   + ("" if on else " (no background review of strangers' conversations: fewer tokens, no write path "
+                                    "into memory or skills)")))
+
+
 def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
     """setup's bio question, asked before the agent registers so its first card carries it. `about` is
     `--about` (a text, "" for none) or None. An agent that already has a bio keeps it; without a terminal a new
@@ -4235,7 +4280,10 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
                                    name=name, accepts=accepts,
-                                   template=__import__("emporia.templates", fromlist=["x"]).current(profile)):
+                                   template=__import__("emporia.templates", fromlist=["x"]).current(profile),
+                                   self_review="on" if _review_is_on(
+                                       installer().load_yaml(profile / "config.yaml")
+                                       if (profile / "config.yaml").exists() else {}) else "off"):
         print(localize(line))
     if rounds:
         from emporia import rounds as R
@@ -6447,6 +6495,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
     if not wide:
         doctor_relay_toolsets(rep, cfg)
     doctor_busy_input(rep, cfg, name)
+    doctor_self_review(rep, cfg, name)
     doctor_hermes_version(rep)
     doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
@@ -6505,6 +6554,19 @@ def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
         rep.warn("display.busy_input_mode is not queue: a second event in the same conversation aborts the running "
                  "turn, and the agent's move with it",
                  f"hermes {scope}config set display.busy_input_mode queue (it also applies to this profile's own chats)")
+
+
+def doctor_self_review(rep: Report, cfg: dict, name: str) -> None:
+    """Hermes forks a copy of the whole conversation after a few turns to save memories and skills. On an agent
+    that talks to strangers that is extra tokens and a write path for their text; setup asks (recommended: off)."""
+    if not _review_is_on(cfg):
+        rep.ok("no automatic memory and skill review in the background (auxiliary.background_review is off)")
+        return
+    scope = f"-p {name} " if name != "default" else ""
+    rep.warn("Hermes's automatic memory and skill review is on: it copies whole conversations, strangers' text "
+             "included, to a background run that can write memory and skills, and costs tokens",
+             f"hermes {scope}config set auxiliary.background_review.enabled false (it also applies to this "
+             "profile's own chats)")
 
 
 def doctor_hermes_version(rep: Report) -> None:
@@ -7838,6 +7900,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
     _setup_busy_input(profile, existing, fast)
+    _setup_self_review(profile, existing, fast)
     template_key = _setup_template(profile, name, args, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     if template_key:
