@@ -1156,8 +1156,9 @@ def _season_standing_body(s: dict, per: dict, ctx, exp, now: float) -> dict:
     from emporia import quest_engine as QE
     window = {"started_at": s.get("started_at"), "ends_at": s.get("ends_at")}
     per = QE.season_records(per, window)    # hash exactly what the standing is computed from: nothing after the end
+    exp = QE.season_expeditions(exp, window)    # the expeditions too: one posted after the end names no week's quest
     return {"season": s["season"], "formula": QE.SEASON_FORMULA, "window": window,
-            "records_hash": QE.records_hash(per),
+            "records_hash": QE.records_hash(per, exp),
             "standings": QE.season_standings(per, ctx, window, now, exp) if ctx else []}
 
 

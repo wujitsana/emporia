@@ -559,6 +559,19 @@ def season_records(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Map
     return {a: (_before(evs, "at", end), _before(games, "ended_at", end)) for a, (evs, games) in per_agent.items()}
 
 
+def season_expeditions(expeditions: Iterable[Mapping], window: Mapping) -> list[Mapping]:
+    """The expeditions a season's standing is a function of: those posted before the window's end. A week's quest
+    is named by the newest expedition posted before that week ended, so one posted (or removed) after the season's
+    end, in the season's last week, would change a frozen standing's recompute. Cut like `season_records`."""
+    end = _window_cut(window.get("ends_at"))
+    out = []
+    for x in expeditions:
+        t = _iso(x.get("posted_at") or x.get("created_at"))
+        if t is not None and (end is None or t.timestamp() < end):
+            out.append(x)
+    return out
+
+
 def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mapping], ctx: Ctx, window: Mapping,
                now: float | None = None, expeditions: Iterable[Mapping] = ()) -> dict:
     """An agent's season: `xp` earned in the window, and its `level` and `badges` as of the window's end.
@@ -580,14 +593,22 @@ def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mappi
     return {"xp": max(0, upto["xp"] - base), "level": upto["level"]["level"], "badges": len(upto["badges"])}
 
 
-def records_hash(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]]) -> str:
-    """A hash of the records a standing was computed from: each agent's events and play games, sorted."""
+def records_hash(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]],
+                 expeditions: Iterable[Mapping] = ()) -> str:
+    """A hash of the records a standing was computed from: each agent's events and play games, sorted, and the
+    expeditions that named a week's quest (id, time, quest line). With no expeditions the hash is what it was
+    before they were covered."""
     import hashlib
     import json
     rows = {a: {"events": [dict(e) for e in evs],
                 "games": sorted((str(g.get("session_id")), str(g.get("ended_at")), str(g.get("termination")),
                                  sorted(g.get("participants") or [])) for g in games)}
             for a, (evs, games) in sorted(per_agent.items())}
+    exp = sorted([str(x.get("id") or x.get("post_id") or ""), str(x.get("posted_at") or x.get("created_at") or ""),
+                  (m.group(1).lower() if (m := _QUEST_LINE.search(str(x.get("content") or ""))) else "")]
+                 for x in expeditions)
+    if exp:
+        rows = {"records": rows, "expeditions": exp}
     return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
 
