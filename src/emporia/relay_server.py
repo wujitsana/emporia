@@ -3536,6 +3536,9 @@ async def lifespan(app: FastAPI):
     global _SWEEP_TASK, _FEDERATION_SYNC_TASK, _PAYOUT_RECONCILE_TASK, _INTEGRITY_TASK, _DB_BACKUP_TASK
     integrity.clear_stop()
     _SWEEP_TASK = asyncio.create_task(_sweep_loop())
+    from emporia import relay_modules
+    if not relay_modules.off_because("chronicle", "book"):
+        globals()["_CHRONICLE_ROSTER_TASK"] = asyncio.create_task(_chronicle_roster_loop())
     if (_interval := integrity_interval()) > 0:
         _INTEGRITY_TASK = asyncio.create_task(_integrity_loop(_interval))
     if relay_db.backup_dir() is not None:    # opt-in: EMPORIA_DB_BACKUP_DIR
@@ -3570,6 +3573,12 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _PAYOUT_RECONCILE_TASK
             _PAYOUT_RECONCILE_TASK = None
+        _roster_task = globals().get("_CHRONICLE_ROSTER_TASK")
+        if _roster_task is not None:
+            _roster_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _roster_task
+            globals()["_CHRONICLE_ROSTER_TASK"] = None
         integrity.request_stop()   # a pass in its thread ends at its next check
         if _INTEGRITY_TASK is not None:
             _INTEGRITY_TASK.cancel()
@@ -4399,6 +4408,23 @@ def sign_log_state() -> dict[str, Any] | None:
     if state:
         logger.info("log_state_signed", extra={"size": state["size"], "root": state["root"]})
     return state
+
+
+_CHRONICLE_ROSTER_INTERVAL_SECONDS = 5.0
+
+
+async def _chronicle_roster_loop() -> None:
+    """The Chronicle's rosters (chronicle_ledger.py, "Rosters are snapshots"): each slot's members are taken once,
+    right after the slot's call, so a later label or grouping change cannot move a chapter or a seat."""
+    from emporia.routes import chronicle as chronicle_route
+    while True:
+        await asyncio.sleep(_CHRONICLE_ROSTER_INTERVAL_SECONDS)
+        try:
+            await asyncio.to_thread(chronicle_route.take_rosters)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Taking the Chronicle rosters failed — will retry")
 
 
 async def _log_state_loop() -> None:

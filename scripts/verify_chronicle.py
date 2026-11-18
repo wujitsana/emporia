@@ -85,8 +85,12 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     card = C.draw_card(scope, sigs["call"], n, inp.get("recent"))
     w_write, w_open, w_pick, w_count = (C.windows(call, E)[k] for k in ("write", "open", "pick", "count"))
 
-    def act(agent: str) -> tuple[bytes, str]:
-        return (rand_game_rand(scope, "act:" + agent, sigs["call"]), agent)
+    seniority = {m["agent_id"]: (m["base_since"] if m.get("base_since") is not None else 0.0) for m in roster}
+
+    def act(agent: str) -> tuple[Any, ...]:
+        # the unit's agents rank by the age of their declared base operator, then the beacon on "act:" + agent id
+        # (lowest first); siblings of one declared base are ordered by the beacon alone
+        return (seniority.get(agent, 0.0), rand_game_rand(scope, "act:" + agent, sigs["call"]), agent)
 
     def inside(w, at):
         return w[0] <= at < w[1]
@@ -174,10 +178,46 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
 
 # ── checks ────────────────────────────────────────────────────────────────────────────────────────────
 
-def receipt_hash(chapter: str, call_ts: float, verdict: dict[str, Any]) -> str:
-    body = json.dumps({"chapter": chapter, "call_ts": call_ts, "verdict": verdict}, sort_keys=True,
-                      separators=(",", ":"), default=list)
+def receipt_hash(chapter: str, call_ts: float, verdict: dict[str, Any], roster: str | None = None) -> str:
+    """The hash the log carries for a frozen chapter. A receipt frozen with its roster (`receipt["roster"]`) also
+    binds the hash of the published members and the events' operators; one frozen before rosters were snapshotted does not."""
+    parts = {"chapter": chapter, "call_ts": call_ts, "verdict": verdict}
+    if roster is not None:
+        parts["roster"] = roster
+    body = json.dumps(parts, sort_keys=True, separators=(",", ":"), default=list)
     return hashlib.sha256(body.encode()).hexdigest()
+
+
+#: A join's signed time is within ten minutes of the relay's clock when the relay stamps it (`joined_at`).
+JOIN_SLACK_S = 660
+
+
+def check_roster(inp: dict[str, Any], signed: dict[str, Any]) -> list[str]:
+    """The published roster (`inputs["members"]`, the snapshot taken at the call) against the signed joins the
+    relay publishes with it: each non-house member has joined and not left (the last signed record of its agent is
+    `on`), is no agent twice, and joined within the relay's clock slack of a signed `on` record. Unit tokens are opaque
+    and stay the relay's word, but a member that no signed record supports, or whose times disagree with the records,
+    is named. (The signatures themselves are `check_signatures`.)"""
+    bad: list[str] = []
+    seen: set[str] = set()
+    joins: dict[str, list[dict[str, Any]]] = {}
+    for r in signed.get("join", []):
+        joins.setdefault(r["agent"], []).append(r)
+    for m in inp["members"]:
+        a = m["agent_id"]
+        if a in seen:
+            bad.append(f"roster: {a} is listed twice")
+        seen.add(a)
+        if m["house"]:
+            continue
+        rows = joins.get(a, [])
+        if not rows or not rows[-1]["on"]:
+            bad.append(f"roster: {a} is a member with no standing signed join")
+            continue
+        stamps = [t.timestamp() for r in rows if r["on"] and (t := wire.when_of(r["at"]))]
+        if stamps and min(abs(t - m["joined_at"]) for t in stamps) > JOIN_SLACK_S:
+            bad.append(f"roster: {a} joined at {m['joined_at']}, which no signed join of it is near")
+    return bad
 
 
 def check_signatures(signed: dict[str, Any], relay_id: str, origin: str) -> list[str]:
@@ -282,8 +322,10 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
             problems.append("a beacon round the chapter drew from is missing")
         problems += check_log_order(get, inp)
         problems += check_signatures(body.get("signed", {}), state["relay_id"], state.get("post_origin", ""))
+        problems += check_roster(inp, body.get("signed", {}))
         if body.get("receipt"):
-            h = receipt_hash(row["id"], inp["call_ts"], v)
+            h = receipt_hash(row["id"], inp["call_ts"], v,
+                             L.roster_hash(inp["members"], inp["events"]) if body["receipt"].get("roster") else None)
             if h != body["receipt"]["hash"]:
                 problems.append("the frozen receipt's hash is not the recomputed verdict's")
         else:

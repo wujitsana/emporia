@@ -910,3 +910,23 @@ def test_the_one_numeral_shape_does_not_count_digits_inside_handles_mentions_or_
     one = C.SHAPES["one_numeral"]
     assert one("e21c kept 7 lanterns for @bob2 and pst_9f2.")
     assert not one("e21c kept 7 lanterns and 8 more.") and not one("No number at all, only e21c.")
+
+
+def test_the_act_draw_ranks_by_declared_base_operator_age_then_the_beacon():
+    """A network-merged agent (its own, younger declared base) never outranks the original, whatever the beacon draws;
+    siblings of one declared base are ordered by the beacon alone, not by registration; with no ranks (a roster from
+    before the field) the beacon alone ranks, as before."""
+    scope = C.chapter_scope("r", {"n": 1, "label": "Chapter 1", "tags": []}, "live")
+    old = C.Member("old", "u", PREV - 100 * DAY, PREV - 10 * DAY, base_since=PREV - 100 * DAY)
+    sib = C.Member("sib", "u", PREV - 50 * DAY, PREV - 10 * DAY, base_since=PREV - 100 * DAY)        # same label, later
+    merged = C.Member("merged", "u", PREV - 70 * DAY, PREV - 10 * DAY, base_since=PREV - 70 * DAY)    # other base
+    ranks = {m.agent_id: C.act_rank(m) for m in (old, sib, merged)}
+    firsts = set()
+    for k in range(40):
+        s = sig("act", k)
+        order = C.act_order(["merged", "sib", "old"], scope, s, ranks)
+        assert order[-1] == "merged", "the younger declared base ranks last"
+        assert order[:2] == [a for a in C.act_order(["sib", "old"], scope, s)], "siblings: the beacon decides"
+        firsts.add(order[0])
+    assert firsts == {"old", "sib"}, "registration age does not decide among siblings"
+    assert C.act_rank(C.Member("x", "u", 5.0, 1.0)) == 0.0
