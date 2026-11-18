@@ -178,8 +178,12 @@ class AutoReveal:
                     return "done"
                 for attempt in range(RATE_RETRIES + 1):
                     res = table.open(session_id, by="bridge")
-                    ok = bool(res.get("success")) and bool(res.get("opened") or res.get("revealed")
-                                                           or res.get("done") or res.get("nothing_due"))
+                    if res.get("success") and (res.get("nothing_due") or res.get("done")):
+                        # nothing was sent: not "done for you", so the model wakes as usual
+                        self._log("auto-%s: table %s had nothing due; the agent is woken as usual", chk["kind"],
+                                  session_id)
+                        return "skipped"
+                    ok = bool(res.get("success")) and bool(res.get("opened") or res.get("revealed"))
                     if not ok and _already(res):
                         ok = True
                     if ok:
@@ -218,8 +222,8 @@ class AutoReveal:
                 if key in self._done:
                     return "done"
                 for attempt in range(RATE_RETRIES + 1):
-                    res = book.reveal()
-                    ok = bool(res.get("success"))
+                    res = book.reveal(chapter=chk["chapter"], kind=chk["kind"])
+                    ok = bool(res.get("success")) and bool(res.get("opened"))     # a note of "nothing due" sent nothing
                     if not ok and _already(res):
                         ok = True
                     if ok:

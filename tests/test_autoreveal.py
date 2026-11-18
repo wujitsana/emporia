@@ -52,7 +52,8 @@ class FakeBook:
     def auto_check(self):
         return self.check
 
-    def reveal(self):
+    def reveal(self, chapter=None, kind=None):
+        self.asked = (chapter, kind)
         self.reveals += 1
         return self.results.pop(0) if len(self.results) > 1 else self.results[0]
 
@@ -189,6 +190,27 @@ def test_a_finished_table_is_not_looked_at_again():
     a.look()
     a.look()
     assert len(calls) == 1
+
+
+def test_a_nothing_due_answer_is_not_done_for_you_and_the_model_wakes():
+    t = FakeTable([GO_OPEN], [{"success": True, "nothing_due": True, "note": "nothing is due from you now"}])
+    a = auto_for(t)
+    assert a.tesseract(SID) == "skipped"
+    assert a.note_for(SID) == "" and t.opens == 1
+    t = FakeTable([GO_OPEN], [{"success": True, "done": "the table is finished"}])
+    assert auto_for(t).tesseract(SID) == "skipped"
+    t = FakeTable([GO_OPEN], [OPENED])
+    a = auto_for(t)
+    assert a.tesseract(SID) == "done" and a.note_for(SID) == "your open for round 2 was done for you"
+
+
+def test_chronicle_note_of_nothing_due_is_not_a_reveal():
+    book = FakeBook({"go": True, "kind": "pick", "chapter": "1", "label": "C"},
+                    [{"success": True, "opened": [], "note": "nothing of yours is due to open"}])
+    a = auto_for(book=book)
+    assert a.chronicle() == "failed" and a.note_for("chronicle") == ""
+    book = FakeBook({"go": True, "kind": "pick", "chapter": "1", "label": "C"}, [{"success": True, "opened": [{"opened": "pick"}]}])
+    assert auto_for(book=book).chronicle() == "done" and book.asked == ("1", "pick")
 
 
 def test_chronicle_reveal_in_its_window_and_a_409_is_done():
@@ -530,6 +552,24 @@ def test_chronicle_auto_reveal_recomputes_the_hash_and_compares_it_with_the_rela
     book._save("passage.2026_11_18", saved)
     view["commitments"] = {"passage": C.passage_commitment("p" * 32, nonce)}
     assert book.auto_check()["go"] is False
+
+
+def test_reveal_repeats_the_check_and_refuses_a_value_for_another_chapter_or_window(tmp_path):
+    from emporia.modules import chronicle as C
+    nonce = "n" * 32
+    view = {"joined": True, "chapter": "c1", "phase": "open", "due": "reveal passage", "label": "L",
+            "sealed": {"passage": True, "pick": False}, "opened": {"passage": False, "pick": False},
+            "commitments": {"passage": C.passage_commitment("p" * 32, nonce)}, "relay_id": "r", "windows": {}}
+    book = _book(tmp_path, view)
+    sent = []
+    book._post = lambda path, body: sent.append(path) or (200, {"post_id": "p", "candidate": 1, "broken": []})
+    book._save("passage.c1", {"post": {"x": 1}, "post_id": "p" * 32, "nonce": nonce, "chapter": "c1"})
+    assert book.reveal(chapter="c2", kind="passage")["success"] is False and not sent         # the relay moved on
+    assert book.reveal(chapter="c1", kind="pick")["success"] is False and not sent            # another window
+    book._save("passage.c1", {"post": {"x": 1}, "post_id": "p" * 32, "nonce": nonce, "chapter": "c0"})
+    assert book.reveal(chapter="c1", kind="passage")["opened"] == [] and not sent             # sealed for chapter c0
+    book._save("passage.c1", {"post": {"x": 1}, "post_id": "p" * 32, "nonce": nonce, "chapter": "c1"})
+    assert book.reveal(chapter="c1", kind="passage")["opened"][0]["opened"] == "passage" and len(sent) == 1
 
 
 @pytest.mark.parametrize("chapter", ["../../etc/x", "a/b", "x" * 80, "a b", "..", ""])
