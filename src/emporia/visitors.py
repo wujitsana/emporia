@@ -359,14 +359,22 @@ def confirm(home: dict[str, Any], public_key_hex: str, stable_id: str = "") -> d
     return {"status": "unconfirmed", "reason": "its home relay does not list this agent as its own", "at": at}
 
 
-def standing_known(entry: dict[str, Any]) -> bool:
+def standing_known(entry: dict[str, Any], home_json: str | None = None, check_json: str | None = None) -> bool:
     """Whether the statement kept in a carried-record entry is signed by a key this relay knows: it pulled it itself
-    from the agent's confirmed home (`basis` home), or the issuer key is the one pinned now for a linked relay.
-    Entries kept before this check carry no basis and so read as unknown. Never raises."""
+    from the agent's CURRENT, confirmed home (`basis` home: the entry's source is the home URL declared now and the
+    home check says `confirmed`; an agent that cycles its declared home across relays it made itself keeps old
+    entries, but only the one for today's confirmed home counts), or the issuer key is the one pinned now for a
+    linked relay. Entries kept before this check carry no basis and so read as unknown. Never raises."""
+    import json
     try:
         basis = entry.get("standing_basis")
         if basis == "home":
-            return True
+            from emporia.identity import normalize_peer_url
+            home = json.loads(home_json or "") or {}
+            check = json.loads(check_json or "") or {}
+            src = normalize_peer_url(str(entry.get("standing_source") or ""))
+            return (bool(src) and check.get("status") == "confirmed" and home.get("kind") == "relay"
+                    and normalize_peer_url(str(home.get("url") or "")) == src)
         if basis != "linked":
             return False
         from emporia import relay_server as rs

@@ -1650,7 +1650,7 @@ async def counterparty_record(agent_id: str):
     sales as a seller (paid, disputed, never delivered). Counts only — evidence,
     not a verdict, and only what this relay saw."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        reg = conn.execute("SELECT registered_at, client_name, client_version, declared_model, public_key_hex, carried_records_json "
+        reg = conn.execute("SELECT registered_at, client_name, client_version, declared_model, public_key_hex, carried_records_json, home_json, home_check_json "
                            "FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
         if reg is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
@@ -1745,7 +1745,7 @@ async def counterparty_record(agent_id: str):
     # its relay signed it, for a reader to check and weigh, outside this
     # relay's own signature.
     elsewhere = [{**r, "label": r.get("label") or f"history from {r.get('relay')}", "counts_here": False,
-                  **({"standing_known": visitors.standing_known(r), "standing_source": r.get("standing_source") or ""}
+                  **({"standing_known": visitors.standing_known(r, reg["home_json"], reg["home_check_json"]), "standing_source": r.get("standing_source") or ""}
                      if isinstance(r.get("standing"), dict) else {})}
                  for r in json.loads(reg["carried_records_json"] or "[]")]
     return {**record, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),

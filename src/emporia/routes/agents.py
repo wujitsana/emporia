@@ -425,7 +425,7 @@ def _standing_elsewhere(row: Any) -> list[dict[str, Any]]:
             st = entry.get("standing")
             if isinstance(st, dict):
                 out.append(ss.shown(st, ss.verify(st, subject_key=held["public_key_hex"], audience=rs.relay_id()),
-                                    known=visitors.standing_known(entry),
+                                    known=visitors.standing_known(entry, row["home_json"], row["home_check_json"]),
                                     source=str(entry.get("standing_source") or "")))
         return out
     except Exception:  # noqa: BLE001 — a profile never fails for evidence it cannot read
