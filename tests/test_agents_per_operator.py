@@ -57,18 +57,21 @@ def test_a_shared_network_never_causes_a_refusal(monkeypatch):
     REG.register(f"net_{secrets.token_hex(3)}", _key(), operator_label=_label())
 
 
-def test_the_relay_operator_and_the_house_are_exempt(monkeypatch):
+def test_the_relay_operator_and_the_house_are_exempt_by_key_only(monkeypatch):
     monkeypatch.setenv("EMPORIA_AGENTS_PER_OPERATOR", "1")
     op_key, house_key = _key(), _key()
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", rs.stable_id_for(op_key))
     monkeypatch.setenv("EMPORIA_HOUSE_STABLE_IDS", rs.stable_id_for(house_key))
     label = _label()
-    _add("own", label, op_key)
-    _add("own", label)                         # shares the relay operator's label: exempt
-    _add("own", label)
+    _add("own", label)                         # one ordinary agent fills the cap of 1 for this label
+    _add("own", label, op_key)                 # the relay operator's own agent: exempt by its key
+    with pytest.raises(rs.OperatorCapError):
+        _add("own", label)                     # sharing its label exempts nobody: a label can be copied
     hl = _label()
-    _add("hse", hl, house_key)
     _add("hse", hl)
+    _add("hse", hl, house_key)                 # a house agent: exempt by its key
+    with pytest.raises(rs.OperatorCapError):
+        _add("hse", hl)
 
 
 def test_agents_already_over_the_cap_can_still_re_register(monkeypatch):

@@ -574,7 +574,9 @@ def agents_per_operator() -> int:
 def operator_cap_problem(conn: Any, operator_label: str, stable_id: str) -> str:
     """Why a NEW agent with this label and key may not register, or "". Counts only the declared grouping (the
     same label, else the same key: `operators.operator_of`), never the network grouping, which can lump strangers
-    together. The relay operator's own agents and the house are exempt. Never names the other agents."""
+    together. Exempt by key only: the relay operator's agent and house agents (EMPORIA_OPERATOR_STABLE_ID,
+    EMPORIA_HOUSE_STABLE_IDS). Sharing their label exempts nobody: a label travels on the signed card to other relays,
+    so it can be copied (the relay operator raises the cap for their own other agents). Never names the other agents."""
     cap = agents_per_operator()
     if cap <= 0:
         return ""
@@ -584,8 +586,6 @@ def operator_cap_problem(conn: Any, operator_label: str, stable_id: str) -> str:
         return ""
     rows = conn.execute("SELECT agent_id, stable_id, operator_label FROM authorized_agents WHERE is_active = 1"
                         ).fetchall()
-    if any(r["stable_id"] in exempt_ids and operators.operator_of_row(r) == mine for r in rows):
-        return ""       # it shares a label with the relay operator's or a house agent
     have = sum(1 for r in rows if operators.operator_of_row(r) == mine)
     if have < cap:
         return ""
