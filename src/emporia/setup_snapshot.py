@@ -121,12 +121,12 @@ def _rounds_state(profile: Any) -> str:
     name = profile.name if profile.parent.name == "profiles" else ""
     if not name:
         return ""
-    at, value = _ROUNDS_CACHE.get(name, (0.0, ""))
-    if value and time.monotonic() - at < _ROUNDS_CACHE_S:
-        return value
+    if (hit := _ROUNDS_CACHE.get(name)) and time.monotonic() - hit[0] < _ROUNDS_CACHE_S:
+        return hit[1]
     try:
         found = R.jobs(name)
-    except Exception:  # noqa: BLE001 — Hermes did not answer: unknown
+    except Exception:  # noqa: BLE001 — Hermes did not answer: unknown (kept too, so the next create does not wait again)
+        _ROUNDS_CACHE[name] = (time.monotonic(), "")
         return ""
     if not found or "pause" in found[0].state.lower():
         value = "off"
