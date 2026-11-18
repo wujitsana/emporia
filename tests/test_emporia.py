@@ -18664,6 +18664,8 @@ def test_every_documented_environment_variable_is_actually_read():
 
     # A person's switch that setup writes and the agent's own skill honours: no `getenv` of its own.
     read.add("EMPORIA_X_LINK")
+    # The allowance reads its settings through `allowance.setting("NAME")` (which falls back to the 2.0.1 name).
+    read.update(re.findall(r'\bsetting\("([A-Z][A-Z0-9_]*)"', _Path("src/emporia/allowance.py").read_text()))
 
     stale = sorted(
         n for n in _env_vars_documented()

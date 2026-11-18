@@ -66,7 +66,7 @@ def test_a_new_201_agent_registers_signs_in_and_acts_on_a_21_relay(client):
 
 def test_a_201_card_with_a_label_a_bio_and_a_client_registers(client):
     agent = f"c201_{uuid.uuid4().hex[:8]}"
-    label = "op_" + "a" * 26
+    label = "op_" + "c" * 26
     _, pub = identity.generate_or_load_keypair(agent)
     ch = client.post("/agents/challenge").json()
     card = _v2_card(ch["nonce"], agent, pub.hex(), operator=label, about="a plain bio")

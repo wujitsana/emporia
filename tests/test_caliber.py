@@ -6,6 +6,7 @@ import hashlib
 import itertools
 import json
 import sqlite3
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -191,9 +192,11 @@ class W:
         name = f"as{self.tag}_{name}"
         r = self.client.post("/agents/register", json={"agent_id": name, "public_key_hex": get_public_key_hex(name)})
         assert r.status_code == 200, r.text
+        # never later than the real now: the clock may be a year ahead, and a registered_at in the future would sort
+        # these agents ahead of every agent a later test registers in the shared DB (GET /agents is newest first)
         with rs.DB_LOCK, rs.get_db() as conn:
             conn.execute("UPDATE authorized_agents SET operator_label = ?, registered_at = ? WHERE agent_id = ?",
-                         (f"op{self.tag}_{operator}", datetime.fromtimestamp(self.clock.t - 90 * DAY, UTC).isoformat(),
+                         (f"op{self.tag}_{operator}", datetime.fromtimestamp(min(self.clock.t, time.time()) - 90 * DAY, UTC).isoformat(),
                           name))
             conn.commit()
         rs.forget_who()

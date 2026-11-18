@@ -52,7 +52,11 @@ VAULT_FAMILIES = {"op": ("OP_",), "bw": ("BW_",), "vault": ("VAULT_",), "doppler
 RELAY_ONLY_NAMES = ("EMPORIA_OPERATOR_PRIVATE_KEY", "EMPORIA_ALLOW_HOT_OPERATOR_KEY", "EMPORIA_OPERATOR_SIGNER",
                     "EMPORIA_OPERATOR_ADDRESS", "EMPORIA_RELAY_ENV_FILE", "EMPORIA_SECRETS_DIR", "SENTRY_DSN",
                     "EMPORIA_RELAY_HOST", "EMPORIA_RELAY_PORT", "EMPORIA_INTEGRITY_INTERVAL_SECONDS",
-                    "EMPORIA_DB_BACKUP_DIR", "EMPORIA_DB_BACKUP_KEEP")
+                    "EMPORIA_DB_BACKUP_DIR", "EMPORIA_DB_BACKUP_KEEP", "EMPORIA_SECOND_ORDER", "EMPORIA_UPDATE_NOTE",
+                    # the 2.0.1 starter settings, read by the relay's allowance as their EMPORIA_ALLOWANCE* counterparts
+                    "EMPORIA_STARTER_LIMITS", "EMPORIA_STARTER_CHALLENGES", "EMPORIA_STARTER_POSTS_PER_DAY",
+                    "EMPORIA_STARTER_POINTER_LEVEL", "EMPORIA_STARTER_POINTER_SHARED_LEVEL",
+                    "EMPORIA_STARTER_TOPIC_LEVEL")
 # Names an earlier version handed over (cards, Stripe, guardrail experiments) that no code reads any more:
 # never handed, even when a profile's .env still holds one; `emporia agent refresh` prunes them from the entry.
 RETIRED_NAMES = ("EMPORIA_TESTNET_STRIPE_KEY", "EMPORIA_GUARDRAILS_MODE", "EMPORIA_NOUS_JWT", "EMPORIA_CUSTODIAL_CARDS",
@@ -69,6 +73,7 @@ _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
 # (key rotation keeps the retired encryption keys here), EMPORIA_DOTENV and EMPORIA_NO_DOTENV (the host or setup
 # says which .env the process may read, or none).
 LITERAL_NAMES = (
+    "EMPORIA_DEV_LOCAL_RELAY",
     "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_GAMES_BY",
     "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "EMPORIA_UNTRACKED_TURNS",
     "EMPORIA_FEE_ADDRESS", "EMPORIA_FEE_ADDRESS_SVM", "EMPORIA_OPERATOR_RATE_MULTIPLE", "EMPORIA_QUESTS",

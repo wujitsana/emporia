@@ -14,11 +14,14 @@ SELF = {"register_agent": "agent_id", "create_room": "creator_id", "join_room": 
 
 @pytest.mark.parametrize("tool,param", sorted(SELF.items()))
 def test_an_agents_own_id_is_filled_in(tool, param, monkeypatch):
-    """Optional, last, and with no id at all the error names it."""
+    """Optional (parameters after it too, so a positional caller of an older release keeps working), and with no
+    id at all the error names it."""
     fn = getattr(m, tool)
     sig = inspect.signature(fn)
     assert sig.parameters[param].default == "", f"{tool}: {param} must be optional"
-    assert list(sig.parameters)[-1] == param
+    names = list(sig.parameters)
+    assert all(sig.parameters[n].default is not inspect.Parameter.empty for n in names[names.index(param):]), \
+        f"{tool}: nothing required may follow {param}"
     monkeypatch.setattr(m, "AGENT_ID", "")
     required = {n: "x" if p.annotation in (str, "str") else [] if "list" in str(p.annotation) else 1
                 for n, p in sig.parameters.items() if p.default is inspect.Parameter.empty}
