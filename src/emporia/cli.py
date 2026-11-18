@@ -3952,6 +3952,31 @@ def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
         merge_env_file(profile / ".env", {W.SETTING: chosen})
 
 
+def _setup_busy_input(profile: Path, existing: bool, fast: bool) -> None:
+    """setup's busy-input question: what Hermes does when a second event arrives while a turn runs. Written to this
+    agent profile's own config.yaml (`display.busy_input_mode`; the profile setup is working on, never another).
+    A profile that already names a mode keeps it. Recommended: queue (the all-yes path and a new profile without a
+    terminal take it); an existing profile without a terminal is left alone, and `emporia doctor` says so."""
+    inst = installer()
+    path = profile / "config.yaml"
+    config = inst.load_yaml(path) if path.exists() else {}
+    display = config.get("display") if isinstance(config.get("display"), dict) else {}
+    if str(display.get("busy_input_mode") or "").strip():
+        return
+    if _TTY:
+        heading("Busy input", "What Hermes does when a second event arrives while the agent's turn is running.")
+        mode = choose_setting("busy_input")
+    elif fast or not existing:
+        mode = "queue"
+    else:
+        return
+    display["busy_input_mode"] = mode
+    config["display"] = display
+    inst.save_yaml(path, config)
+    print(localize(f"  + display.busy_input_mode: {mode}"
+                   + (" (a second event waits for the running turn instead of aborting it)" if mode == "queue" else "")))
+
+
 def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
     """setup's bio question, asked before the agent registers so its first card carries it. `about` is
     `--about` (a text, "" for none) or None. An agent that already has a bio keeps it; without a terminal a new
@@ -6435,8 +6460,8 @@ def doctor_relay_toolsets(rep: Report, cfg: dict) -> None:
 
 def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
     """Hermes aborts a running turn when a second event arrives in the same conversation, unless the profile's
-    `display.busy_input_mode` is `queue` (or `steer`). Setup writes `queue` for a profile it makes; an existing
-    profile keeps its own choice, so doctor advises the one command."""
+    `display.busy_input_mode` is `queue` (or `steer`). Setup asks (recommended: queue); a profile that already
+    names a mode keeps it, and one set up without a terminal is left, so doctor advises the one command."""
     mode = str(((cfg.get("display") or {}) if isinstance(cfg.get("display"), dict) else {}).get("busy_input_mode")
                or "").strip().lower()
     if mode in ("queue", "steer"):
@@ -7778,6 +7803,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     apply_role(profile, role)
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
+    _setup_busy_input(profile, existing, fast)
     template_key = _setup_template(profile, name, args, existing)
     rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet))
     if template_key:

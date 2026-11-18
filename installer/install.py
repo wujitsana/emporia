@@ -1068,7 +1068,7 @@ def create_profile(
     _install_skill_link(profile_dir, dry_run=dry_run, dev_skills=dev_skills)
     install_platform_plugin(profile_dir, dry_run=dry_run)
     if not dry_run:
-        slim_relay_turns(profile_dir, new_profile=not updating)
+        slim_relay_turns(profile_dir)
 
     print(f"\n  Agent ID : {aid}")
     print(f"  Relay    : {relay_url}")
@@ -1499,20 +1499,17 @@ def isolate_context(profile_dir: Path) -> bool:
 RELAY_TURN_TOOLSETS = ["mcp-" + MCP_TOOL_NAME, "skills", "todo", "session_search", "clarify"]
 
 
-def slim_relay_turns(profile_dir: Path, new_profile: bool = False) -> list[str]:
+def slim_relay_turns(profile_dir: Path) -> list[str]:
     """Write `platform_toolsets.emporia`, Hermes's allow-list for the emporia platform's turns (the ones relay events
-    start), and, for a profile setup just created, `display.busy_input_mode: queue`.
+    start).
 
     Merges into the profile's config.yaml: other platforms' lists and every other key stay. An existing
     `platform_toolsets.emporia` is the operator's: it is kept (doctor reports one that is too wide). Re-running
     changes nothing. `platform_toolsets.cron` is never written: rounds run as a cron job, keep the profile's own
     tools and are refused call by call (relay_turn.py).
 
-    Busy input (Hermes `gateway/run_config_loaders.py:_busy_modes_from_config`): by default a second event in the
-    same conversation while a turn runs aborts that turn (`interrupt`). The key is `display.busy_input_mode`,
-    profile-wide, and not one of the per-platform display keys (`gateway/display_config.py`), so it also decides
-    how the operator's own chats behave. `queue` is set only in a profile setup just made; for an existing
-    one setup prints one line of advice and leaves it. Returns what changed."""
+    Busy input (`display.busy_input_mode`) is not written here: it is a setup question (`emporia setup agent`).
+    Returns what changed."""
     config_path = profile_dir / "config.yaml"
     config = load_yaml(config_path) if config_path.exists() else {}
     changed: list[str] = []
@@ -1521,23 +1518,9 @@ def slim_relay_turns(profile_dir: Path, new_profile: bool = False) -> list[str]:
         pt[PLUGIN_KEY] = list(RELAY_TURN_TOOLSETS)
         config["platform_toolsets"] = pt
         changed.append(f"platform_toolsets.{PLUGIN_KEY}: {', '.join(RELAY_TURN_TOOLSETS)}")
-    display = config.get("display") if isinstance(config.get("display"), dict) else {}
-    mode = str(display.get("busy_input_mode") or "").strip().lower()
-    if new_profile and not mode:
-        display["busy_input_mode"] = "queue"
-        config["display"] = display
-        changed.append("display.busy_input_mode: queue")
     if changed:
         save_yaml(config_path, config)
-        why = ["relay-started turns see only Emporia's tools and skills"]
-        if "display.busy_input_mode: queue" in changed:
-            why.append("a second event waits for the running turn instead of aborting it")
-        print("  + " + "; ".join(changed) + " (" + "; ".join(why) + ")")
-    if not new_profile and mode not in ("queue", "steer"):
-        scope = f"-p {profile_dir.name} " if profile_dir.parent.name == "profiles" else ""
-        print("  Tip: Hermes aborts a running turn when a second event arrives in the same conversation "
-              f"(display.busy_input_mode: interrupt). To let it finish first: hermes {scope}config set "
-              "display.busy_input_mode queue (it also applies to this profile's own chats).")
+        print("  + " + "; ".join(changed) + " (relay-started turns see only Emporia's tools and skills)")
     return changed
 
 

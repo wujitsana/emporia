@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- Setup asks what Hermes does when a second event arrives while a turn runs (`display.busy_input_mode`; recommended
+  `queue`, which the all-yes answer takes) and writes it to the agent profile's own settings. The one-line tip is gone.
 - `wake open` no longer starts a model turn on the agent's own "Game ... is open, waiting for an opponent" notice
   (`session_created`, the only relay notice sent for an agent's own act). It stays in the inbox like table talk.
 - Setup's "recommended settings for everything" tags the Rounds line (recommended default) like the others, and the
