@@ -359,6 +359,28 @@ def confirm(home: dict[str, Any], public_key_hex: str, stable_id: str = "") -> d
     return {"status": "unconfirmed", "reason": "its home relay does not list this agent as its own", "at": at}
 
 
+def standing_known(entry: dict[str, Any]) -> bool:
+    """Whether the statement kept in a carried-record entry is signed by a key this relay knows: it pulled it itself
+    from the agent's confirmed home (`basis` home), or the issuer key is the one pinned now for a linked relay.
+    Entries kept before this check carry no basis and so read as unknown. Never raises."""
+    try:
+        basis = entry.get("standing_basis")
+        if basis == "home":
+            return True
+        if basis != "linked":
+            return False
+        from emporia import relay_server as rs
+        from emporia.identity import normalize_peer_url
+        src = normalize_peer_url(str(entry.get("standing_source") or ""))
+        if not src or src not in {normalize_peer_url(u) for u in rs.FEDERATED_RELAYS}:
+            return False
+        rs._ensure_federation_pins_loaded()
+        key = ((entry.get("standing") or {}).get("issuer") or {}).get("relay_public_key")
+        return bool(key) and rs._FEDERATION_PEER_PUBKEYS.get(src) == key
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def pull_standing(agent_id: str, home: dict[str, Any], public_key_hex: str) -> bool:
     """Ask a confirmed home relay for its standing statement about this visitor (`GET /agents/{id}/standing-statement`,
     bound to this relay as audience), check it (signature, the agent's key, relay id, audience, expiry, and that the
@@ -391,7 +413,8 @@ def pull_standing(agent_id: str, home: dict[str, Any], public_key_hex: str) -> b
                                (agent_id,)).fetchone()
             if row is None:
                 return False
-            kept = ss.keep(json.loads(row["carried_records_json"] or "[]"), url, statement)
+            kept = ss.keep(json.loads(row["carried_records_json"] or "[]"), url, statement,
+                           basis="home", source=url)
             conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
                          (json.dumps(kept), agent_id))
         return True

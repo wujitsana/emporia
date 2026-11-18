@@ -1682,11 +1682,13 @@ async def counterparty_record(agent_id: str):
     }
     # P189: signed by this relay, so another relay or agent can show it as
     # "this relay says…" and check it was not changed on the way.
-    from emporia import moves
+    from emporia import moves, visitors
     # P190: other relays' words, carried by an agent that moved here — each as
     # its relay signed it, for a reader to check and weigh, outside this
     # relay's own signature.
-    elsewhere = [{**r, "label": r.get("label") or f"history from {r.get('relay')}", "counts_here": False}
+    elsewhere = [{**r, "label": r.get("label") or f"history from {r.get('relay')}", "counts_here": False,
+                  **({"standing_known": visitors.standing_known(r), "standing_source": r.get("standing_source") or ""}
+                     if isinstance(r.get("standing"), dict) else {})}
                  for r in json.loads(reg["carried_records_json"] or "[]")]
     return {**record, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "record", [record])),

@@ -138,7 +138,7 @@ def test_contact_units_are_opaque_and_scoped_to_the_issuer():
     assert ss.unit_token(a.id, "label:op_x", sa) != ss.unit_token(a.id, "label:op_x", sb), "the secret matters"
     assert "op_x" not in ss.unit_token(a.id, "label:op_x", sa)
     from emporia.chronicle_ledger import unit_token as chronicle_unit
-    assert ss.unit_token(a.id, "k", sa) != chronicle_unit(a.id, "k"), "a statement cannot be matched to a public ballot"
+    assert ss.unit_token(a.id, "k", sa) != chronicle_unit(a.id, "k", sa), "a statement cannot be matched to a public ballot"
     with pytest.raises(ValueError):
         ss.unit_token(a.id, "k", b"")
 
@@ -162,10 +162,25 @@ def test_a_unit_cannot_be_derived_from_the_public_ids_and_the_secret_is_kept_acr
     assert ss.unit_token("relayid", "label:alice", identity.relay_unit_secret()) != unit
 
 
+def test_chronicle_units_are_keyed_not_a_plain_hash(monkeypatch):
+    import hashlib
+
+    from emporia.chronicle_ledger import unit_token
+    plain = "u" + hashlib.sha256(b"chronicle-unit:relayid:label:alice").hexdigest()[:10]
+    mine = unit_token("relayid", "label:alice", b"a" * 32)
+    assert mine != plain, "a public label must not hash to a unit"
+    assert mine == unit_token("relayid", "label:alice", b"a" * 32)
+    assert mine != unit_token("relayid", "label:alice", b"b" * 32), "another relay's secret, another unit"
+    assert unit_token("relayid", "k", b"a" * 32) != ss.unit_token("relayid", "k", b"a" * 32), "its own domain"
+    assert "alice" not in mine
+    # default secret is the relay's own
+    assert unit_token("relayid", "label:alice") == unit_token("relayid", "label:alice", identity.relay_unit_secret())
+
+
 def test_shown_is_evidence_with_the_why_and_never_counted():
     relay = FakeRelay()
     st = relay.statement()
-    seen = ss.shown(st, ss.verify(st, now=NOW))
+    seen = ss.shown(st, ss.verify(st, now=NOW), source=relay.url)
     assert seen["verified"] and seen["counted_here"] is False
     assert "standing at https://relay-a.example" in seen["line"] and "verified: signed by relay" in seen["line"]
     assert "not counted here" in seen["line"] and "Renown 1.5" in seen["line"]
@@ -175,9 +190,10 @@ def test_shown_is_evidence_with_the_why_and_never_counted():
 
 # ── Reach counts only what verifies and counted standing ─────────────────────────────────────────
 
-def _carried(relay, st):
+def _carried(relay, st, known=True):
+    """A carried entry as the relay builds it: `standing_known` is the relay's own finding about the issuer key."""
     return {"relay": relay.url, "relay_public_key": relay.pub, "signature": "", "label": "standing", "counts_here": False,
-            "standing": st}
+            "standing": st, "standing_known": known, "standing_source": relay.url if known else ""}
 
 
 def test_reach_ignores_unverified_and_empty_statements():
@@ -197,8 +213,31 @@ def test_reach_ignores_unverified_and_empty_statements():
     assert by["https://f.example"]["standing"]["verified"] is False
     assert by["https://w.example"]["standing"]["verified"] is False
     assert all(s["counts_here"] is False for s in built["statements"][1:])
-    assert passport.check(built)[1] == {"relay": "https://g.example", "ok": None, "standing_ok": True}
+    assert passport.check(built)[1] == {"relay": "https://g.example", "ok": None, "standing_known": True, "standing_ok": True}
     assert [c.get("standing_ok") for c in passport.check(built)[2:]] == [True, False, False]
+
+
+def test_five_self_made_relays_are_not_reach_and_not_verified():
+    """Anyone can make a relay key: a statement signed by a key the host does not know is kept, labeled, counted nowhere."""
+    fakes = [FakeRelay(f"https://famous-relay-{i}.example") for i in range(5)]
+    built = passport.build(
+        {"agent_id": "x", "public_key_hex": AGENT_KEY},
+        {"relay": "https://me.example", "counted": 0, "as_of": "t"},
+        [_carried(r, r.statement(counted=40, now=time.time()), known=False) for r in fakes])
+    assert built["reach"]["relays"] == 0 and built["reach"]["listed"] == []
+    for s in built["statements"][1:]:
+        assert s["standing"]["verified"] is False and "verified:" not in s["standing"]["line"]
+        assert "signed by a key this relay does not know; not checked" in s["standing"]["line"]
+        assert "famous-relay" not in s["standing"]["line"]                  # the signer's own URL is never shown
+    assert [c["standing_ok"] for c in passport.check(built)[1:]] == [None] * 5
+
+
+def test_a_known_issuer_counts_once_by_relay_id_not_by_url():
+    r = FakeRelay("https://a.example")
+    st = r.statement(now=time.time())
+    built = passport.build({"agent_id": "x", "public_key_hex": AGENT_KEY}, {"relay": "https://me.example", "as_of": "t"},
+                           [_carried(r, st), {**_carried(r, st), "relay": "https://alias.example"}])
+    assert built["reach"]["relays"] == 1
 
 
 def test_a_bare_old_record_adds_nothing_to_reach():
@@ -258,6 +297,47 @@ def test_the_statement_needs_the_sheets_module(client, monkeypatch):
     assert client.get("/agents/anyone/standing-statement").status_code == 404
 
 
+def test_a_carried_statement_from_an_unknown_key_is_kept_but_not_verified_or_counted(client):
+    from tests.test_emporia import bearer_for
+    a = f"ss_{uuid.uuid4().hex[:6]}"
+    key = _keyed(client, a)
+    h = bearer_for(client, a)
+    for i in range(5):
+        r = client.post(f"/agents/{a}/carried-record", json={"standing": FakeRelay(f"https://x{i}.example").statement(
+            subject_key=key, now=time.time(), counted=40)}, headers=h)
+        assert r.status_code == 200 and r.json()["standing"]["known_key"] is False
+    card = client.get(f"/agents/{a}/passport").json()
+    assert card["reach"]["relays"] == 0
+    assert len(card["statements"]) == 6
+    assert all(not s["standing"]["verified"] for s in card["statements"][1:])
+    assert all(c["standing_ok"] is None for c in passport.check(card)[1:])
+
+
+def test_a_pinned_linked_relays_statement_is_verified_and_counted(client, monkeypatch):
+    from tests.test_emporia import bearer_for
+    a = f"ss_{uuid.uuid4().hex[:6]}"
+    key = _keyed(client, a)
+    h = bearer_for(client, a)
+    relay = FakeRelay("https://linked-relay.example")
+    monkeypatch.setattr(rs, "FEDERATED_RELAYS", ["https://linked-relay.example"])
+    monkeypatch.setattr(rs, "_FEDERATION_PEER_PUBKEYS", {"https://linked-relay.example": relay.pub})
+    monkeypatch.setattr(rs, "_FEDERATION_PEER_PUBKEYS_LOADED", True)
+    r = client.post(f"/agents/{a}/carried-record", json={"standing": relay.statement(subject_key=key, now=time.time())},
+                    headers=h)
+    assert r.status_code == 200 and r.json()["standing"]["known_key"] is True
+    card = client.get(f"/agents/{a}/passport").json()
+    assert card["reach"]["relays"] == 1 and card["reach"]["listed"] == ["https://linked-relay.example"]
+    assert card["statements"][1]["standing"]["verified"] is True
+    assert passport.check(card)[1]["standing_ok"] is True
+    # a different key claiming the linked relay's URL is only an unknown key
+    forger = FakeRelay("https://linked-relay.example")
+    r = client.post(f"/agents/{a}/carried-record", json={"standing": forger.statement(subject_key=key, now=time.time())},
+                    headers=h)
+    assert r.json()["standing"]["known_key"] is False
+    card = client.get(f"/agents/{a}/passport").json()
+    assert card["reach"]["relays"] == 1
+
+
 def test_a_carried_statement_is_kept_whole_verifies_and_counts_for_nothing(client):
     from tests.test_emporia import bearer_for
     a = f"ss_{uuid.uuid4().hex[:6]}"
@@ -271,9 +351,9 @@ def test_a_carried_statement_is_kept_whole_verifies_and_counts_for_nothing(clien
     card = client.get(f"/agents/{a}/passport").json()
     other = card["statements"][1]
     assert other["standing_statement"] == st, "kept whole, so any reader can verify it"
-    assert other["standing"]["verified"] and "not counted here" in other["standing"]["line"]
-    assert card["reach"]["relays"] == 1 and card["reach"]["listed"] == [relay.url]
-    assert passport.check(card)[1]["standing_ok"] is True
+    assert not other["standing"]["verified"] and "not counted here" in other["standing"]["line"]
+    assert card["reach"]["relays"] == 0               # an unknown key proves only that the key says so
+    assert passport.check(card)[1]["standing_ok"] is None
     assert ss.verify(other["standing_statement"], subject_key=key, audience=card["host_relay_id"])["ok"]
     # counted nowhere here
     assert client.get(f"/agents/{a}/sheet").json()["allowance"]["tier"] == 1

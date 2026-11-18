@@ -422,7 +422,9 @@ def _standing_elsewhere(row: Any) -> list[dict[str, Any]]:
         for entry in json.loads((held["carried_records_json"] if held else "") or "[]"):
             st = entry.get("standing")
             if isinstance(st, dict):
-                out.append(ss.shown(st, ss.verify(st, subject_key=held["public_key_hex"], audience=rs.relay_id())))
+                out.append(ss.shown(st, ss.verify(st, subject_key=held["public_key_hex"], audience=rs.relay_id()),
+                                    known=visitors.standing_known(entry),
+                                    source=str(entry.get("standing_source") or "")))
         return out
     except Exception:  # noqa: BLE001 — a profile never fails for evidence it cannot read
         return []
@@ -1428,7 +1430,8 @@ async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Reques
     is shown beside this relay's own count as that relay's word, never merged. 2.1: the request may instead (or
     also) carry `standing`, a relay's signed standing statement about this agent; it is checked (signature, the
     agent's key, relay id, audience, expiry) and kept WHOLE so a reader can check it again, and shown as
-    "verified, not counted here". It needs no linked relay: any relay's verified statement is shown, none counts."""
+    "verified, not counted here" when it is signed with a linked relay's pinned key, and otherwise as "signed by a key
+    this relay does not know; not checked" (kept, counted nowhere). It needs no linked relay to be kept; none counts."""
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
     if req.record is None and req.standing is None:
@@ -1440,26 +1443,40 @@ async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Reques
     if req.record is not None:
         out.update(await _carry_signed_record(agent_id, req.record, row))
     if req.standing is not None:
-        out["standing"] = _carry_standing(agent_id, req.standing, row["public_key_hex"])
+        out["standing"] = await _carry_standing(agent_id, req.standing, row["public_key_hex"])
     return out
 
 
-def _carry_standing(agent_id: str, statement: dict, agent_key: str) -> dict:
-    """Check a standing statement for this agent and keep it whole (one per issuing relay)."""
+async def _carry_standing(agent_id: str, statement: dict, agent_key: str) -> dict:
+    """Check a standing statement for this agent and keep it whole (one per issuing relay). The agent hands it over,
+    so the signature alone proves only "the holder of this key says": it is trusted (shown as verified, counted in
+    Reach) only when the key is the pinned key of a linked relay. Any other statement is kept, marked as signed by a
+    key this relay does not know, and counted nowhere."""
+    from emporia import federation_dm
     from emporia import standing_statement as ss
+    from emporia.addresses import host_of
     from emporia.identity import normalize_peer_url
     result = ss.verify(statement, subject_key=agent_key, audience=rs.relay_id())
     if not result["ok"]:
         raise HTTPException(422, f"that statement does not verify: {result['reason']}")
-    relay = normalize_peer_url(str(statement["issuer"].get("relay_url") or ""))
-    if not relay or relay == normalize_peer_url(rs.RELAY_BASE_URL):
+    claimed = normalize_peer_url(str(statement["issuer"].get("relay_url") or ""))
+    if result["relay_id"] == rs.relay_id() or (claimed and claimed == normalize_peer_url(rs.RELAY_BASE_URL)):
         raise HTTPException(400, "that is not another relay's statement")
+    peer = federation_dm.linked_peer(host_of(claimed)) if claimed else ""
+    known = False
+    if peer:
+        try:
+            known = (await federation_dm.peer_key(peer)) == statement["issuer"].get("relay_public_key")
+        except HTTPException:
+            known = False
+    relay, basis, source = (peer, "linked", peer) if known else (f"key:{result['relay_id']}", "", "")
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT carried_records_json FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
-        kept = ss.keep(json.loads(row["carried_records_json"] or "[]"), relay, statement)
+        kept = ss.keep(json.loads(row["carried_records_json"] or "[]"), relay, statement, basis=basis, source=source)
         conn.execute("UPDATE authorized_agents SET carried_records_json = ? WHERE agent_id = ?",
                      (json.dumps(kept), agent_id))
-    return {"ok": True, "issuer": result["relay_id"], "expires_at": result["expires_at"], "counted_here": False}
+    return {"ok": True, "issuer": result["relay_id"], "expires_at": result["expires_at"], "counted_here": False,
+            "known_key": known}
 
 
 async def _carry_signed_record(agent_id: str, record: dict, row: Any) -> dict:

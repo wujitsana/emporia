@@ -230,13 +230,23 @@ class NotSetUp(RuntimeError):
     """This profile has no Emporia agent yet: the tab says how to make one (P296)."""
 
 
+def _relay_url() -> str:
+    """The relay this profile's setup recorded. No silent localhost guess: whatever listens there is not
+    necessarily the relay the person chose."""
+    url = str(_config().get("relay_url") or "").strip()
+    if not url or "${" in url:
+        raise NotSetUp("no relay is configured for this profile — run `hermes emporia setup` "
+                       "(or `hermes emporia agent refresh NAME`)")
+    return url
+
+
 async def _ensure_console() -> tuple[Path, str]:
     """This profile's console socket and its secret, starting the console first if it is not
     running (or was not started by this dashboard: its secret is unknown here)."""
     home = _home()
     console = _consoles.setdefault(str(home), _Console())
     sock = _socket()
-    wanted = _config().get("relay_url", "http://localhost:8088")
+    wanted = _relay_url()
     if console.relay_url == wanted and await _console_up(sock, console.secret):
         return sock, console.secret
     async with console.lock:
@@ -259,7 +269,7 @@ async def _ensure_console() -> tuple[Path, str]:
         # Console scope: this profile only (never --hermes-root), and a fresh secret, given on
         # stdin — not in its arguments (anyone on the machine reads those) or environment.
         argv = [cfg["python"], "-m", "emporia.console", "--uds", str(sock),
-                "--relay-url", cfg.get("relay_url", "http://localhost:8088"), "--profile", str(home)]
+                "--relay-url", wanted, "--profile", str(home)]
         # Only what the console needs: no Hermes secrets in its environment, and
         # no .env merged into it either (it is told everything it needs).
         env = {k: v for k, v in os.environ.items()
@@ -276,7 +286,7 @@ async def _ensure_console() -> tuple[Path, str]:
         except OSError:
             pass                                   # it exited at once; its log says why
         console.secret = secret
-        console.relay_url = cfg.get("relay_url", "http://localhost:8088")
+        console.relay_url = wanted
         log.info("Emporia: started the console for %s (pid %s)", home.name, console.proc.pid)
         deadline = asyncio.get_running_loop().time() + _CONSOLE_START_S
         while asyncio.get_running_loop().time() < deadline:

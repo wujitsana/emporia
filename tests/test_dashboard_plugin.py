@@ -639,3 +639,18 @@ def test_the_stats_route_counts_subscription_sessions_apart_from_metered_dollars
     assert m["usd"] == 0.1 and m["sessions"] == 3 and m["tokens"] == 187
     assert (m["included_sessions"], m["included_tokens"], m["included_providers"]) == (2, 77, ["openai-codex"])
     assert m["by_kind"]["dm"] == {"usd": 0.0, "sessions": 1}
+
+
+def test_the_dashboard_has_no_default_relay():
+    """No silent localhost guess: a profile whose setup recorded no relay says so instead of watching whatever listens on 8088."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("p_norelay", PLUGIN / "plugin_api.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    assert "8088" not in (PLUGIN / "plugin_api.py").read_text()
+    m._config = lambda: {"python": "/x/python"}
+    with pytest.raises(m.NotSetUp) as e:
+        m._relay_url()
+    assert "no relay is configured" in str(e.value)
+    m._config = lambda: {"relay_url": "http://relay.test"}
+    assert m._relay_url() == "http://relay.test"

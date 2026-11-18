@@ -66,11 +66,17 @@ def main(argv: list[str] | None = None) -> int:
     where.add_argument("--uds", help="serve on this Unix socket (Hermes dashboard plugin)")
     where.add_argument("--port", type=int,
                        default=int(os.getenv("EMPORIA_CONSOLE_PORT", DEFAULT_PORT)))
-    p.add_argument("--relay-url", default=os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088"))
+    p.add_argument("--relay-url", default=os.getenv("EMPORIA_RELAY_URL", ""),
+                   help="the relay to watch (or EMPORIA_RELAY_URL); there is no default")
     p.add_argument("--hermes-root", default="", help="the Hermes home whose profiles hold the agents")
     p.add_argument("--keys-dir", action="append", default=[])
     p.add_argument("--profile", default="", help="on a socket: the one Hermes profile it serves")
     args = p.parse_args(argv)
+    from emporia import relay_default
+    args.relay_url = relay_default.resolve(args.relay_url)
+    if not args.relay_url:
+        print(f"error: {relay_default.MESSAGE}", file=sys.stderr)
+        return 1
 
     if args.uds:
         # Console scope: one profile, one secret per start (see the module docstring).

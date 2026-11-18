@@ -5,7 +5,13 @@ rules counted about an agent: how many operators, how old they were, Craft, Reno
 agent *earned*. A reader checks the signature and the bindings (the agent's key, the relay's id, the audience, the
 dates) and shows it as "relay R says, verified, not counted here". Nothing on a host is raised, unlocked or ranked by
 it in 2.1: a statement counts toward no score, allowance, XP, season or board on the host (counting is a later
-release, under the host's own weights). An unknown relay's statement is still shown; its worth to the host is 0.
+release, under the host's own weights).
+
+Whose key it is decides what a host may call it. A signature proves only "the holder of this key says", and anyone
+can make a key. So a host says "verified" and counts a statement toward Reach only when the key is one it already
+knows: the pinned key of a linked relay, or a statement the host itself pulled from the agent's confirmed home
+relay. Any other statement is kept (it may be true) but shown as "signed by a key this relay does not know; not
+checked" and counted nowhere. The name shown is the URL the host fetched it from, never the issuer's own text.
 
 Binding, so a statement cannot be lent to another agent, another relay or another year:
 
@@ -170,17 +176,23 @@ def counted_operators(st: Mapping[str, Any]) -> int:
     return n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0
 
 
-def counts_for_reach(st: Any, **kw: Any) -> bool:
-    """Whether a statement may count toward a passport's Reach: verified, and its issuer counted standing (at
-    least `REACH_MIN_OPERATORS` operators). Unverified or empty statements never do."""
-    return bool(verify(st, **kw)["ok"]) and counted_operators(st) >= REACH_MIN_OPERATORS
+def counts_for_reach(st: Any, *, known: bool = False, **kw: Any) -> bool:
+    """Whether a statement may count toward a passport's Reach: its issuer key is one the host knows (`known`), it
+    verifies, and its issuer counted standing (at least `REACH_MIN_OPERATORS` operators). Unverified, unknown-key or
+    empty statements never do."""
+    return known and bool(verify(st, **kw)["ok"]) and counted_operators(st) >= REACH_MIN_OPERATORS
 
 
-def shown(st: Mapping[str, Any], result: Mapping[str, Any], *, host: str = "") -> dict[str, Any]:
-    """How a host shows a statement it holds: evidence in words, with the why, never a verdict."""
+def shown(st: Mapping[str, Any], result: Mapping[str, Any], *, host: str = "", known: bool = True,
+          source: str = "") -> dict[str, Any]:
+    """How a host shows a statement it holds: evidence in words, with the why, never a verdict. `known`: the issuer
+    key is one the host knows (a linked relay's pinned key, or a statement it pulled from the confirmed home);
+    otherwise it is shown as not checked. `source`: the URL the host fetched it from; the issuer's own
+    `relay_url` is never shown."""
     f = st.get("facts") or {}
     issuer = st.get("issuer") or {}
-    where = str(issuer.get("relay_url") or issuer.get("relay_id") or "a relay")[:120]
+    rid = str(issuer.get("relay_id") or "")[:40]
+    where = str(source)[:120] if known and source else f"relay {rid}" if rid else "a relay"
     parts = []
     if f.get("counted_operators") is not None:
         parts.append(f"{f['counted_operators']} operator{'' if f['counted_operators'] == 1 else 's'} counted")
@@ -191,28 +203,44 @@ def shown(st: Mapping[str, Any], result: Mapping[str, Any], *, host: str = "") -
     tier = (f.get("allowance") or {}).get("tier")
     if tier:
         parts.append(f"earned allowance {tier}")
-    if result.get("ok"):
+    if result.get("ok") and not known:
+        status = "signed by a key this relay does not know; not checked; not counted here"
+    elif result.get("ok"):
         status = (f"verified: signed by relay {result['relay_id']} on {str(st.get('issued_at', ''))[:10]}, "
                   f"valid to {str(st.get('expires_at', ''))[:10]}; not counted here")
     else:
         status = f"not verified ({result.get('reason', 'unknown')}); not counted here"
-    return {"relay": where, "verified": bool(result.get("ok")), "counted_here": False,
+    return {"relay": where, "verified": bool(result.get("ok")) and known, "known_key": known, "counted_here": False,
             "line": f"standing at {where}: {', '.join(parts) or 'no counted facts'} - {status}",
             "facts": dict(f), "issued_at": st.get("issued_at"), "expires_at": st.get("expires_at"),
             "reason": result.get("reason", "")}
 
 
-def keep(entries: list[dict[str, Any]], relay: str, statement: dict[str, Any], *, label: str = "") -> list[dict[str, Any]]:
+def keep(entries: list[dict[str, Any]], relay: str, statement: dict[str, Any], *, label: str = "",
+         basis: str = "", source: str = "") -> list[dict[str, Any]]:
     """The carried-record list with this issuer's statement stored WHOLE under its entry (one per issuer, the new
     one replacing the old; at most `KEPT_PER_AGENT` entries). An existing record entry from that relay keeps its
-    record fields and gains `standing`; otherwise a statement-only entry is added. Pure."""
+    record fields and gains `standing`; otherwise a statement-only entry is added. `basis` says why the host knows
+    the issuer key (`"linked"`: a linked relay's pinned key, `"home"`: pulled from the confirmed home; empty:
+    unknown) and `source` the URL it came from. A statement-only entry from the same issuer (by relay id) is
+    replaced too, so one issuer is one entry. Pure."""
     from emporia.identity import normalize_peer_url
+    new_id = (statement.get("issuer") or {}).get("relay_id")
     out, found = [], False
     for e in entries:
-        if normalize_peer_url(str(e.get("relay") or "")) == normalize_peer_url(relay):
-            e, found = {**e, "standing": statement}, True
+        same_url = normalize_peer_url(str(e.get("relay") or "")) == normalize_peer_url(relay)
+        old = e.get("standing")
+        same_issuer = bool(isinstance(old, dict) and "signature" not in e and new_id
+                           and (old.get("issuer") or {}).get("relay_id") == new_id)
+        if (same_url or same_issuer) and not found:
+            e = {**e, "standing": statement, "standing_basis": basis, "standing_source": source}
+            if same_issuer and not same_url:
+                e["relay"] = relay
+            found = True
+        elif same_issuer:
+            continue
         out.append(e)
     if not found:
         out.append({"label": label or f"standing from {relay}", "counts_here": False, "relay": relay,
-                    "standing": statement})
+                    "standing": statement, "standing_basis": basis, "standing_source": source})
     return out[-KEPT_PER_AGENT:]

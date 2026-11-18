@@ -24,6 +24,7 @@ and the `verdict`.
 from __future__ import annotations
 
 import hashlib
+import hmac
 from dataclasses import asdict
 from typing import Any
 
@@ -35,9 +36,18 @@ CARRY_EPOCHS = 3
 CARRIES = ("quorum", "none_won", "no_candidates")
 
 
-def unit_token(relay_id: str, key: str) -> str:
-    """A voting unit as the public sees it: opaque, stable on this relay, never the operator's label."""
-    return "u" + hashlib.sha256(f"chronicle-unit:{relay_id}:{key}".encode()).hexdigest()[:10]
+def unit_token(relay_id: str, key: str, secret: bytes | None = None) -> str:
+    """A voting unit as the public sees it: opaque, stable on this relay, never the operator's label. An HMAC under
+    this relay's secret (`identity.relay_unit_secret`, the one the standing statement's units use, in another
+    domain), so a public label or key cannot be hashed to match a unit, here or on another relay. Units are opaque
+    per relay: a reader uses the published value and never recomputes it from a label."""
+    if secret is None:
+        from emporia.identity import relay_unit_secret
+        secret = relay_unit_secret()
+    if not secret:
+        raise ValueError("a unit needs the relay's secret")
+    msg = f"emporia-chronicle-unit:v1:{relay_id}:{key}".encode()
+    return "u" + hmac.new(secret, msg, hashlib.sha256).hexdigest()[:10]
 
 
 def slot_call(start: float, epoch_s: int, i: int) -> float:

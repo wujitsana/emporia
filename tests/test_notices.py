@@ -457,11 +457,22 @@ def _setup_world(monkeypatch, tmp_path, state, tty=False):
     return cli, ran, prof
 
 
-def test_setup_turns_notices_on_for_a_new_agent_when_hermes_has_a_channel(monkeypatch, tmp_path, capsys):
+def test_setup_turns_notices_on_only_by_a_yes_never_for_a_new_agent_without_a_terminal(monkeypatch, tmp_path, capsys):
     cli, ran, prof = _setup_world(monkeypatch, tmp_path, {"channels": ["telegram"], "choice": ""})
-    assert cli._setup_notices(prof, existing=False, fast=False) == "on"
+    assert cli._setup_notices(prof, existing=False, fast=True) == "on"             # the all-yes path is the yes
     assert ["-p", "shop", "emporia", "notices", "on"] in ran
     assert "notices on: done" in capsys.readouterr().out
+    # a new profile, no terminal, not the all-yes path: nobody was asked, so the job is not made; a hint says how
+    cli, ran, prof = _setup_world(monkeypatch, tmp_path / "n", {"channels": ["telegram"], "choice": ""})
+    assert cli._setup_notices(prof, existing=False, fast=False) == ""
+    assert not [a for a in ran if a[-1] in ("on", "off")]
+    out = capsys.readouterr().out
+    assert "not asked" in out and "hermes emporia notices on" in out
+    # at a terminal the person's answer decides
+    cli, ran, prof = _setup_world(monkeypatch, tmp_path / "t", {"channels": ["telegram"], "choice": ""}, tty=True)
+    monkeypatch.setattr(cli, "choose", lambda *a, **k: "off")
+    assert cli._setup_notices(prof, existing=False, fast=False) == "off"
+    assert ["-p", "shop", "emporia", "notices", "off"] in ran
 
 
 def test_setup_leaves_an_existing_profile_alone_without_a_terminal_and_keeps_a_recorded_choice(monkeypatch, tmp_path):

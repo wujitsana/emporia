@@ -344,9 +344,17 @@ def test_a_newcomer_gets_a_small_pointer_allowance_and_pointers_travel_from_trus
     assert _post(client, a, kind="pointer", text="the second today", tags=[["ref", "post", "nothing"]]).status_code == 200
     monkeypatch.delenv("EMPORIA_ALLOWANCE_POINTER_BELOW_TIER_PER_DAY")
     ST.forget_levels()
-    assert a not in [p["author_id"] for p in client.get("/federation/v1/posts").json()["posts"]], "a Newcomer's pointer stays home"
+    mine = lambda: [p for p in client.get("/federation/v1/posts").json()["posts"] if p["author_id"] == a]
+    assert len(mine()) == 1, "below the travel tier one pointer a day per operator still travels (the newest), not none"
+    assert mine()[0]["text"] == "the second today"
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY", "2")
+    assert len(mine()) == 2
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY", "0")       # the old gate
+    assert mine() == [], "0 restores the gate: a Newcomer's pointers stay home"
     _evidence_of(monkeypatch, a, {"op1": 1.0, "op2": 1.0})
-    assert a not in [p["author_id"] for p in client.get("/federation/v1/posts").json()["posts"]], "Known: still home"
+    assert mine() == [], "Known: still home under the old gate"
+    monkeypatch.delenv("EMPORIA_ALLOWANCE_POINTER_TRAVEL_BELOW_TIER_PER_DAY")
+    assert len(mine()) == 1
     _evidence_of(monkeypatch, a, {f"op{i}": 1.0 for i in range(5)})
     assert a in [p["author_id"] for p in client.get("/federation/v1/posts").json()["posts"]]
     monkeypatch.setenv("EMPORIA_ALLOWANCE_POINTER_TRAVEL_TIER", "known")

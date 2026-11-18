@@ -317,8 +317,10 @@ class Chronicle:
             return {"go": False, "kind": kind}
         return {"go": True, "kind": kind, "chapter": d["chapter"], "label": d.get("label") or d["chapter"]}
 
-    def reveal(self) -> dict[str, Any]:
-        """Open whatever of yours is due: your passage in the Open window, your pick in the Count window. No arguments."""
+    def reveal(self, chapter: str | None = None, kind: str | None = None) -> dict[str, Any]:
+        """Open whatever of yours is due: your passage in the Open window, your pick in the Count window. No arguments
+        for the tool. The bridge's automatic reveal passes the `chapter` and `kind` its check (`auto_check`) was made
+        for: if the relay's answer has moved on to another chapter or window since, nothing is sent."""
         status, d = self._view()
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
@@ -327,9 +329,16 @@ class Chronicle:
         ch = _safe(d["chapter"])
         if not ch:
             return {"success": False, "error": "the relay named a chapter this client will not use as a file name"}
+        if chapter is not None and d["chapter"] != chapter:
+            return {"success": False, "error": "the relay is on another chapter than the one that was checked; nothing sent"}
+        want = {"passage": "open", "pick": "count"}.get(kind or "")
+        if kind is not None and d.get("phase") != want:
+            return {"success": False, "error": "the window changed since the check; nothing sent"}
         done = []
         if d["phase"] == "open":
             saved = self._load(f"passage.{ch}")
+            if saved and saved.get("chapter", d["chapter"]) != d["chapter"]:
+                saved = None
             if saved and not d["opened"]["passage"]:
                 s, r = self._post(f"/chronicle/chapters/{d['chapter']}/reveal", {"nonce": saved["nonce"],
                                                                                  "post": saved["post"]})
@@ -339,6 +348,8 @@ class Chronicle:
                              "broken": r["broken"]})
         elif d["phase"] == "count":
             saved = self._load(f"pick.{ch}")
+            if saved and saved.get("chapter", d["chapter"]) != d["chapter"]:
+                saved = None
             if saved and not d["opened"]["pick"]:
                 from emporia import wire
                 relay_id = d["relay_id"]

@@ -524,7 +524,7 @@ def register_agent(
         proto = _relay_protocol()
         legacy = proto is not None and proto < wire.RELAY_PROTOCOL
         if legacy and where.get("kind") != "here":
-            return {"success": False, "error": identity_card.older_relay_home_refusal(where.get("kind", ""))}
+            return {"success": False, "error": identity_card.older_relay_home_refusal(where.get("kind", ""), _base())}
         sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex, operator=op_label,
                                   client_name=client_name, client_version=client_version, about=bio, home=where,
                                   legacy=legacy)
@@ -1058,6 +1058,11 @@ def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any
     if not url.startswith(("https://", "http://")):
         return {"error": "a relay URL starts with https://", "success": False}
     from emporia import identity_card
+    if home.strip().rstrip("/") == "here":
+        # The person's yes covers a visit. Living on a relay (home here) is theirs to choose, never the tool's.
+        return {"error": (f"not visiting {url} as a member: a visit keeps this agent's home where it is. Making "
+                          f"{url} its home is for your person: " + localize(f"emporia relay use {url} {aid}")),
+                "success": False}
     if url == identity_card.home_url(RELAY_URL):
         return {"success": True, "relay": url, "note": "that is this agent's home"}
     if url in _visits():
@@ -1086,13 +1091,15 @@ def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any
     if (h.get("visitors") or "welcome") == "closed":
         return {"error": f"{url} takes no visitors (EMPORIA_VISITORS=closed) — only its members use it",
                 "success": False}
-    from emporia.networks import is_testnet
-    real_money = [n for n in (h.get("x402_networks") or []) if not is_testnet(n)]
     if needs_yes:
+        # Fixed words and the URL. Nothing the relay says about itself (its network names, a "testnet" claim) is put
+        # in front of the person: the relay being judged does not write its own approval prompt. What this client
+        # knows for itself is the address, and whether it is encrypted.
         answer = _ask_operator(
-            f"{aid} wants to visit {url}: register its key there and play, buy or sell on it"
-            + (f" — it takes REAL MONEY ({', '.join(real_money)})" if real_money else " (testnet)")
-            + ". Its spending limits still apply. Allow?", title="Allow this relay")
+            f"{aid} wants to visit {url}: register its key there and play, buy or sell on it. "
+            + ("This address is plain http, not encrypted. " if url.startswith("http://") else "")
+            + "It may take real money: the wallet's spending limits still apply there, whatever the relay says "
+              "about itself. Allow?", title="Allow this relay")
         if answer is not True:
             return {"error": f"not visiting {url}: " + (
                 # Hermes answers "decline" both when the person pressed no and when nobody could be asked (a chat

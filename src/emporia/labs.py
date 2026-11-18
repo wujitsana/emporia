@@ -174,9 +174,15 @@ def repo_subject(repo: str) -> tuple[str, str] | None:
 
 def subject_binding_problem(repo: str, subject: dict) -> str:
     """'' when the subject is the repo the URL names: its kind is that host's kind and its ref the URL's owner/repo
-    (any case; GitLab keeps its groups). A `file://` repo (a test relay's) is not bound."""
+    (any case; GitLab keeps its groups). A `file://` repo (a test relay's) is not bound. A host with no kind (one an
+    operator added to EMPORIA_LAB_HOSTS) is refused: its lab could only claim another host's owner/repo as its name."""
     want = repo_subject(repo)
     if want is None:
+        from urllib.parse import urlsplit
+        parts = urlsplit(repo)
+        if parts.scheme == "https" and parts.hostname:
+            return (f"repo_url: {parts.hostname} has no repo kind yet ({', '.join(HOST_KIND)}), so a lab there cannot "
+                    "be named for its repo")
         return ""
     kind, ref = want
     if subject.get("kind") != kind:

@@ -110,8 +110,10 @@ replaces.
     `emporia.relay_server`), and installs nothing.
   - The dashboard API starts only the console.
   - The hooks, the MCP server and the console start no installer.
-  - The plugin registers no cron job on its own. Setup may create one Hermes cron job per profile
-    ("Emporia — rounds") with `hermes cron create`, only with the person's yes; `emporia rounds off` removes it.
+  - The plugin registers no cron job on its own. Setup may create up to two Hermes cron jobs per profile
+    ("Emporia — rounds" and "Emporia — notices") with `hermes cron create`, only with the person's yes (the question,
+    or the all-yes path; a run with no terminal that is not the all-yes path creates neither and prints the command);
+    `emporia rounds off` and `hermes emporia notices off` remove them.
   - The runtime is installed or moved only by `install_runtime`
     (`hermes_plugin/emporia/setup_cli.py`), which only `hermes emporia setup` and
     `hermes emporia update` call when a person runs them.
@@ -178,7 +180,7 @@ a problem:
 |---|---|---|---|
 | `js_char_code` (medium) | 42 | `dashboard/dist/index.js`, `desktop/plugin.js` | `String.fromCharCode` in the bundled libraries (the noble crypto packages, the markdown renderer, React) |
 | `path_traversal`, `path_traversal_deep` (medium) | 59 | the same two bundles, `key_guard.py` | `../` in bundled library source and in the key guard's own deny pattern for it |
-| `python_subprocess` (medium) | 10 | `setup_cli.py` (8), `slash_command.py`, `dashboard/plugin_api.py` | the disclosed shell commands: git, uv/pip, `hermes` itself, the runtime's CLI, the console process |
+| `python_subprocess` (medium) | 12 | `setup_cli.py` (8), `notices.py` (2: the job's `hermes emporia notices check` call and the script template it writes), `slash_command.py`, `dashboard/plugin_api.py` | the disclosed shell commands: git, uv/pip, `hermes` itself, the runtime's CLI, the console process |
 | `sudo_usage` (medium) | 5 | `README.md`, `setup_cli.py`, `desktop/plugin.js` | the word in prose: instructions that tell a person to use sudo |
 | `js_base64`, `hex_encoded_string`, `unicode_escape_chain` (medium/low) | 10 | the bundles, `slash_command.py` | `atob`/`btoa` and hex literals in the bundled libraries |
 | `oversized_file` (medium) | 2 | the two bundles | unminified source of the bundled libraries (read by a reviewer, never obfuscated) |

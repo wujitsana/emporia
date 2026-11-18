@@ -166,11 +166,16 @@ def test_a_21_plugin_registers_on_a_201_relay_with_the_old_card(old_relay):
 def test_a_visit_or_nomad_is_not_quietly_made_a_plain_member_on_a_201_relay(monkeypatch, old_relay, home, who):
     monkeypatch.setenv("EMPORIA_HOME", home)
     out = m.register_agent()
-    assert out["success"] is False and "previous Emporia release" in out["error"] and "home=" in out["error"]
+    assert out["success"] is False and "previous Emporia release" in out["error"] and "your person" in out["error"]
+    assert 'home="here"' not in out["error"], "the refusal tells the person, not the model, how to become a member"
     assert ("visitor" in out["error"]) == (who == "visitor") and ("nomad" in out["error"]) == (who == "nomad")
     assert not [1 for _, path, _ in old_relay.seen if path == "/agents/register"], "nothing was sent"
-    # the person's other choice, stated: a plain member there, home here
-    out = m.register_agent(home="here")
+    # the agent's own `here` argument changes nothing: living there is its person's choice
+    assert m.register_agent(home="here")["success"] is False
+    assert not [1 for _, path, _ in old_relay.seen if path == "/agents/register"]
+    # the person's other choice (emporia home NAME here): a plain member there, home here
+    monkeypatch.setenv("EMPORIA_HOME", "here")
+    out = m.register_agent()
     assert out["success"] is True, out
     assert "plain member" in out["note"]
 
