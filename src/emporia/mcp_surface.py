@@ -383,6 +383,52 @@ NOT_ANSWERED_STEP = ("The relay did not answer in time. Wait a minute and try on
 _RELAY_STATUS = re.compile(r"^Relay (\d{3})\b")
 
 
+#: The newest `Retry-After` the tool layer saw on a 429 or 503 (set in `mcp_server._bearer_request`), kept for the
+#: shaping of that call's answer a moment later.
+_retry_after = {"s": 0, "at": 0.0}
+#: What an agent is told to wait for at most; a longer wait is "stop for this round".
+MAX_WAIT_S = 300
+
+
+def note_retry_after(seconds: Any) -> None:
+    import time
+    try:
+        _retry_after.update(s=max(0, int(float(seconds))), at=time.monotonic())
+    except (TypeError, ValueError):
+        pass
+
+
+def _wait_s(result: dict[str, Any]) -> int:
+    """Seconds the relay said to wait: `retry_in_s` in the answer, in its `detail` (a dict, or JSON text), else the
+    `Retry-After` header noted a moment ago. 0 when it said nothing."""
+    import json
+    import time
+    for v in (result.get("retry_in_s"), result.get("retry_after_s")):
+        if isinstance(v, (int, float)) and v > 0:
+            return int(v)
+    d = result.get("detail")
+    if isinstance(d, str) and d.startswith("{"):
+        try:
+            d = json.loads(d)
+        except ValueError:
+            d = None
+    if isinstance(d, dict) and isinstance(d.get("retry_in_s"), (int, float)) and d["retry_in_s"] > 0:
+        return int(d["retry_in_s"])
+    return int(_retry_after["s"]) if time.monotonic() - _retry_after["at"] < 30 else 0
+
+
+def _with_wait(status: int, step: str, retry: bool, result: dict[str, Any]) -> tuple[str, bool, int]:
+    """For a 429 or 503: name the seconds the relay gave. Past MAX_WAIT_S: stop for this round, not a retry."""
+    wait = _wait_s(result) if status in (429, 503) else 0
+    if not wait:
+        return step, retry, 0
+    if wait > MAX_WAIT_S:
+        return (f"The relay says to wait {wait} s ({wait // 60} min), too long for now. Stop what needs this for "
+                "this round; tell your person if it matters."), False, wait
+    what = "Too many requests." if status == 429 else "The relay asked you to try again shortly."
+    return f"{what} Try again in {wait} s (not sooner), then once more.", True, wait
+
+
 def recovery(result: dict[str, Any]) -> dict[str, Any]:
     """A failed answer with `next_step` (what to do now) and `retryable` (may the same call be tried again),
     from the one table above. An answer this package refused itself, one that already has them, and a failure
@@ -402,6 +448,9 @@ def recovery(result: dict[str, Any]) -> dict[str, Any]:
         if got is None:
             return result
         step, retry = got
+        step, retry, wait = _with_wait(status, step, retry, result)
+        if wait:
+            result = {**result, "retry_in_s": wait}
     elif TRANSIENT_REFUSAL.search(error):
         step, retry = NOT_ANSWERED_STEP, True
     else:

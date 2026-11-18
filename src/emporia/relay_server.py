@@ -3070,6 +3070,12 @@ def _operator_key(agent_id: str) -> str:
     return who.operator if who else ""
 
 
+def _retry_header(stamps: list[float] | None) -> dict[str, str]:
+    """`Retry-After` for a per-minute limit: when the oldest write in the trailing minute leaves the window."""
+    left = int(60 - (time.time() - min(stamps))) + 1 if stamps else 60
+    return {"Retry-After": str(max(1, min(60, left)))}
+
+
 def _enforce_agent_rate_limit(agent_id: str) -> None:
     """Per-agent write throttle (N11-4). The identity-keyed complement to the global
     IP middleware below — that middleware exempts localhost and the Docker gateway
@@ -3084,14 +3090,16 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
         RATE_LIMIT_HITS["agent"] += 1
         logger.warning("rate_limited", extra={"limit": "agent", "per_minute": AGENT_REGISTRY.max_per_minute,
                                               "agent_id": agent_id, "path": path})
-        raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
+        raise HTTPException(429, "Rate limit exceeded — too many requests, slow down",
+                            headers=_retry_header(AGENT_REGISTRY.rate_limits.get(agent_id)))
     # per operator as well: an operator's agents together get a few agents' worth, not a budget each
     operator = _operator_key(agent_id)
     if operator and not AGENT_REGISTRY.check_rate_limit(
             f"operator:{operator}", int(AGENT_REGISTRY.max_per_minute * OPERATOR_RATE_MULTIPLE)):
         RATE_LIMIT_HITS["agent"] += 1
         logger.warning("rate_limited", extra={"limit": "operator", "agent_id": agent_id, "path": path})
-        raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down")
+        raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down",
+                            headers=_retry_header(AGENT_REGISTRY.rate_limits.get(f"operator:{operator}")))
 
 
 #: Operator section: how often a caller was turned away by a rate limit since this relay
@@ -3625,9 +3633,10 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
                                    "path": path},
         )
         return JSONResponse(
-            {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP"},
+            {"detail": f"Rate limit exceeded — {limit} requests per {int(window)}s per IP",
+             "retry_in_s": max(1, int(window - (now - q[0])))},
             status_code=429,
-            headers={"Retry-After": str(int(window - (now - q[0])))},
+            headers={"Retry-After": str(max(1, int(window - (now - q[0]))))},
         )
     q.append(now)
     return None
@@ -4013,6 +4022,20 @@ app.add_middleware(BodyLimit)
 async def _too_deeply_nested(request: Request, exc: RecursionError):
     """A JSON body nested thousands deep overflows the parser's stack: the sender's mistake, not a crash."""
     return JSONResponse({"detail": "Request body is nested too deeply"}, status_code=400)
+
+from fastapi.exception_handlers import http_exception_handler as _default_http_exception_handler
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_error(request: Request, exc: _StarletteHTTPException):
+    """The default answer, except that a 429 which sends `Retry-After` also says it in the body as `retry_in_s`
+    (a tool layer that only keeps the body still tells the agent how long to wait)."""
+    wait = (exc.headers or {}).get("Retry-After", "")
+    if exc.status_code == 429 and wait.isdigit():
+        return JSONResponse({"detail": exc.detail, "retry_in_s": int(wait)}, status_code=429, headers=exc.headers)
+    return await _default_http_exception_handler(request, exc)
+
 
 # P271: since P261 nothing reads the relay from a browser (the console and the
 # Hermes tab call it from their own process), so only its own URL by default;

@@ -359,6 +359,9 @@ def _bearer_request(
         # Only the words change; the answer was a refusal and stays one, so nothing more is readable.
         return httpx.Response(403, json={"detail": not_registered_message(agent_id or AGENT_ID),
                                          "not_registered": True}, request=r.request)
+    if r.status_code in (429, 503):
+        from emporia import mcp_surface
+        mcp_surface.note_retry_after(r.headers.get("retry-after", ""))      # recovery() names the seconds
     return r
 
 
