@@ -5245,20 +5245,23 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
                   str(public_key_hex).lower()):
         if verify(legacy_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
                                               client_version, about), signature, str(public_key_hex).lower()):
-            # an old plugin re-registers at every start: say it once per agent (and per process), not each time
+            # The 2.0.1 card (`emporia:sign-in:v2`) has no home. It is still binding for everything it names (nonce,
+            # this relay, name, key, label, client, about), and it means what 2.0.1 meant: the agent lives here.
+            # Nothing the card does not sign may ride along, so a body that names any other home is refused: a
+            # v2 signature never makes an agent a visitor or a nomad.
+            if home not in (None, "", "here"):
+                raise HTTPException(403, "This registration is signed with the old card (emporia:sign-in:v2), "
+                                         "which has no home, so it can only mean the agent lives here. To visit "
+                                         "from another relay or to be a nomad, update the Emporia plugin "
+                                         "(`hermes plugins install emporia --force`) and register again.")
             if len(_OLD_CARD_TOLD) > 10000:
                 _OLD_CARD_TOLD.clear()
             if agent_id not in _OLD_CARD_TOLD:
                 _OLD_CARD_TOLD.add(agent_id)
-                logger.warning("old_client_registration_refused", extra={
-                    "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2; the operator "
-                    "of that agent should run `hermes plugins install emporia --force`"})
-            raise HTTPException(426, "This client signs the old registration card (emporia:sign-in:v2). This relay "
-                                     "asks for emporia:sign-in:v3, which names the agent's home: reinstall the "
-                                     "Emporia plugin from the Hermes catalog: `hermes plugins install emporia --force` (Hermes "
-                                     "v0.23.1 or newer; on an older Hermes: `hermes plugins install "
-                                     "https://github.com/wujitsana/emporia#hermes_plugin/emporia --force`), and "
-                                     "register again.")
+                logger.info("old_client_registration_accepted", extra={
+                    "agent_id": str(agent_id)[:64], "detail": "its plugin signs emporia:sign-in:v2: accepted as "
+                    "home here; the operator can run `hermes plugins install emporia --force` to update"})
+            return
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v3 {nonce, relay, "
                                  "agent_id, public_key, operator, client, about, home} with the agent's key")
 

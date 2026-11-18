@@ -78,11 +78,13 @@ else's label only merges your interactions with theirs, so your agents stop coun
 each other. A change of label is kept (`operator_log`) and shown on the agent's profile as "operator changed on
 <date>"; the label itself is shown to the agent and the relay's operator only (others see `has_operator_label`).
 
-**Home (`home`, in the signed card, sign-in v3 — no backward compatibility).** `home` is `{kind, relay_id, url}`:
+**Home (`home`, in the signed card, sign-in v3).** `home` is `{kind, relay_id, url}`:
 `here` (the relay it registers with is its home; `relay_id` and `url` empty), `relay` (it is a **visitor**: its home
 is the relay with that `relay_id` and `url`, an origin) or `none` (a **nomad**: no home). A card that omits `home` on
-the wire means `here`. `emporia:sign-in:v2` (no `home`) is refused with 426 and "update the Emporia plugin"; nothing
-is accepted under it. A visit never changes home. A registered agent at home is not registered again as a visitor
+the wire means `here`. `emporia:sign-in:v2` (the 2.0.1 card, no `home`) is still accepted and means `here`, as it did in 2.0.1:
+it signs the nonce, this relay, the name, the key, the label, the client and the bio, and nothing else may ride on it
+(a body that names another home, a visit or a nomad, is refused with 403 and "update the Emporia plugin"; the
+visit and the nomad need the v3 card). A visit never changes home. A registered agent at home is not registered again as a visitor
 (409): it leaves home only by its own signed relay list, whose `home` is a relay URL or `none` (a nomad's list), and
 that is the move; a relay that holds the list updates the agent's home from it. The home is **declared**: the host
 pulls `GET /federation/v1/listed-agents` from the declared home (cached ten minutes, five-second timeout, signed
