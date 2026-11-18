@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -39,9 +40,19 @@ RETRY_SECONDS = 3600          # after a relay that did not answer
 TIME_LIMIT_SECONDS = 180      # the bridge stops waiting for one check after this
 KEEP_NOTICED = 20
 
-NOTICE = ("Your relay's transparency log did not check out: it may have rewritten what it recorded. "
-          "Evidence is kept in log_states.json in the agent's keys folder. "
-          "Run `emporia log verify {name}` for details.")
+_TAIL = (" Evidence is kept in log_states.json in the agent's keys folder. "
+         "Run `emporia log verify {name}` for details.")
+NOTICES = {
+    "rewritten": "Your relay's transparency log did not check out: it may have rewritten what it recorded." + _TAIL,
+    "key_changed": "Your relay's transparency log did not check out: your relay's signing key changed without "
+                   "a signed hand-over." + _TAIL,
+    "stopped": "Your relay's transparency log did not check out: your relay stopped serving the log it kept." + _TAIL,
+}
+NOTICE = NOTICES["rewritten"]
+FIRST_CHECK_SPREAD = 600      # the first check comes 120 s + 0..600 s after start
+INTERVAL_JITTER = 0.2         # then every interval +-20%
+RETRY_JITTER = 0.1            # a retry after unreachable keeps its delay, +-10%
+FIRST_AGAIN = "first look again: the stored head was missing; a change made meanwhile would not show"
 FRAME_TYPE = "log_check"
 
 
@@ -91,7 +102,10 @@ def summarize(result: dict[str, Any], now: datetime) -> dict[str, Any]:
     problems = [] if status in ("unreachable", "off") else [str(p)[:300] for p in result.get("problems") or []]
     if not problems and not result.get("ok") and status not in ("unreachable", "off", ""):
         problems = [str(result.get("detail") or status)[:300]]
-    return {"status": status, "ok": not problems and status != "unreachable",
+    kind = "stopped" if status == "stopped" else ""
+    if not kind and any("key you never pinned" in p for p in problems):
+        kind = "key_changed"
+    return {"status": status, "ok": not problems and status != "unreachable", "kind": kind or "rewritten",
             "size": state.get("size") if isinstance(state.get("size"), int) else None,
             "epoch": state.get("epoch", 1) if state else None,
             "checked_at": now.isoformat(), "problems": problems}
@@ -110,6 +124,8 @@ def line(record: dict[str, Any], now: datetime | None = None) -> str:
     if status == "unreachable":
         return f"Log checked {when}: the relay did not answer"
     size = record.get("size")
+    if record.get("first_again"):
+        return f"Log checked {when}: {FIRST_AGAIN}"
     return f"Log checked {when}: OK" + (f", {size} entr{'y' if size == 1 else 'ies'}" if isinstance(size, int) else "")
 
 
@@ -132,13 +148,15 @@ class Witness:
     `logcheck.verify_relay`."""
 
     def __init__(self, relay: str, path: Path | None, *, verify: Callable[[str], dict[str, Any]] | None = None,
-                 clock: Callable[[], float] = time.monotonic, now: Callable[[], datetime] | None = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, now: Callable[[], datetime] | None = None,
+                 rng: Callable[[], float] = random.random) -> None:
         self.relay = relay.rstrip("/")
         self.path = path
         self._verify = verify
         self._clock = clock
         self._now = now or (lambda: datetime.now(UTC))
-        self.next_at = clock() + FIRST_CHECK_SECONDS
+        self._rng = rng
+        self.next_at = clock() + FIRST_CHECK_SECONDS + self._rng() * FIRST_CHECK_SPREAD
         self._busy = threading.Lock()
         self._record = read(path)
 
@@ -160,13 +178,26 @@ class Witness:
             except Exception as e:  # noqa: BLE001 — a failed check is a quiet one; the next try is soon
                 rec = {"status": "unreachable", "ok": False, "size": None, "epoch": None,
                        "checked_at": self._now().isoformat(), "problems": [], "error": type(e).__name__}
-            noticed = [k for k in self._record.get("noticed") or [] if isinstance(k, str)]
+            before = self._record
+            if rec["status"] == "unreachable":
+                # An unreachable relay does not erase an earlier problem: keep what was known, update the time.
+                rec = {**before, "status": "unreachable", "checked_at": rec["checked_at"],
+                       "problems": before.get("problems") or [], "size": before.get("size"),
+                       "epoch": before.get("epoch"), **({"error": rec["error"]} if "error" in rec else {})}
+                rec["ok"] = False
+            elif rec["status"] == "first" and before.get("status") == "ok" and isinstance(before.get("size"), int):
+                rec["first_again"] = True
+            noticed = [k for k in before.get("noticed") or [] if isinstance(k, str)]
+            if not rec["problems"] and rec["status"] != "unreachable":
+                noticed = []          # a clean check: a problem that returns is told again
             new = [k for k in dict.fromkeys(problem_key(p) for p in rec["problems"]) if k not in noticed]
             rec["noticed"] = (noticed + new)[-KEEP_NOTICED:]
             rec["relay"] = self.relay
             self._record = rec
             _write(self.path, rec)
-            self.next_at = self._clock() + (RETRY_SECONDS if rec["status"] == "unreachable" else CHECK_EVERY_SECONDS)
+            base, spread = ((RETRY_SECONDS, RETRY_JITTER) if rec["status"] == "unreachable"
+                            else (CHECK_EVERY_SECONDS, INTERVAL_JITTER))
+            self.next_at = self._clock() + base * (1 + (2 * self._rng() - 1) * spread)
             return {**rec, "notice": bool(new)}
         finally:
             self._busy.release()
@@ -175,5 +206,6 @@ class Witness:
 def notice_line(name: str, record: dict[str, Any]) -> str:
     """The bridge's stdout line for a problem: fixed text, sent as the relay's own kind (`emporia:relay`)."""
     key = problem_key((record.get("problems") or [""])[0])
-    return json.dumps({"v": 1, "text": NOTICE.format(name=name), "sender": "emporia:relay",
+    text = NOTICES.get(record.get("kind") or "", NOTICE).format(name=name)
+    return json.dumps({"v": 1, "text": text, "sender": "emporia:relay",
                        "frame_type": FRAME_TYPE, "id": f"log-check-{key}"})
