@@ -168,7 +168,8 @@ def test_summary_counts_after_what_an_answering_relay_hides(monkeypatch):
     monkeypatch.setattr(httpx, "get", lambda url, timeout=0: type(
         "R", (), {"status_code": 200, "json": staticmethod(lambda: {"relay_modules": mods})})())
     want = len(F.tools_of([]) - relay_modules.tools_to_hide([mods]))
-    assert F.summary(F.DEFAULTS, "http://r.test") == f"{want} tools: core"
+    got = F.summary(F.DEFAULTS, "http://r.test")
+    assert got.startswith(f"{want} tools: core" if want == len(F.tools_of([])) else f"{want} of {len(F.tools_of([]))} tools shown: core")
 
     def down(url, timeout=0):
         raise httpx.ConnectError("no")
@@ -244,7 +245,7 @@ def test_features_command_turns_one_on_and_off_and_says_what_changes(tmp_path, c
     agent_init.write_env(key_dir, {"EMPORIA_AGENT_ID": "lean_agent", "EMPORIA_RELAY_URL": "http://127.0.0.1:1"})
     assert cli.main(["features", "on", "money", "archive", "--dir", str(key_dir)]) == 0
     out = capsys.readouterr().out
-    assert "Money (USDC): turned on (6 tools" in out and "next MCP start" in out
+    assert "Money (USDC): turned on (6 tools" in out and "applies after a restart" in out
     held = agent_init.settings_of(key_dir)
     assert held[F.SETTING] == "archive,money" and held["EMPORIA_AGENT_ID"] == "lean_agent"
     assert cli.main(["features", "off", "archive", "--dir", str(key_dir)]) == 0

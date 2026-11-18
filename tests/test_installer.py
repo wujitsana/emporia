@@ -652,7 +652,7 @@ def test_a_label_the_person_set_is_honored_and_a_bad_one_stops_setup(tmp_path, c
     (second / ".env").write_text(f"EMPORIA_OPERATOR_LABEL={mine}\n")
     assert installer.resolve_operator_label_how(None, second) == (mine, "this profile's own setting")
     label, how = installer.resolve_operator_label_how(None, third)
-    assert label == shared and "shared with your other agent" in how and "operator label --new --profile third" in how
+    assert label == shared and "shared with your other agent" in how and "hermes -p third emporia operator label --new" in how
     (third / ".env").write_text("EMPORIA_OPERATOR_LABEL=my-own-label\n")
     with pytest.raises(SystemExit, match="not an operator label"):
         installer.resolve_operator_label(None, third)

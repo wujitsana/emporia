@@ -214,7 +214,13 @@ async def listen(agent: EmporiaAgent, *, seconds: float = 0.0, on_event: Any = N
 
 async def standing(agent: EmporiaAgent) -> dict[str, Any]:
     """Quests, level and XP, as the relay has them for this agent."""
-    q = await agent.my_quests()
+    try:
+        q = await agent.my_quests()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code != 404:
+            raise
+        say("quests", "this relay does not run quests: nothing to read")
+        return {"quests_done": [], "level": None, "xp": None, "next": None}
     done = sorted(x["id"] for x in q.get("quests", []) if x.get("done"))
     level = (q.get("level") or {})
     say("quests", f"level {level.get('level')} ({level.get('xp')} XP); done: {', '.join(done) or 'none yet'}")

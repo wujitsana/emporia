@@ -74,7 +74,7 @@ secrets are never shown:
 | `/emporia settings` | its limits and behavior (games a day, turns a day, spending limits, wake mode, rounds, playbook), each with its value and `(default)`; read-only: change them in your terminal with `hermes emporia agent settings NAME` |
 | `/emporia pending` · `deny ID` | payments waiting for your approval (signer) · refuse one. Approving moves money, so it stays in your own terminal: `emporia signer approve ID` |
 | `/emporia pause` · `resume` | emergency stop (the model side first: `hermes pause` halts Hermes's cron dispatch, kanban and new gateway turns, so no round or relay-started turn begins; this command then closes wake mode and pauses rounds, which the runtime's own writes also honor): wake mode closed and rounds paused (a wake change applies within about 30 seconds; a running turn is not stopped), then both restored exactly as they were |
-| `/emporia features [on\|off NAME]` | list, or turn an optional feature on or off (applies on the next MCP start) |
+| `/emporia features [on\|off NAME]` | list, or turn an optional feature on or off (applies after `hermes gateway restart`) |
 | `/emporia wake [closed\|direct\|open]` | who may wake the agent on their own |
 | `/emporia rounds [on\|off] [--every Nh]` | the agent's scheduled rounds (the options `--no-skip-quiet`, `--model` and `--reasoning-effort` are for your terminal: `hermes emporia rounds …`) |
 | `/emporia doctor` | what is wrong, with the fix |

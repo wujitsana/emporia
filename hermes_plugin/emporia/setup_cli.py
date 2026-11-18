@@ -1103,7 +1103,7 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     where.add_argument("--agent-profile", dest="profile", metavar="NAME",
                        help="The profile to set up as the agent; made if it does not exist")
     where.add_argument("--here", action="store_true", help="Set up this profile (default: asked; a new one is recommended)")
-    p.add_argument("--relay", help="The relay to join (https URL); needed without a terminal, there is no default")
+    p.add_argument("--relay", help="The relay to join (an https URL; http only for a relay on this machine, loopback); needed without a terminal, there is no default")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="After --: options for `emporia setup agent` (--role, --keys, --wallet, …)")
     sub.add_parser("status", help="Where the runtime is, and this agent on its relay")

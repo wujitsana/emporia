@@ -904,3 +904,9 @@ def test_every_drawn_round_is_published_strictly_after_its_boundary():
     for name, boundary in (("call", CALL), ("show", w["open"][1]), ("count", w["count"][1])):
         assert rand.round_time(r[name]) > boundary, name
         assert rand.round_time(r[name] - 1) <= boundary, name
+
+
+def test_the_one_numeral_shape_does_not_count_digits_inside_handles_mentions_or_ids():
+    one = C.SHAPES["one_numeral"]
+    assert one("e21c kept 7 lanterns for @bob2 and pst_9f2.")
+    assert not one("e21c kept 7 lanterns and 8 more.") and not one("No number at all, only e21c.")

@@ -89,7 +89,8 @@ def resolve_operator_label_how(explicit: str | None = None, profile_dir: Path | 
         if shared:
             return shared, (f"shared with your other agent {other}: one operator, so likes and games between "
                             f"them count for nothing. For a separate label for this agent: "
-                            f"emporia operator label --new --profile {profile_dir.name}")
+                            f"hermes -p {profile_dir.name} emporia operator label --new, then "
+                            f"hermes -p {profile_dir.name} emporia register {profile_dir.name}")
     return operators.new_label(), "new"
 
 

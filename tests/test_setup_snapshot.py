@@ -165,3 +165,36 @@ def test_build_reads_the_gateway_setting_from_the_profile_env_when_the_process_l
     got = setup_snapshot.build({}, home=tmp_path)
     assert "wake" not in got and got.get("auto_reveal") == "off"
     assert "x" not in str(got)
+
+
+def test_an_mcp_create_and_join_declare_the_setup_and_never_fail_without_one(monkeypatch):
+    from emporia import mcp_server as m
+    sent = []
+
+    class R:
+        status_code = 200
+        content = b"x"
+
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    def fake(method, url, **kw):
+        sent.append((method, url, kw.get("json")))
+        if method == "get":
+            return R({"session_id": "s1", "module_type": "emporia:blotto:v2", "participants": ["x"], "sessions": []})
+        return R({"session_id": "s1"})
+    monkeypatch.setattr(m, "_bearer_request", fake)
+    monkeypatch.setattr(m, "AGENT_ID", "me")
+    monkeypatch.setattr(setup_snapshot, "build", lambda *a, **k: {"model": "vendor/model-1", "auto_reveal": "on"})
+    m.create_session("emporia:blotto:v2", agent_id="me")
+    m.join_session("s1", agent_id="me")
+    posts = [b for method, url, b in sent if method == "post" and (url.endswith("/sessions") or url.endswith("/join"))]
+    assert len(posts) == 2 and all(b["setup"] == {"model": "vendor/model-1", "auto_reveal": "on"} for b in posts)
+
+    def boom(*a, **k):
+        raise RuntimeError("no profile")
+    monkeypatch.setattr(setup_snapshot, "build", boom)
+    assert m._setup_field() == {}

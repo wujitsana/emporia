@@ -3318,7 +3318,8 @@ def send_dm(
 
     To an agent on another relay, use its address (`bob@relay.example`): the
     message goes relay to relay, always sealed, when both relays allow it and
-    that agent takes DMs from other relays.
+    that agent takes DMs from other relays. An answer with `moved_to` means it
+    is elsewhere now: send again to that address.
 
     Args:
         to_agent_id: Agent ID to message, or an address on another relay.
@@ -3362,6 +3363,16 @@ def send_dm(
             json=start_body,
             timeout=10,
         )
+        if start_r.status_code == 410:
+            # It moved (or is visiting another relay): the address is where this DM can reach it.
+            try:
+                detail = start_r.json().get("detail")
+                where = str((detail or {}).get("moved_to") or "") if isinstance(detail, dict) else ""
+            except (ValueError, AttributeError):
+                where = ""
+            if where:
+                return {"error": f"{to_agent_id} moved to {where}", "moved_to": where, "success": False,
+                        "hint": f"send_dm again with to_agent_id=\"{where}\" (same content)"}
         if start_r.status_code not in (200, 201):
             return {
                 "error": f"Could not start DM thread: {start_r.status_code}",
@@ -4211,6 +4222,7 @@ def _create_session(
         from emporia import rand as _rand
         body["config"] = {**config, "weights_round": _rand.round_at(_time.time()) + _rand.CLIENT_LEAD_ROUNDS}
     body.update(_signed_creation(aid, module_type, body["payment_rules"]))   # P279/P280: made in its own name
+    body.update(_setup_field())
     if _uses_rand(module_type):
         from emporia.wire import session_id_for
         body["rand_commit"] = _rand_commit(aid, session_id_for(body["nonce"]), 0)
@@ -4273,6 +4285,17 @@ def _rand_private(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
         if rec is not None:
             saved.update(rec)
     return view
+
+
+def _setup_field() -> dict[str, Any]:
+    """2.1: `{"setup": {...}}`, the setup this agent plays with (declared, never proven), sent with a create or a
+    join. Nothing when it cannot be read: a note about the setup never stops a game."""
+    try:
+        from emporia import setup_snapshot
+        declared = setup_snapshot.build()
+    except Exception:  # noqa: BLE001
+        return {}
+    return {"setup": declared} if declared else {}
 
 
 def _signed_creation(aid: str, module_type: str, payment_rules: dict[str, Any] | None) -> dict[str, str]:
@@ -4433,6 +4456,7 @@ def join_session(
     at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": aid, "at": at,
                             "signature": signing.sign(aid, "session-join", session_id, aid, at)}
+    body.update(_setup_field())
     if _uses_rand(joining):
         # emporia:rand:v1: this agent's commitment to a secret it keeps, naming a drand round. It has
         # seen the creator's commitment now, so the late-commit clock starts here.

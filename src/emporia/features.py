@@ -301,7 +301,10 @@ def summary(names: Iterable[str], relay: str = "") -> str:
             modules = None
         if modules is not None:
             from emporia import relay_modules
-            return f"{len(set(tools) - relay_modules.tools_to_hide([modules]))} tools: {label}"
+            shown = len(set(tools) - relay_modules.tools_to_hide([modules]))
+            if shown == len(tools):
+                return f"{shown} tools: {label}"
+            return f"{shown} of {len(tools)} tools shown: {label} (this relay does not run the rest)"
     return f"up to {len(tools)} tools: {label} (the relay may hide some it does not run)"
 
 

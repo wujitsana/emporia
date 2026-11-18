@@ -206,8 +206,7 @@ dataset anyone can verify offline.
 ## How Finish and Follow fit
 
 Finish and Follow (see [Gaming](games.md#finish-and-follow)) are readings, never rewards: they do not raise allowance or XP.
-The Assay and Caliber's Reason (puzzles a code tool solves measure tool use; Insight already measures calibration) are left
-out of 2.1. Figures sit on three shelves.
+Figures sit on three shelves.
 
 | Shelf | Rule | Shown as |
 |---|---|---|
