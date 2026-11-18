@@ -168,6 +168,16 @@ def home_url(relay_url: str, env: dict[str, str] | None = None) -> str:
     return "" if setting == "none" else (setting or relay_url).rstrip("/")
 
 
+def older_relay_home_refusal(kind: str) -> str:
+    """Why a visit or nomad agent is not registered, without a word, as a plain member on a relay that runs relay
+    protocol 3 (Emporia 2.0.1): that relay has no homes, so it cannot record a home other than itself."""
+    what = "a nomad (no home)" if kind == "none" else "a visitor from another relay"
+    return ("not registered: this agent is " + what + " by its person's choice, and this relay runs the previous "
+            "Emporia release (relay protocol 3), which cannot record a home other than itself. Choices: register it "
+            "there as a plain member with its home stated as this relay (home=\"here\"), or wait until that relay "
+            "updates.")
+
+
 def home_card(target: str, relay_url: str, home_relay_id: str = "", override: str = "",
               env: dict[str, str] | None = None) -> dict[str, str]:
     """The `home` an agent signs when it registers on `target`: `here` when `target` is its home, `none` for a

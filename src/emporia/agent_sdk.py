@@ -415,6 +415,8 @@ class EmporiaAgent:
             legacy = proto is not None and proto < wire.RELAY_PROTOCOL
         except Exception:  # noqa: BLE001 - no card, no version: sign the current card
             pass
+        if legacy and wire.clean_home(home).get("kind", "here") != "here":
+            raise ValueError(identity_card.older_relay_home_refusal(wire.clean_home(home).get("kind", "")))
         sig_hex = signing.sign_in(self.agent_id, ch["nonce"], self.relay_url, self.public_key_hex,
                                   key=self.profile_id, operator=label, client_name=client_name,
                                   client_version=client_version, about=self._about, home=home, legacy=legacy)

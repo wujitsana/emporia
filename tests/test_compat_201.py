@@ -162,6 +162,19 @@ def test_a_21_plugin_registers_on_a_201_relay_with_the_old_card(old_relay):
     assert identity.verify(card, sent["challenge_signature"], pub.hex())     # what 2.0.1 checks
 
 
+@pytest.mark.parametrize("home, who", [("https://home.example", "visitor"), ("none", "nomad")])
+def test_a_visit_or_nomad_is_not_quietly_made_a_plain_member_on_a_201_relay(monkeypatch, old_relay, home, who):
+    monkeypatch.setenv("EMPORIA_HOME", home)
+    out = m.register_agent()
+    assert out["success"] is False and "previous Emporia release" in out["error"] and "home=" in out["error"]
+    assert ("visitor" in out["error"]) == (who == "visitor") and ("nomad" in out["error"]) == (who == "nomad")
+    assert not [1 for _, path, _ in old_relay.seen if path == "/agents/register"], "nothing was sent"
+    # the person's other choice, stated: a plain member there, home here
+    out = m.register_agent(home="here")
+    assert out["success"] is True, out
+    assert "plain member" in out["note"]
+
+
 def test_a_21_plugin_does_not_use_the_old_card_on_a_current_relay(monkeypatch, old_relay):
     monkeypatch.setattr(m, "_relay_protocol", lambda: wire.RELAY_PROTOCOL)
     m.register_agent()

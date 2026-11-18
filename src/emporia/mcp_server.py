@@ -523,6 +523,8 @@ def register_agent(
         # A relay on protocol 3 (Emporia 2.0.1) knows the card without a home (sign-in v2): sign that one for it.
         proto = _relay_protocol()
         legacy = proto is not None and proto < wire.RELAY_PROTOCOL
+        if legacy and where.get("kind") != "here":
+            return {"success": False, "error": identity_card.older_relay_home_refusal(where.get("kind", ""))}
         sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex, operator=op_label,
                                   client_name=client_name, client_version=client_version, about=bio, home=where,
                                   legacy=legacy)
@@ -572,9 +574,9 @@ def register_agent(
                    "client": data.get("client"),
                    "address": data.get("address"), "fingerprint": data.get("fingerprint"),
                    "relay_list": published}
-            if legacy and where.get("kind") != "here":
+            if legacy:
                 out["note"] = ("this relay runs an older Emporia (relay protocol 3), which has no homes: the agent "
-                               "is registered there as a plain member. Its home stays in its signed relay list.")
+                               "is registered there as a plain member, with that relay as its home.")
             return out
         out: dict[str, Any] = {"error": data, "success": False}
         if old := _older_relay_note():
