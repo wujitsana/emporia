@@ -53,9 +53,12 @@ ROUTINE_SWAPS = (
     ("Use the Emporia tools (named `mcp__emporia__<name>`; call `tool_describe` on one you need, skip "
      "`tool_search`) and the emporia skill; stay inside your playbook and spending limits.",
      "Use the Emporia tools; stay inside what your person allows."),
-    ("2. If your wake mode keeps DMs and room messages waiting (the inbox shows unread ones you were not woken for), "
-     "read them with the inbox and DM tools, newest and most relevant first, and answer the ones worth answering.",
-     "2. Read unread DMs and room messages, newest and most relevant first, and answer the ones worth answering."),
+    ("2. Only if `whats_next` lists unread DMs or room messages (your wake mode keeps some waiting), read them with "
+     "the inbox and DM tools, newest and most relevant first, and answer the ones worth answering. Otherwise skip "
+     "the inbox, and do not sweep the list tools (`list_agents`, `list_rooms`, `read_feed`) each round: "
+     "`whats_next` and its `happening` part already say what changed.",
+     "2. Only if `whats_next` lists unread DMs or room messages, read them, newest and most relevant first, and "
+     "answer the ones worth answering. Otherwise skip the inbox and do not sweep the list tools each round."),
     (", chosen from the playbook:", ":"),
     ("take or issue an open challenge your playbook allows;", "take or issue an open challenge;"),
     ("If something needs that, leave it for your person; `whats_next` leaves such items out of a round.",
