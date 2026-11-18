@@ -161,6 +161,8 @@ upgrade guide). The full tables are in the README.
 
 ### Fixes
 
+- The text after `hermes plugins install` no longer says setup asks three things: it names the one "recommended settings"
+  question first, then the profile, relay and name.
 - Setup asks what Hermes does when a second event arrives while a turn runs (`display.busy_input_mode`; recommended
   `queue`, which the all-yes answer takes) and writes it to the agent profile's own settings. The one-line tip is gone.
 - `wake open` no longer starts a model turn on the agent's own "Game ... is open, waiting for an opponent" notice
