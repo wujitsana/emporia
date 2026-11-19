@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CRE64ofX.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-COyzlTl_.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -3781,34 +3781,34 @@ function passportLines(c) {
 var TINT = [
 	[
 		"#39ff44",
-		"#001b01",
+		"#001b00",
 		"#ebfaea",
-		"#01680c",
-		"#6cf96c",
+		"#006c00",
+		"#39ff44",
 		1
 	],
 	[
 		"#0047ff",
 		"#051232",
-		"#f0f5ff",
+		"#ecf6ff",
 		"#1446c2",
-		"#93b7fe",
+		"#8bb6ff",
 		0
 	],
 	[
 		"#b00331",
 		"#250a0c",
-		"#fef2f2",
-		"#a1022c",
-		"#fe9498",
+		"#fff0f0",
+		"#a50029",
+		"#ff8b91",
 		0
 	],
 	[
 		"#d57c22",
-		"#121212",
-		"#eeeeee",
-		"#d57c22",
-		"#d57c22",
+		"#201004",
+		"#fdf3ec",
+		"#8c3900",
+		"#fb9f4c",
 		1
 	],
 	[
@@ -3822,83 +3822,10 @@ var TINT = [
 	[
 		"#888888",
 		"#141414",
-		"#f5f5f5",
+		"#ececec",
 		"#555555",
 		"#b7b7b7",
 		1
-	]
-];
-var CHAT = [
-	"#4e94da",
-	"#da4e4e",
-	"#4eda88",
-	"#ab4eda",
-	"#4e5ada",
-	"#4edace",
-	"#da4eda",
-	"#4eb7da",
-	"#714eda",
-	"#7dda4e"
-];
-var GUEST = [
-	[
-		0,
-		1,
-		3,
-		4,
-		5,
-		6,
-		7,
-		8
-	],
-	[
-		1,
-		2,
-		3,
-		6,
-		9
-	],
-	[
-		0,
-		2,
-		3,
-		4,
-		5,
-		7,
-		8,
-		9
-	],
-	[
-		0,
-		2,
-		3,
-		4,
-		5,
-		6,
-		7,
-		8,
-		9
-	],
-	[
-		0,
-		1,
-		2,
-		4,
-		5,
-		7,
-		9
-	],
-	[
-		0,
-		1,
-		2,
-		3,
-		4,
-		5,
-		6,
-		7,
-		8,
-		9
 	]
 ];
 function idBytes(id) {
@@ -3916,9 +3843,26 @@ function ground(color) {
 function close$1(col) {
 	return (col[4] ? "<path fill=\"none\" stroke=\"" + col[3] + "\" stroke-opacity=\".5\" stroke-width=\".5\" d=\"M.25 .25h31.5v31.5h-31.5z\"/>" : "") + "</svg>";
 }
+function luma(h) {
+	return 2126 * parseInt(h.slice(1, 3), 16) + 7152 * parseInt(h.slice(3, 5), 16) + 722 * parseInt(h.slice(5, 7), 16);
+}
+var GUEST_GAP = 892500;
+function guestColor(b) {
+	const t = b[0] % 6, mode = b[1] % 8, f = TINT[t];
+	const ref = mode < 2 || mode === 5 ? f[1] : mode < 4 ? f[2] : mode === 4 ? f[0] : mode === 6 ? f[3] : f[4];
+	const cands = [];
+	for (let u = 0; u < 6; u++) if (u !== t) cands.push(TINT[u][4], TINT[u][2]);
+	let ok = cands.filter((c) => Math.abs(luma(c) - luma(ref)) >= GUEST_GAP);
+	if (!ok.length) {
+		let best = cands[0];
+		for (const c of cands) if (Math.abs(luma(c) - luma(ref)) > Math.abs(luma(best) - luma(ref))) best = c;
+		ok = [best];
+	}
+	return ok[b[2] % ok.length];
+}
 function palette(b) {
-	const t = b[0] % 6, f = TINT[t], guest = CHAT[GUEST[t][b[2] % GUEST[t].length]];
-	const mode = b[1] % 8, one = f[3] === f[4];
+	const f = TINT[b[0] % 6], guest = guestColor(b);
+	const mode = b[1] % 8;
 	if (mode === 0) return [
 		f[1],
 		f[4],
@@ -3962,24 +3906,13 @@ function palette(b) {
 		f[2],
 		f[4]
 	];
-	if (mode === 6) return one ? [
-		f[1],
-		f[2],
-		f[0],
-		guest
-	] : [
+	if (mode === 6) return [
 		f[3],
 		f[4],
 		guest,
 		f[1]
 	];
-	return one ? [
-		f[2],
-		f[1],
-		f[0],
-		guest,
-		1
-	] : [
+	return [
 		f[4],
 		f[3],
 		guest,
