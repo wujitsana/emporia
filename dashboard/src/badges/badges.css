@@ -133,9 +133,10 @@
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
-.e-badge-panel.theme-vivid.tint-red,
+.e-badge-panel.theme-vivid.tint-orange,
 .e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-badge-panel.theme-vivid.tint-blue,
+.e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
 .e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }

@@ -8,8 +8,9 @@ describe("capture URL parameters", () => {
     expect(tintFromParam("Purple")).toBe("tint-purple");
     expect(tintFromParam("amber")).toBe("tint-green");
     expect(tintFromParam("default")).toBe("tint-green");
-    expect(tintFromParam("orange")).toBe("tint-green");   // amber is banned: orange and yellow read as green
-    expect(tintFromParam("yellow")).toBe("tint-green");
+    expect(tintFromParam("amber")).toBe("tint-green");   // amber is gone; orange and yellow are tints again
+    expect(tintFromParam("orange")).toBe("tint-orange");
+    expect(tintFromParam("yellow")).toBe("tint-yellow");
     expect(tintFromParam("teal")).toBeNull();
     expect(tintFromParam("")).toBeNull();
     expect(tintFromParam(null)).toBeNull();

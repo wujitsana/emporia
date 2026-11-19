@@ -241,9 +241,9 @@ describe("contrast: legible on every canvas", () => {
   });
 
   for (const gamut of ["css", "clip"] as Gamut[]) {
-    it(`ink and accent meet ${NON_TEXT_MIN}:1 in the one style, all three themes and all 6 tints (${gamut} gamut)`, () => {
+    it(`ink and accent meet ${NON_TEXT_MIN}:1 in the one style, all three themes and all 7 tints (${gamut} gamut)`, () => {
       const themes = allThemes(gamut);
-      expect(themes.length).toBe(18);
+      expect(themes.length).toBe(21);
       const fails: string[] = [];
       for (const t of themes) {
         for (const s of t.surfaces) {

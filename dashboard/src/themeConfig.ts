@@ -8,8 +8,9 @@ export const TINTS = [
   "tint-green",
   "tint-blue",
   "tint-red",
-  "tint-orange",
+  "tint-yellow",
   "tint-purple",
+  "tint-orange",
   "tint-pink",
 ] as const;
 export type Tint = (typeof TINTS)[number];
@@ -19,8 +20,9 @@ export const TINT_LABELS: Record<Tint, string> = {
   "tint-green": "Green",
   "tint-blue": "Blue",
   "tint-red": "Crimson",
-  "tint-orange": "Orange",
+  "tint-yellow": "Yellow",
   "tint-purple": "Purple",
+  "tint-orange": "Orange",
   "tint-pink": "Pink",
 };
 
@@ -28,12 +30,13 @@ export const TINT_COLORS: Record<Tint, string> = {
   "tint-green": "#39ff44",
   "tint-blue": "#0047ff",
   "tint-red": "#b00331",
-  "tint-orange": "#d57c22",
+  "tint-yellow": "#e4f221",
   "tint-purple": "#8000ff",
+  "tint-orange": "#d57c22",
   "tint-pink": "#ff00ff",
 };
 
-/** A saved or typed tint → a tint. The old default (`""`, "amber"), a retired yellow, and anything unknown load as green. */
+/** A saved or typed tint → a tint. The old default (`""`, "amber") and anything unknown load as green. */
 export function normalizeTint(v: string | null | undefined): Tint {
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : DEFAULT_TINT;
 }
@@ -86,7 +89,7 @@ const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
  * (a run through the tints) keep the class on until the last one settles.
  * `fade: false` (the capture hotkeys, capture mode) switches instantly.
  */
-export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boolean; capture?: boolean } = {}) {
+export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boolean; capture?: boolean; ink?: string | null } = {}) {
   const tint = normalizeTint(tintIn);
   // On the Desktop page the body is the app's: the theme goes on our own root or nowhere.
   const b = themeRoot ?? (import.meta.env.VITE_EMPORIA_MODE === "desktop" ? null : document.body);
@@ -109,4 +112,8 @@ export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boole
   b.classList.add("font-use-CommitMono");
   b.classList.add("e-look");   // the one look (dashboard.css § 30)
   b.classList.add(tint);
+  // The text switch (inkSwitch.ts): pure black / white text at the token level, whole page.
+  b.classList.toggle("e-ink-pure", !!opts.ink);
+  if (opts.ink) b.style.setProperty("--e-pure-ink", opts.ink);
+  else b.style.removeProperty("--e-pure-ink");
 }

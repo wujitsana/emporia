@@ -57,8 +57,8 @@ describe("theme cross-fade", () => {
 import { DEFAULT_TINT, THEMES, TINTS, TINT_COLORS, TINT_LABELS, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, toggleVivid } from "./themeConfig";
 
 describe("tints", () => {
-  it("are six, green first and the default, with no amber (the orange is burnt, #d57c22)", () => {
-    expect([...TINTS]).toEqual(["tint-green", "tint-blue", "tint-red", "tint-orange", "tint-purple", "tint-pink"]);
+  it("are seven, green first and the default, with no amber (the orange is burnt, #d57c22, the red crimson)", () => {
+    expect([...TINTS]).toEqual(["tint-green", "tint-blue", "tint-red", "tint-yellow", "tint-purple", "tint-orange", "tint-pink"]);
     expect(DEFAULT_TINT).toBe("tint-green");
     expect(TINT_COLORS["tint-green"]).toBe("#39ff44");
     expect(Object.values(TINT_LABELS)).not.toContain("Amber");
@@ -74,7 +74,7 @@ describe("tints", () => {
   });
 
   it("load from a saved preference: the old default, amber and junk are green", () => {
-    for (const old of ["", "tint-amber", "amber", "tint-yellow", "tint-teal", null, undefined]) expect(normalizeTint(old)).toBe("tint-green");
+    for (const old of ["", "tint-amber", "amber", "tint-teal", null, undefined]) expect(normalizeTint(old)).toBe("tint-green");
     for (const t of TINTS) expect(normalizeTint(t)).toBe(t);
   });
 });
