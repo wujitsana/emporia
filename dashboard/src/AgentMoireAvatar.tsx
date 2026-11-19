@@ -1,6 +1,6 @@
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import { useAgentNav } from "./agentNavCtx";
-import { everydayAvatar } from "./avatars";
+import { tokenAvatar } from "./avatars";
 import { pictureId, rememberStableId, stableOf, useChainPicture } from "./agentPicture";
 
 /** The inside of a generated SVG (its outer tag removed), so the host can set the size. The string comes from
@@ -9,8 +9,8 @@ function svgInner(svg: string): string {
   return svg.slice(svg.indexOf(">") + 1, svg.lastIndexOf("</svg>"));
 }
 
-/** An agent's picture: the everyday picture drawn from its stable id (SHA-256 of the handle where only the handle is
- *  known), or, for an agent whose ERC-8004 link this console has already proven, the identity token's on-chain image. */
+/** An agent's picture: the token design (Rooms, Strata or Hallmark flat shapes, the same family as the ERC-8004
+ *  registration image) drawn from its stable id (SHA-256 of the handle where only the handle is known), or, for an agent whose ERC-8004 link this console has already proven, the identity token's on-chain image. */
 export function AgentMoireAvatar({
   agentId,
   stableId,
@@ -27,9 +27,9 @@ export function AgentMoireAvatar({
   const nav = useAgentNav();
   rememberStableId(agentId, stableId);
   const pid = pictureId(agentId, stableId);
-  /* Pattern ids are unique per instance, so many pictures on one page never share a pattern. */
-  const uid = pid.slice(0, 12) + useId().replace(/[^a-zA-Z0-9]/g, "");
-  const inner = useMemo(() => svgInner(everydayAvatar(pid, uid)), [pid, uid]);
+  // Flat shapes, no patterns or ids: many pictures on one page share nothing. (`everydayAvatar`, the two-line-screen
+  // design, stays in avatars.ts; switching back is this one line.)
+  const inner = useMemo(() => svgInner(tokenAvatar(pid)), [pid]);
   const onChain = useChainPicture(stableOf(agentId, stableId));
 
   const glyph = onChain ? (

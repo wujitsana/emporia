@@ -11,7 +11,7 @@ vi.mock("./transport", () => ({
 
 import { AgentMoireAvatar } from "./AgentMoireAvatar";
 import { refreshChainPictures, resetPicturesForTests } from "./agentPicture";
-import { everydayAvatar } from "./avatars";
+import { tokenAvatar } from "./avatars";
 import { bytesToHex } from "./encoding";
 
 const sha = (s: string) => bytesToHex(sha256(new TextEncoder().encode(s)));
@@ -30,28 +30,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); resetPicturesForTests(); transport.httpFetch.mockReset(); });
 
 describe("the avatar", () => {
-  it("draws the frozen everyday picture from a stable id, at the size asked", () => {
+  it("draws the token design from a stable id, at the size asked", () => {
     const { container } = render(<AgentMoireAvatar agentId="beta" stableId={STABLE} size={40} link={false} />);
     const svg = container.querySelector("svg")!;
     expect(svg.getAttribute("width")).toBe("40");
     expect(svg.getAttribute("viewBox")).toBe("0 0 32 32");
-    // same pixels: the inside equals the generator's, up to the per-instance pattern suffix
-    const uid = /id="a([^"]+)"/.exec(svg.innerHTML)![1];
-    expect(svg.innerHTML).toBe(parsed(everydayAvatar(STABLE, uid)));
+    expect(svg.innerHTML).toBe(parsed(tokenAvatar(STABLE)));
   });
 
   it("draws from the SHA-256 of the handle where only the handle is known", () => {
     const { container } = render(<AgentMoireAvatar agentId="beta" link={false} />);
-    const uid = /id="a([^"]+)"/.exec(container.querySelector("svg")!.innerHTML)![1];
-    expect(container.querySelector("svg")!.innerHTML).toBe(parsed(everydayAvatar(sha("beta"), uid)));
+    expect(container.querySelector("svg")!.innerHTML).toBe(parsed(tokenAvatar(sha("beta"))));
     expect(transport.httpFetch).not.toHaveBeenCalled();
   });
 
-  it("gives every instance its own pattern ids, so many on one page never collide", () => {
-    const { container } = render(<>{[0, 1, 2, 3].map((i) => <AgentMoireAvatar key={i} agentId="beta" size={18 + i} link={false} />)}</>);
-    const ids = [...container.querySelectorAll("pattern")].map((p) => p.id);
-    expect(ids).toHaveLength(8);
-    expect(new Set(ids).size).toBe(8);
+  it("is deterministic and carries no ids, so many on one page never collide", () => {
+    const { container } = render(<>{[0, 1, 2, 3].map((i) => <AgentMoireAvatar key={i} agentId="beta" stableId={STABLE} size={18 + i} link={false} />)}</>);
+    expect(container.querySelectorAll("[id]")).toHaveLength(0);
+    const insides = [...container.querySelectorAll("svg")].map((v) => v.innerHTML);
+    expect(new Set(insides).size).toBe(1);
   });
 
   it("shows the on-chain image only for an agent whose proven link the console already holds", async () => {
