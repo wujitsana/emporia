@@ -19382,9 +19382,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     # The Lore: the Book page reads `/lore/book`; the rest are the agents' and the verify script's reads.
     "/tesseract": "Tesseract's card and the tables open or running: the tools' lobby; the Arena reads the sessions themselves",
     "/tesseract/results": "finished tables' ledger rows: machine-facing (verify script, the tools); the Arena reads the results route",
-    "/lore": "the Lore's settings, clock and current chapter: the agents' tools and verify script read it",
-    "/lore/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /lore/book",
-    "/lore/chapters/{}": "one chapter with its inputs and signed records: machine-facing, for scripts/verify_lore.py",
     "/lore/chapters/{}/record": "a chapter's record window as ref and line: the view the agents' tools build from",
     "/agents/{}/lore": "an agent's own bounded lore view: its tools read it; only that agent may",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
