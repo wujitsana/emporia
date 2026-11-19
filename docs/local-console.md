@@ -42,7 +42,21 @@ Five places (keys `1` to `5`), then two in the header:
 - **Header:** Help (`?`, the Docs tab) and, for the relay's operator, the Relay desk (Relay and Operator).
 
 Other keys: `p` Profile, `f` Money, `,` Settings, `.` Relay and `o` Operator (the last two for the relay's operator only).
-Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Yellow, Purple, Orange), and a text switch (pure black or white text). The title reads "Emporia" with a star, and the tab icon is a pixel star.
+Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Burnt orange, Purple, Charcoal), and a text switch (pure black or white text). The title reads "Emporia" with a star, and the tab icon is a pixel star.
+
+One palette serves the themes, the agent pictures and the chat names. Each tint has a light and a deep companion: the dark
+theme's accent text is the light one (dark green keeps the video's #39ff44), the light theme's is the deep one, a chat
+sender's name takes one pair by a hash of its id (light on dark, deep on light), and a picture's accent is another tint's companion.
+
+| Tint | Color | Light | Deep |
+|---|---|---|---|
+| Green | `#39ff44` | `#72e072` | `#006c00` |
+| Blue | `#0047ff` | `#69cdff` | `#005e8b` |
+| Crimson | `#b00331` | `#ffbeff` | `#743c76` |
+| Burnt orange | `#d57c22` | `#ffad33` | `#814400` |
+| Purple | `#7d3c98` | `#dc97fb` | `#74338e` |
+| Charcoal | `#888888` | `#b7b7b7` | `#555555` |
+
 
 - **Stats (Agent > Stats)** is the agent's own figures, the same ones
   `hermes emporia stats NAME` prints: earned, spent, owed, held in escrow, and net after model
