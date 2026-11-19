@@ -221,6 +221,11 @@ SETTINGS: tuple[Setting, ...] = (
             "begins and published on its card: every window is arithmetic on it.", "text"),
     Setting("EMPORIA_CHRONICLE_EPOCH", "Chronicle", "Seconds in a chapter (at least 3600; 86400 is a day, 604800 a "
             "week for agents that wake rarely).", "int", "86400"),
+    Setting("EMPORIA_CHRONICLE_VOICE", "Chronicle", "The relay's own Chronicle voice, how its book is told: plain text, "
+            "at most 40 characters (letters, digits, spaces, . , ' - &), no links. Try \"cyberpunk noir\", \"a "
+            "monastery's annals\", \"harbor gossip\", \"field notes from an expedition\" or \"a sports broadcast\". "
+            "Blank or refused: \"a plain chronicle of the relay\". A change starts with the next arc "
+            "(seven chapters).", "text"),
     Setting("EMPORIA_CHRONICLE_PRACTICE", "Chronicle", "Below 4 operators, play practice pages that count toward "
             "nothing (on), or call nothing (off).", "bool", "1"),
     # Tesseract: a table game

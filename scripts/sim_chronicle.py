@@ -41,37 +41,11 @@ def fake_sig(*parts: object) -> bytes:
     return hashlib.sha256(":".join(str(p) for p in parts).encode()).digest()
 
 
-# ---------------------------------------------------------------- valid passages, for every shape
+# ---------------------------------------------------------------- valid passages
 
 def valid_passage(card: C.Card) -> str:
-    """A passage that satisfies every hard check but the cites, for any card the decks can draw."""
-    W = card.word
-    t = {
-        "only_questions": f"Who carried the {W} to the gate? Did anyone ask why?",
-        "three_sentences": f"The {W} stood at the gate. Two agents argued over the ledger. By dawn it was settled.",
-        "short_sentences": f"The {W} stood at the gate. Two agents argued. Dawn settled it.",
-        "one_quote": f'The {W} stood at the gate. "Settle it," said one agent. The other agreed.',
-        "distinct_initials": f"The {W} stood at the gate. Agents argued. Dawn settled it. Some left.",
-        "list_of_five": f"- the {W}\n- the ledger\n- a gate\n- two agents\n- one dawn",
-        "second_person": f"You carried the {W} to the gate. Your ledger stayed shut.",
-        "echo_end": f"{W.capitalize()} light fell on the gate and the ledger. Two agents argued until dawn, then settled it by {W}",
-        "two_paragraphs": f"The {W} stood at the gate.\n\nTwo agents argued until dawn.",
-        "no_commas": f"The {W} stood at the gate. Two agents argued until dawn.",
-        "one_numeral": f"The {W} stood at the gate for 3 nights. Two agents argued.",
-        "the_start": f"The {W} stood at the gate. The agents argued. The matter was settled.",
-        "ends_with_question": f"The {W} stood at the gate. Who settled it?",
-        "five_sentences": f"The {W} stood at the gate. Agents argued. Night fell. Dawn came. It was settled.",
-        "no_long_words": f"The {W} stood at the gate. Two agents argued until dawn.",
-        "one_semicolon": f"The {W} stood at the gate; two agents argued until dawn.",
-        "one_exclamation": f"The {W} stood at the gate! Two agents argued until dawn.",
-        "all_lowercase": f"the {W} stood at the gate. two agents argued until dawn.",
-        "three_lines": f"The {W} stood at the gate.\nTwo agents argued.\nDawn settled it.",
-        "one_colon": f"The {W} stood at the gate: two agents argued until dawn.",
-        "no_the": f"A {W} stood at a gate. Two agents argued until dawn.",
-        "first_person": f"I carried the {W} to the gate. We argued until dawn.",
-        "one_parenthesis": f"The {W} stood at the gate (two agents argued until dawn).",
-        "rising_sentences": f"The {W} stood. Agents argued all night. Dawn settled it at last.",
-    }[card.shape]
+    """A passage that satisfies every hard check but the cites, for any card the deck can draw."""
+    t = f"The {card.word} stood at the gate. Two agents argued over the ledger until dawn."
     assert len(t) <= card.limit
     return t
 
@@ -84,73 +58,26 @@ _OK = ["session:g1", "post:p1"]
 _LANT = "lantern"
 
 
-def _card(shape: str, word: str = _LANT, limit: int = 400) -> C.Card:
-    return C.Card(word, limit, shape, "myth")
+def _card(word: str = _LANT, limit: int = 400) -> C.Card:
+    return C.Card(word, limit, "a plain chronicle of the relay")
 
 
 #: (name, card, text, cites, the hard rules that must fail: [] means it must pass). Hand-written.
 FIXTURES: list[tuple[str, C.Card, str, list[str], set[str]]] = [
-    ("three ok", _card("three_sentences"), "The lantern burned at the gate all night. Two agents argued over the ledger. By dawn the matter was settled.", _OK, set()),
-    ("three: four sentences", _card("three_sentences"), "The lantern burned. Two agents argued. Dawn came. It ended.", _OK, {"shape"}),
-    ("three: word missing", _card("three_sentences"), "A lamp burned at the gate. Two agents argued. It was settled.", _OK, {"word"}),
-    ("three: word missing and two sentences", _card("three_sentences"), "A lamp burned at the gate. Two agents argued.", _OK, {"word", "shape"}),
-    ("questions ok", _card("only_questions"), "Who lit the lantern at the gate? Did anyone ask why? Was it the ledger?", _OK, set()),
-    ("questions: one statement", _card("only_questions"), "Who lit the lantern? Nobody knows.", _OK, {"shape"}),
-    ("short ok", _card("short_sentences"), "The lantern swung. Two agents met at the gate. They traded one story each.", _OK, set()),
-    ("short: a 14-word sentence", _card("short_sentences"), "The lantern swung above the gate while two agents argued about the ledger until morning came.", _OK, {"shape"}),
-    ("quote ok", _card("one_quote"), 'The lantern guttered. "Sell it," said the first agent. The second shook its head.', _OK, set()),
-    ("quote: none", _card("one_quote"), "The lantern guttered. The agents left.", _OK, {"shape"}),
-    ("quote: two lines of speech", _card("one_quote"), '"Sell," said one. "No," said the lantern keeper.', _OK, {"shape"}),
-    ("initials ok", _card("distinct_initials"), "The lantern burned. Agents argued. Morning came. Some left.", _OK, set()),
-    ("initials: two T", _card("distinct_initials"), "The lantern burned. Two agents argued.", _OK, {"shape"}),
-    ("list ok", _card("list_of_five", limit=280), "- a lantern\n- a ledger\n- a key\n- a bell\n- a rope", _OK, set()),
-    ("list: four items", _card("list_of_five", limit=280), "- a lantern\n- a ledger\n- a key\n- a bell", _OK, {"shape"}),
-    ("list: no hyphens", _card("list_of_five", limit=280), "a lantern\na ledger\na key\na bell\na rope", _OK, {"shape"}),
-    ("second person ok", _card("second_person"), "You carried the lantern to the gate. You told nobody. Your ledger stayed shut.", _OK, set()),
-    ("second person: a third-person sentence", _card("second_person"), "You carried the lantern. The gate stayed shut.", _OK, {"shape"}),
-    ("echo ok", _card("echo_end"), "Lantern light spread over the gate and the ledger and the sleeping market, and all of it was lantern", _OK, set()),
-    ("echo: ends elsewhere", _card("echo_end"), "Lantern light fell on the gate.", _OK, {"shape"}),
-    ("paragraphs ok", _card("two_paragraphs"), "The lantern burned.\n\nMorning came.", _OK, set()),
-    ("paragraphs: one", _card("two_paragraphs"), "The lantern burned. Morning came.", _OK, {"shape"}),
-    ("no commas ok", _card("no_commas"), "The lantern burned all night. Nobody asked why.", _OK, set()),
-    ("no commas: one comma", _card("no_commas"), "The lantern burned, and nobody asked.", _OK, {"shape"}),
-    ("numeral ok", _card("one_numeral"), "The lantern burned for 3 nights. Nobody asked why.", _OK, set()),
-    ("numeral: two", _card("one_numeral"), "3 agents lit 2 lanterns at the gate.", _OK, {"shape"}),
-    ("the-start ok", _card("the_start"), "The lantern burned. The agents argued. The ledger closed.", _OK, set()),
-    ("the-start: one other", _card("the_start"), "The lantern burned. Agents argued.", _OK, {"shape"}),
-    ("ends with question ok", _card("ends_with_question"), "The lantern burned. Who lit it?", _OK, set()),
-    ("ends with question: no", _card("ends_with_question"), "Who lit the lantern? Nobody.", _OK, {"shape"}),
-    ("five sentences ok", _card("five_sentences"), "The lantern burned. Agents argued. Night fell. Dawn came. It ended.", _OK, set()),
-    ("short words ok", _card("no_long_words"), "The lantern burned at the gate. Nobody asked why.", _OK, set()),
-    ("short words: eleven letters", _card("no_long_words"), "The lantern illuminated the courtyard.", _OK, {"shape"}),
-    ("semicolon ok", _card("one_semicolon"), "The lantern burned; nobody asked why.", _OK, set()),
-    ("semicolon: two", _card("one_semicolon"), "The lantern burned; nobody asked; nobody cared.", _OK, {"shape"}),
-    ("exclamation ok", _card("one_exclamation"), "The lantern burned! Nobody asked why.", _OK, set()),
-    ("exclamation: two", _card("one_exclamation"), "The lantern burned! Nobody asked why!", _OK, {"shape"}),
-    ("lowercase ok", _card("all_lowercase"), "the lantern burned all night. nobody asked why.", _OK, set()),
-    ("lowercase: a capital", _card("all_lowercase"), "the lantern burned all night. Nobody asked why.", _OK, {"shape"}),
-    ("three lines ok", _card("three_lines"), "The lantern burned.\nAgents argued.\nDawn came.", _OK, set()),
-    ("three lines: two sentences on a line", _card("three_lines"), "The lantern burned. Agents argued.\nDawn came.\nIt ended.", _OK, {"shape"}),
-    ("colon ok", _card("one_colon"), "The lantern burned: nobody asked why.", _OK, set()),
-    ("colon: none", _card("one_colon"), "The lantern burned.", _OK, {"shape"}),
-    ("no the ok", _card("no_the"), "A lantern burned at a gate. Nobody asked why.", _OK, set()),
-    ("no the: one", _card("no_the"), "A lantern burned at the gate.", _OK, {"shape"}),
-    ("first person ok", _card("first_person"), "I lit the lantern. We argued until dawn.", _OK, set()),
-    ("first person: a sentence without I or we", _card("first_person"), "I lit the lantern. Nobody asked why.", _OK, {"shape"}),
-    ("parenthesis ok", _card("one_parenthesis"), "The lantern burned (nobody asked why).", _OK, set()),
-    ("parenthesis: two", _card("one_parenthesis"), "The lantern burned (all night) (nobody asked).", _OK, {"shape"}),
-    ("rising ok", _card("rising_sentences"), "The lantern burned. Nobody asked us why. It was never explained to anyone.", _OK, set()),
-    ("rising: equal", _card("rising_sentences"), "The lantern burned. Nobody asked.", _OK, {"shape"}),
-    ("length: over 280", _card("no_commas", limit=280), "The lantern burned. " + "Nobody asked. " * 20, _OK, {"length"}),
-    ("length: exactly 280", _card("no_commas", limit=280), "The lantern burned. " + "a" * 260, _OK, set()),
-    ("cites: one", _card("no_commas"), "The lantern burned.", ["session:g1"], {"cites"}),
-    ("cites: outside the window", _card("no_commas"), "The lantern burned.", ["session:g1", "post:zzz"], {"window"}),
-    ("cites: no anchor", _card("no_commas"), "The lantern burned.", ["post:p2", "gh_pr:r1"], {"anchor"}),
-    ("cites: a repeat", _card("no_commas"), "The lantern burned.", ["session:g1", "session:g1"], {"cites"}),
-    ("url", _card("no_commas"), "The lantern burned. See www.example.com for more.", _OK, {"url"}),
-    ("word: plural and case", _card("no_commas"), "LANTERNS burned all night.", _OK, set()),
-    ("word: y becomes ies", _card("no_commas", word="ferry"), "Two ferries crossed all night.", _OK, set()),
-    ("word: only inside a longer word", _card("no_commas"), "The lanternfish burned all night.", _OK, {"word"}),
+    ("ok", _card(), "The lantern burned at the gate all night. Two agents argued over the ledger. By dawn the matter was settled.", _OK, set()),
+    ("any form is fine: a list", _card(), "- a lantern\n- a ledger\n- a key", _OK, set()),
+    ("any form is fine: questions", _card(), "Who lit the lantern? Nobody knows.", _OK, set()),
+    ("word missing", _card(), "A lamp burned at the gate. Two agents argued. It was settled.", _OK, {"word"}),
+    ("length: over 280", _card(limit=280), "The lantern burned. " + "Nobody asked. " * 20, _OK, {"length"}),
+    ("length: exactly 280", _card(limit=280), "The lantern burned. " + "a" * 260, _OK, set()),
+    ("cites: one", _card(), "The lantern burned.", ["session:g1"], {"cites"}),
+    ("cites: outside the window", _card(), "The lantern burned.", ["session:g1", "post:zzz"], {"window"}),
+    ("cites: no anchor", _card(), "The lantern burned.", ["post:p2", "gh_pr:r1"], {"anchor"}),
+    ("cites: a repeat", _card(), "The lantern burned.", ["session:g1", "session:g1"], {"cites"}),
+    ("url", _card(), "The lantern burned. See www.example.com for more.", _OK, {"url"}),
+    ("word: plural and case", _card(), "LANTERNS burned all night.", _OK, set()),
+    ("word: y becomes ies", _card(word="ferry"), "Two ferries crossed all night.", _OK, set()),
+    ("word: only inside a longer word", _card(), "The lanternfish burned all night.", _OK, {"word"}),
 ]
 
 
@@ -478,7 +405,7 @@ def voting(seed: int = 5, seasons: int = 150, sizes=(6, 8, 12, 20)) -> dict:
 # ---------------------------------------------------------------- criterion 8: view sizes
 
 def crit8() -> dict:
-    card = C.Card("parchment", 600, "echo_end", "myth")
+    card = C.Card("parchment", 600, "a sports broadcast")
     style = {"v": 3, "narrator": "third person; a chronicler who was not there", "tense": "past",
              "register": "plain, dry, fond of the relay", "names": {f"id{i}": f"the Keeper of Gate {i}" for i in range(24)},
              "motifs": [f"the motif number {i} of the book" for i in range(6)], "never": ["address the reader"] * 4, "adopted_in": 14}

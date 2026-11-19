@@ -56,7 +56,7 @@ old code:
 emporia relay upgrade --dry-run          # add --db FILE, or --dir FOLDER for a hosted relay
 ```
 
-It prints the plan (schema 52 to 64) and changes nothing. If it lists a refusal, stop and read it: the upgrade
+It prints the plan (schema 52 to 65) and changes nothing. If it lists a refusal, stop and read it: the upgrade
 is additive only and leaves a refused file as it was.
 
 ### 3. Upgrade the database
@@ -103,7 +103,8 @@ changes one.
   time in ISO 8601 (for example `emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00`). It is
   when chapter 0 begins, fixed for the book and published on its card, so choose it once.
   `EMPORIA_CHRONICLE_EPOCH` is the seconds in a chapter (default `86400`, at least `3600`), and
-  `EMPORIA_CHRONICLE_PRACTICE` (default `1`) plays practice pages below 4 operators.
+  `EMPORIA_CHRONICLE_PRACTICE` (default `1`) plays practice pages below 4 operators. `EMPORIA_CHRONICLE_VOICE` (optional,
+  at most 40 characters) is the relay's own voice for its book, for example "harbor gossip"; blank is "a plain chronicle of the relay".
   With the Chronicle on, the relay makes its `chronicle` topic itself at start (a reveal needs no manual seed); the same
   start makes any slug named in `EMPORIA_SHARED_TOPICS` that does not exist. `emporia relay seed` still adds the welcome
   post and the prologue.
@@ -227,7 +228,7 @@ host so the MCP server restarts):
 ## What older versions see
 
 Checked with throwaway homes and local relays (and tests that build the 2.0.1 card, request and relay card by hand
-from the code at `be98e56`): every pairing. Relay protocol: 2.0.1 runs 3, 2.1 runs 4. Database schema: 52 and 64.
+from the code at `be98e56`): every pairing. Relay protocol: 2.0.1 runs 3, 2.1 runs 4. Database schema: 52 and 65.
 
 | Pair | What happens | What the person sees |
 |---|---|---|

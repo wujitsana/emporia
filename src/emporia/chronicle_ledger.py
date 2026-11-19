@@ -10,9 +10,10 @@ the public routes):
 
     relay_id, start, epoch_s, practice, prologue        the clock and the book's first post
     agents   [{agent_id, unit, registered_at, base_since, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
-    rosters  {"<slot>": {members: [Member dicts], events: [event, ...] | None, source: "call" | "late"}}    each slot's
-             members and the events of its record window, taken once at its call and used for that slot for ever
-             (below); a slot with none uses `agents` and `events` as they are now
+    rosters  {"<slot>": {members: [Member dicts], events: [event, ...] | None, source: "call" | "late", voice: str}}
+             each slot's members, the events of its record window and the relay's Chronicle voice, taken once at
+             its call and used for that slot for ever (below); a slot with none uses `agents` and `events` as they
+             are now and the default voice
     events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
     removed  [ref, ...]                                  refs of snapshotted events whose post, topic or room is gone now
     frozen   {"<chapter>": {call_ts, verdict}}           the frozen verdict of each chapter that has a removed passage
@@ -25,6 +26,11 @@ Chapter `i` is called at `start + i * epoch_s` (so a chapter is called as the on
 a day, a quiet or empty slot simply uses no number). `slots` returns one dict per slot up to `now`; a slot that was
 called has `inputs` (everything `resolve_inputs` needs, serialisable: this is what a chapter's public page carries)
 and the `verdict`.
+
+**The voice.** The relay's own Chronicle voice (`EMPORIA_CHRONICLE_VOICE`) is stored in each slot's snapshot. The
+voice in force for a chapter is the one recorded at its arc's first called chapter (`C.opens_arc`: the first called
+chapter after each seventh canon chapter), so a change takes effect from the next arc; each chapter's
+`inputs["voice"]` carries it and the card repeats it. A practice chain has its own arcs.
 
 **Rosters are snapshots.** A unit token comes from the *present* operator grouping (label, key, network), which
 moves: a member re-registers with a new label, or an unrelated agent registers from the same network. The relay
@@ -160,7 +166,7 @@ def resolve_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
         prev_call_ts=inputs["prev_call_ts"], call_ts=inputs["call_ts"], events=inputs["events"],
         carry=inputs.get("carry", []), sigs=sigs, seals=inputs["seals"], reveals=inputs["reveals"],
         ballots=inputs["ballots"], params=params, bench=frozenset(inputs.get("bench", [])),
-        recent=inputs.get("recent"))
+        recent=inputs.get("recent"), voice=inputs.get("voice") or C.DEFAULT_VOICE)
     v["provisional"] = not all(inputs["sigs"].get(k) for k in ("call", "show", "count"))
     return v
 
@@ -186,6 +192,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
     live_outcomes: list[dict[str, str]] = []
     state = C.new_state()
     recents = {"live": C.new_recent(), "practice": C.new_recent()}   # the cards the next draw must avoid, per kind
+    arc_voice: dict[str, str] = {}      # the voice recorded at the first called chapter of each kind's current arc
     carry: list[dict[str, Any]] = []
     prev_slot: dict[str, Any] | None = None
     handle_of_post = {r["post_id"]: r["agent"] for r in ledger["reveals"]}
@@ -200,9 +207,11 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             members = [C.Member(**m) for m in snap["members"]]
             roster_source = snap.get("source", "call")
             window = snap.get("events")
+            slot_voice = snap.get("voice") or C.DEFAULT_VOICE
         else:                        # no snapshot (a ledger from before they existed): the present grouping
             members = members_at(ledger["agents"], prev_call)
             roster_source = "current"
+            slot_voice = C.DEFAULT_VOICE
         bench = C.benched(live_outcomes, len(live_outcomes))
         roster = C.eligible(members, prev_call)
         mode = C.mode_of(roster, params, bench)
@@ -217,6 +226,9 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
                if prev_call <= e["at"] < call_ts and (mode == "practice" or not e.get("loose"))]
         if prev_slot is not None and (ce := _canon_event(prev_slot, call_ts - 1)):
             evs.append(ce)
+        kind = mode or "live"
+        voice = slot_voice if (C.opens_arc([h for h in history if h["mode"] == kind]) or kind not in arc_voice) \
+            else arc_voice[kind]
         rounds = C.call_rounds(call_ts, epoch)
         sigs = {k: ledger["beacons"].get(str(r), "") for k, r in rounds.items()}
         inputs = {
@@ -226,7 +238,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             "seals": _record_rows(ledger["seals"], cid), "reveals": _record_rows(ledger["reveals"], cid),
             "ballots": _record_rows(ledger["ballots"], cid),
             "params": {"epoch_s": epoch, "practice": params.practice}, "bench": sorted(bench),
-            "recent": recents[mode or "live"]}
+            "recent": recents[kind], "voice": voice}
         if not sigs["call"]:
             waiting = True        # chapter ids count the called slots before: a gap must not let later ones take its id
         kept = (ledger.get("frozen") or {}).get(cid)
@@ -245,6 +257,7 @@ def slots(ledger: dict[str, Any], now: float) -> list[dict[str, Any]]:
             canon = v.get("canon")
             slot["canon_agent"] = handle_of_post.get(canon, "") if canon else ""
             recents[v["mode"]] = C.push_recent(recents[v["mode"]], v["card"])
+            arc_voice[v["mode"]] = voice
             history.append({"mode": v["mode"], "canon": ("post:" + canon) if canon else None})
             if v["mode"] == "live":
                 live_outcomes.append(v.get("outcome") or {})

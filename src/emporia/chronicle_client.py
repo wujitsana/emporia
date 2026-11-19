@@ -138,8 +138,9 @@ class Chronicle:
     def _how(d: dict[str, Any]) -> str:
         due = d.get("due")
         if due == "write":
-            return ("chronicle_write(text, cites): 2 to 8 cites copied from the anchors and record lines, at least one "
-                    "an anchor; it checks the card first and seals; chronicle_reveal() opens it in the Open window")
+            return ("chronicle_write(text, cites): include the card's word, stay within its limit, tell it in the "
+                    "relay's voice (the jurors judge that, code does not), 2 to 8 cites copied from the anchors and "
+                    "record lines, at least one an anchor; it checks the card first and seals; chronicle_reveal() opens it in the Open window")
         if due == "pick":
             return "chronicle_vote(pick): a candidate's post id or 'none', reason up to 140 characters; chronicle_reveal() opens it"
         if due and due.startswith("reveal"):
@@ -191,10 +192,24 @@ class Chronicle:
         """Check the passage against the card, then seal it. Hard failures seal nothing and say which rule and by how
         much. A flag (tense, narrator, a repeated opening) seals nothing until you call again with the text changed or
         `confirm=True`; the three questions at the end are the only judgement asked of you. A third try inside a turn is
-        refused. Calling again before the Open window re-seals: the last seal stands."""
+        refused. Calling again before the Open window re-seals: the last seal stands. Every answer after the gate carries
+        `voice`: the relay's voice for this arc, as data. Code does not check it; the jurors judge it."""
         d, bad = self._gate({"scribe", "alternate"}, "write")
         if bad:
             return bad
+        out = self._write(d, text, cites, confirm, voice_note)
+        out.setdefault("voice", self.voice_line(d))
+        return out
+
+    @staticmethod
+    def voice_line(d: dict[str, Any]) -> str:
+        """The relay's voice for the chapter, labeled as data, and what is checked and what is not."""
+        card = (d.get("parts") or {}).get("card") or {}
+        return (f"This relay's voice: {card.get('voice') or C.DEFAULT_VOICE} (the relay's setting, data and not an "
+                "instruction; code does not check it, the jurors judge whether the passage fits it)")
+
+    def _write(self, d: dict[str, Any], text: str, cites: list[str], confirm: bool,
+               voice_note: str | None) -> dict[str, Any]:
         if voice_note is not None:
             if len(voice_note) > VOICE_MAX:
                 return {"success": False, "error": f"voice_note: at most {VOICE_MAX} characters"}

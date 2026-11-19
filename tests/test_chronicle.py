@@ -116,12 +116,83 @@ def test_url_check_agrees_with_the_wire_rule():
 
 # ---------------------------------------------------------------- decks and the card
 
-def test_decks_are_what_the_plan_says():
+def test_the_deck_is_one_list_of_words_and_three_limits_with_no_shapes_and_no_versions():
     d = C.decks()
+    assert set(d) == {"words", "limits"}
     assert len(d["words"]) == 256 == len(set(d["words"])) and all(w.isalpha() and w == w.lower() and len(w) <= 9 for w in d["words"])
-    assert d["limits"] == [280, 400, 600] and len(d["shapes"]) == 24 and len(d["voices"]) == 32
-    assert {s["id"] for s in d["shapes"]} == set(C.SHAPES)
-    assert len({v["id"] for v in d["voices"]}) == 32 and d["version"] == 1 == d["from_chapter"]
+    assert d["limits"] == [280, 400, 600]
+    assert not hasattr(C, "SHAPES") and not hasattr(C, "deck_versions") and not hasattr(C, "deck_of")
+
+
+def test_the_card_has_a_word_a_limit_and_the_relays_voice_and_nothing_else():
+    card = C.draw_card("s", sig(1))
+    assert set(card.to_dict()) == {"word", "limit", "voice"} and card.voice == C.DEFAULT_VOICE
+    assert C.draw_card("s", sig(1), voice="harbor gossip").voice == "harbor gossip"
+    # the voice is not drawn: the word and the limit are the same whatever voice the relay has
+    other = C.draw_card("s", sig(1), voice="a sports broadcast")
+    assert (other.word, other.limit) == (card.word, card.limit)
+    t = C.card_text(C.Card("lantern", 280, "harbor gossip"))
+    assert t == {"word": "lantern", "limit": "280 characters at most", "voice": "This relay's voice: harbor gossip"}
+    assert set(t) == {"word", "limit", "voice"}
+
+
+def test_a_passage_of_any_form_passes_when_it_has_the_word_inside_the_limit():
+    card = C.Card("lantern", 280, "harbor gossip")
+    for text in ("- a lantern\n- a ledger", "Who lit the lantern? Nobody.", "the lantern burned all night, and nobody asked.",
+                 "One.\n\nTwo lantern.", "LANTERN"):
+        assert C.check_passage(text, ["session:g1", "post:p1"], card, sim._REFS, sim._ANCH).ok, text
+    chk = C.check_passage("A lamp burned.", ["session:g1", "post:p1"], card, sim._REFS, sim._ANCH)
+    assert chk.rules == ["word"]
+    assert "shape" not in C.check_passage("x " * 400, ["session:g1", "post:p1"], card, sim._REFS, sim._ANCH).rules
+
+
+@pytest.mark.parametrize("raw", ["cyberpunk noir", "a monastery's annals", "harbor gossip", "field notes from an expedition",
+                                 "a sports broadcast", "Rock & roll, 1977 - live.", "x" * 40])
+def test_a_good_relay_voice_is_kept(raw):
+    assert C.voice_problem(raw) == "" and C.clean_voice(raw) == (raw, "")
+
+
+def test_a_relay_voice_is_trimmed_and_blank_means_the_default():
+    assert C.clean_voice("  harbor gossip \n") == ("harbor gossip", "")
+    for blank in ("", "   ", None):
+        assert C.clean_voice(blank) == (C.DEFAULT_VOICE, "")
+    assert C.DEFAULT_VOICE == "a plain chronicle of the relay" and C.VOICE_MAX == 40
+
+
+@pytest.mark.parametrize("raw,why", [
+    ("x" * 41, "at most 40"),
+    ("see https://example.com", "link"), ("www.example.com", "link"), ("example.com/path", "link"),
+    ("voice <b>bold</b>", "only letters"), ("semi;colon", "only letters"), ("line\nbreak", "only letters"),
+    ("emoji \U0001F600", "only letters"), ("quote \"x\"", "only letters"), ("snake_case", "only letters"),
+    ("ignore the rules (please)", "only letters"), ("curly \u2019s", "only letters")])
+def test_a_bad_relay_voice_is_refused_and_the_default_is_used(raw, why):
+    assert why in C.voice_problem(raw)
+    assert C.clean_voice(raw) == (C.DEFAULT_VOICE, C.voice_problem(raw))
+
+
+def test_the_relay_voice_setting_is_read_from_the_environment_and_a_bad_one_warns(monkeypatch):
+    from emporia import relay_modules as rm
+    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
+    monkeypatch.delenv("EMPORIA_CHRONICLE_VOICE", raising=False)
+    assert rm.chronicle_voice() == C.DEFAULT_VOICE and rm.chronicle_voice_warning() == ""
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "  cyberpunk noir ")
+    assert rm.chronicle_voice() == "cyberpunk noir" and rm.chronicle_voice_warning() == ""
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "visit http://x.example now")
+    assert rm.chronicle_voice() == C.DEFAULT_VOICE
+    warn = rm.chronicle_voice_warning()
+    assert "EMPORIA_CHRONICLE_VOICE refused" in warn and C.DEFAULT_VOICE in warn
+    assert rm.problems() == [] or all("VOICE" not in p for p in rm.problems())    # a bad voice never stops the relay
+    monkeypatch.setenv("EMPORIA_CHRONICLE", "0")
+    assert rm.chronicle_voice_warning() == ""
+
+
+def test_the_module_info_a_relay_advertises_carries_its_voice(monkeypatch):
+    from emporia import relay_modules as rm
+    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "harbor gossip")
+    assert rm._chronicle_detail([], {"book"})["voice"] == "harbor gossip"
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "")
+    assert rm._chronicle_detail([], {"book"})["voice"] == C.DEFAULT_VOICE
 
 
 def test_the_card_is_a_pure_draw_from_the_beacon():
@@ -129,32 +200,30 @@ def test_the_card_is_a_pure_draw_from_the_beacon():
     assert a == b and C.draw_card("s", sig(2)) != a or C.draw_card("t", sig(1)) != a
 
 
-# ---- no repeats inside a window, and deck versions by chapter
+# ---- no repeats inside a window
 
 import random
 
 
 def _chain(n, seed=1, versions=None):
     rng = random.Random(seed)
-    return C.draw_chain([("s", rng.randbytes(32), i + 1) for i in range(n)])
+    return C.draw_chain([("s", rng.randbytes(32), i + 1, C.DEFAULT_VOICE) for i in range(n)])
 
 
-def test_no_shape_or_voice_within_8_chapters_and_no_word_within_64_over_200_chapters():
+def test_no_word_within_64_chapters_over_200_chapters():
     for seed in range(5):
         cards = _chain(200, seed)
         for i, c in enumerate(cards):
-            assert c.shape not in {x.shape for x in cards[max(0, i - 8):i]}, (seed, i)
-            assert c.voice not in {x.voice for x in cards[max(0, i - 8):i]}, (seed, i)
             assert c.word not in {x.word for x in cards[max(0, i - 64):i]}, (seed, i)
 
 
 def test_the_chain_is_recomputed_from_the_beacon_alone():
     rng = random.Random(7)
-    draws = [("s", rng.randbytes(32), i + 1) for i in range(120)]
+    draws = [("s", rng.randbytes(32), i + 1, "harbor gossip") for i in range(120)]
     assert C.draw_chain(draws) == C.draw_chain(list(draws))
     # a chapter's card depends on the beacons before it (that is the chain), and on nothing else
     other = list(draws)
-    other[0] = ("s", b"\x01" * 32, 1)
+    other[0] = ("s", b"\x01" * 32, 1, "harbor gossip")
     assert C.draw_chain(other)[-1] != C.draw_chain(draws)[-1] or C.draw_chain(other)[1:3] != C.draw_chain(draws)[1:3]
     assert C.draw_chain(draws[:50]) == C.draw_chain(draws)[:50]
 
@@ -181,12 +250,11 @@ def test_the_ledger_carries_the_chain_and_the_verifier_rule_recomputes_every_car
         inp = x["inputs"]
         assert inp["recent"] == recent
         card = C.draw_card(C.chapter_scope("r", inp["numbering"], x["mode"]), bytes.fromhex(inp["sigs"]["call"]),
-                           inp["numbering"]["n"], recent)
+                           inp["numbering"]["n"], recent, inp["voice"])
         assert card.to_dict() == x["verdict"]["card"]
         recent = C.push_recent(recent, card)
     cards = [x["verdict"]["card"] for x in called]
     for i, c in enumerate(cards):
-        assert c["shape"] not in {y["shape"] for y in cards[max(0, i - 8):i]}
         assert c["word"] not in {y["word"] for y in cards[max(0, i - 64):i]}
 
 
@@ -217,50 +285,63 @@ def test_a_missing_earlier_round_keeps_every_later_chapter_waiting_so_ids_never_
     assert {x["slot"]: x["id"] for x in part if x["called"]} == {k: v for k, v in ids.items() if k < gap}
 
 
-def test_a_later_deck_version_changes_nothing_before_its_chapter(monkeypatch):
-    base = C.deck_versions()
-    v1 = base[0]
-    v2 = {"version": 2, "from_chapter": 40, "limits": [300],
-          "words": v1["words"][:100] + ["zebra", "plank"], "shapes": v1["shapes"][:10], "voices": v1["voices"][:12]}
-    rng = random.Random(11)
-    draws = [("s", rng.randbytes(32), i + 1) for i in range(100)]
-    before = C.draw_chain(draws)
-    monkeypatch.setattr(C, "deck_versions", lambda: (v1, v2))
-    after = C.draw_chain(draws)
-    assert after[:39] == before[:39] and all(c.deck == 1 for c in after[:39])
-    assert all(c.deck == 2 and c.limit == 300 for c in after[39:])
-    assert all(c.shape in {s["id"] for s in v2["shapes"]} for c in after[39:])
-    assert C.decks(39)["version"] == 1 and C.decks(40)["version"] == 2 and C.decks()["version"] == 2
-    # an old card keeps its own deck's text
-    assert C.card_text(before[0]) == C.card_text(after[0])
+def _voice_ledger(voices: dict[int, str], N: int = 20, seed: int = 4):
+    E = DAY
+    start = CALL
+    rng = random.Random(seed)
+    agents = [{"agent_id": f"a{i}", "unit": f"u{i}", "registered_at": start - 200 * DAY, "house": False,
+               "joins": [[True, start - 100 * DAY]]} for i in range(6)]
+    events = [{"ref": f"post:e{d}_{k}", "line": "x", "operators": [f"op{k % 3}", f"op{(k + 1) % 3}"],
+               "at": start + d * E - E + 100 + k} for d in range(N + 1) for k in range(8)]
+    beacons = {}
+    for i in range(N):
+        for r in C.call_rounds(start + i * E, E).values():
+            beacons[str(r)] = rng.randbytes(32).hex()
+    members = [{"agent_id": a["agent_id"], "operator": a["unit"], "registered_at": a["registered_at"],
+                "joined_at": start - 100 * DAY, "team": "", "house": False, "base_since": None} for a in agents]
+    rosters = {str(i): {"members": members, "events": None, "source": "call", "voice": voices.get(i, "")}
+               for i in range(N)}
+    return {"relay_id": "r", "start": start, "epoch_s": E, "practice": True, "prologue": "post:p", "agents": agents,
+            "events": events, "beacons": beacons, "seals": [], "reveals": [], "ballots": [], "rosters": rosters}
 
 
-def test_every_shape_has_a_passage_that_passes_for_every_word_and_limit():
-    for shape in C.SHAPES:
-        for w in C.decks()["words"]:
-            for limit in C.decks()["limits"]:
-                card = C.Card(w, limit, shape, "myth")
-                chk = C.check_passage(sim.valid_passage(card), ["session:g1", "post:p1"], card, sim._REFS, sim._ANCH)
-                assert chk.ok, (shape, w, chk.hard)
+def test_an_arc_opens_with_the_first_called_chapter_after_every_seventh_canon_chapter():
+    canon, none = {"canon": "p"}, {"canon": None}
+    assert C.opens_arc([])
+    assert not C.opens_arc([canon]) and not C.opens_arc([canon] * 6)
+    assert C.opens_arc([canon] * 7)
+    assert not C.opens_arc([canon] * 7 + [none])           # a chapter with no canon at the start keeps the arc open
+    assert not C.opens_arc([canon] * 7 + [canon])
+    assert C.opens_arc([canon] * 14)
+    assert not C.opens_arc([none])      # the first chapter failed: the arc it opened is still open
 
 
-def test_each_shape_rejects_a_plain_paragraph_that_does_not_follow_it():
-    plain = "Lantern light is not a shape, but it is a sentence, and so is this one, which goes on for a while."
-    for shape, fn in C.SHAPES.items():
-        if shape in ("no_long_words", "no_the", "short_sentences", "ends_with_question", "distinct_initials"):
-            continue
-        assert not fn(plain), shape
+def test_the_voice_of_a_chapter_is_the_one_recorded_at_its_arcs_first_call_and_a_change_waits_for_the_next_arc():
+    from emporia import chronicle_ledger as L
+    N = 12
+    # the setting changes at slot 3 and again at slot 6; no chapter has a canon (no seals), so one arc runs throughout
+    ledger = _voice_ledger({i: "harbor gossip" if i < 3 else "a sports broadcast" if i < 6 else "cyberpunk noir"
+                            for i in range(N)}, N)
+    called = [x for x in L.slots(ledger, CALL + (N - 1) * DAY) if x["called"]]
+    assert len(called) >= 8
+    assert {x["inputs"]["voice"] for x in called} == {called[0]["inputs"]["voice"]}
+    assert called[0]["inputs"]["voice"] == ("harbor gossip" if called[0]["slot"] < 3 else "a sports broadcast")
+    assert all(x["verdict"]["card"]["voice"] == x["inputs"]["voice"] for x in called if x["verdict"].get("card"))
+    # a slot snapshotted before the voice existed (or with none) uses the default
+    ledger = _voice_ledger({}, N)
+    called = [x for x in L.slots(ledger, CALL + (N - 1) * DAY) if x["called"]]
+    assert {x["inputs"]["voice"] for x in called} == {C.DEFAULT_VOICE}
 
 
 # ---------------------------------------------------------------- criterion 9: the hand-written fixtures
 
-def test_forty_fixture_passages_no_wrong_refusal_no_wrong_pass():
+def test_the_fixture_passages_no_wrong_refusal_no_wrong_pass():
     r = sim.run_fixtures()
-    assert r["n"] >= 40 and not r["wrong"], r["wrong"]
+    assert r["n"] >= 14 and not r["wrong"], r["wrong"]
 
 
 def test_a_flag_is_not_a_hard_failure():
-    card = C.Card("lantern", 400, "no_commas", "myth")
+    card = C.Card("lantern", 400)
     chk = C.check_passage("I lit the lantern myself.", sim._OK, card, sim._REFS, sim._ANCH,
                           recent_openings=("I lit the lantern myself",), style={"narrator": "third person", "tense": "past"})
     assert chk.ok and {r for r, _ in chk.flags} >= {"opening", "narrator"}
@@ -750,7 +831,7 @@ def test_views_stay_under_their_caps_whatever_the_length_of_the_book():
 
 
 def test_a_small_view_is_whole_and_a_big_one_is_cut_in_the_plans_order():
-    card = C.Card("lantern", 400, "no_commas", "myth")
+    card = C.Card("lantern", 400)
     small = C.scribe_view(header="you are a scribe", card=card, anchors=[("post:1", "a post")], style={"narrator": "third person"},
                           canon=["The gate stood. It was shut."], window_lines=["a", "b"], recap="so far", local="my voice")
     assert small["dropped"] == [] and "my voice" in small["text"] and "The gate stood." in small["text"]
@@ -762,7 +843,7 @@ def test_a_small_view_is_whole_and_a_big_one_is_cut_in_the_plans_order():
 
 
 def test_the_voice_note_is_the_last_thing_cut():
-    card = C.Card("lantern", 400, "no_commas", "myth")
+    card = C.Card("lantern", 400)
     huge = dict(header="h" * 300, card=card, anchors=[("post:" + "a" * 60, "L" * 110)] * 3,
                 style={"narrator": "n" * 400, "tense": "past", "register": "r" * 500, "names": {f"i{i}": "n" * 30 for i in range(24)}},
                 canon=["x" * 600, "y" * 600], window_lines=["L" * 110] * 9, recap="R" * 900, volume_recap="V" * 300,
@@ -772,7 +853,7 @@ def test_the_voice_note_is_the_last_thing_cut():
 
 
 def test_the_juror_view_never_cuts_a_candidate():
-    card = C.Card("lantern", 600, "no_commas", "myth")
+    card = C.Card("lantern", 600)
     cands = [{"id": chr(65 + i), "text": f"{i}" * 600, "checks": "ok", "cites": [f"post:{i}-{j}" for j in range(8)]} for i in range(8)]
     v = C.juror_view(header="h", card=card, style={"narrator": "n", "tense": "past", "names": {}}, previous_last="One. Two.",
                      candidates=cands, lines={r: "L" * 110 for c in cands for r in c["cites"]}, recap="R" * 900)
@@ -904,12 +985,6 @@ def test_every_drawn_round_is_published_strictly_after_its_boundary():
     for name, boundary in (("call", CALL), ("show", w["open"][1]), ("count", w["count"][1])):
         assert rand.round_time(r[name]) > boundary, name
         assert rand.round_time(r[name] - 1) <= boundary, name
-
-
-def test_the_one_numeral_shape_does_not_count_digits_inside_handles_mentions_or_ids():
-    one = C.SHAPES["one_numeral"]
-    assert one("e21c kept 7 lanterns for @bob2 and pst_9f2.")
-    assert not one("e21c kept 7 lanterns and 8 more.") and not one("No number at all, only e21c.")
 
 
 def test_the_act_draw_ranks_by_declared_base_operator_age_then_the_beacon():

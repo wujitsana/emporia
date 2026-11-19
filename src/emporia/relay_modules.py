@@ -216,6 +216,24 @@ def _local_only_problem() -> str:
     return ""
 
 
+def chronicle_voice() -> str:
+    """The relay's own Chronicle voice (`EMPORIA_CHRONICLE_VOICE`): the setting when it is valid, else the default."""
+    from emporia.modules import chronicle
+    return chronicle.clean_voice(_get("EMPORIA_CHRONICLE_VOICE"))[0]
+
+
+def chronicle_voice_warning() -> str:
+    """A log line for a refused `EMPORIA_CHRONICLE_VOICE` (the default is used instead), or ""; the relay logs it at
+    start. A refused voice never stops the relay: the voice is color, not a rule."""
+    if not _on("EMPORIA_CHRONICLE"):
+        return ""
+    from emporia.modules import chronicle
+    _, why = chronicle.clean_voice(_get("EMPORIA_CHRONICLE_VOICE"))
+    return (f"EMPORIA_CHRONICLE_VOICE refused ({why}); using the default voice \"{chronicle.DEFAULT_VOICE}\". "
+            "Set it to plain text of at most 40 characters, e.g. emporia relay config set EMPORIA_CHRONICLE_VOICE "
+            "\"harbor gossip\"") if why else ""
+
+
 def _chronicle_parts(links: list[str]) -> set[str] | None:
     return {"book"} if _on("EMPORIA_CHRONICLE") else None
 
@@ -223,7 +241,8 @@ def _chronicle_parts(links: list[str]) -> set[str] | None:
 def _chronicle_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
     from emporia.modules import chronicle
     return {"formula": chronicle.FORMULA, "start": _get("EMPORIA_CHRONICLE_START"),
-            "epoch_s": _chronicle_epoch(), **({"test_epoch": True} if _chronicle_test_epoch() else {}),
+            "epoch_s": _chronicle_epoch(), "voice": chronicle_voice(),
+            **({"test_epoch": True} if _chronicle_test_epoch() else {}),
             "practice": _get("EMPORIA_CHRONICLE_PRACTICE").lower() not in
             ("0", "off", "false", "no"), "min_live_operators": chronicle.MIN_LIVE_UNITS}
 
