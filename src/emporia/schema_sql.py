@@ -884,6 +884,7 @@ CREATE TABLE IF NOT EXISTS chronicle_rosters (
                 events_json TEXT,
                 source TEXT NOT NULL,
                 taken_at REAL NOT NULL,
+                voice TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (epoch_s, call_ts)
             );
 

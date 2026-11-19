@@ -2094,7 +2094,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                                          "signed_at", "received_at", "signature")),
     *(("chronicle_verdicts", c) for c in ("chapter", "body_json", "body_hash", "frozen_at")),
     # a slot's roster and window events as frozen at its call: history, never renamed (a rename would move a chapter)
-    *(("chronicle_rosters", c) for c in ("epoch_s", "call_ts", "members_json", "events_json", "source", "taken_at")),
+    *(("chronicle_rosters", c) for c in ("epoch_s", "call_ts", "members_json", "events_json", "source", "taken_at", "voice")),
     # Tesseract: a player's place at a finished table (numbers, a status word, its revealed target)
     *(("tesseract_results", c) for c in ("session_id", "seat", "seats", "place", "total", "table_index", "status",
                                          "won", "target_json", "recorded_at")),
@@ -3517,6 +3517,8 @@ def _game_off(module_type: str) -> str:
 def _check_relay_modules() -> None:
     from emporia import relay_modules
     wrong = relay_modules.problems(FEDERATED_RELAYS)
+    if note := relay_modules.chronicle_voice_warning():
+        logger.warning(note)
     if wrong:
         raise RelayModulesWrong("this relay's modules are set up wrong — fix these, then start it again:\n  "
                                 + "\n  ".join(wrong))

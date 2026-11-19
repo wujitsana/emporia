@@ -20,7 +20,7 @@ What is in here, in the plan's order:
   parameters and modes   `Params`, `Member`, `mode_of`, `eligible`, `unit_key`        (2.2, 11, 12)
   the clock              `windows`, `call_rounds`                                      (2.3)
   the record window      `record_window`, `quiet_day`, `draw_anchors`                  (2.4, 2.5)
-  decks and the card     `decks`, `draw_card`, `draw_chain`                            (2.5)
+  decks and the card     `decks`, `draw_card`, `draw_chain`, `clean_voice`                      (2.5)
   seats                  `seat`                                                         (2.5, 11.2)
   passage checks         `check_passage`                                                (4.3)
   commitments            `passage_commitment`, `pick_commitment`
@@ -225,49 +225,63 @@ def draw_anchors(window: list[dict[str, Any]], scope: str, sig: bytes) -> list[s
 
 # ---------------------------------------------------------------- decks and the card (2.5)
 
-#: How many chapters a card part stays out of the draw once drawn: a shape or a voice for 8, a word for 64.
-#: The limits (three values) have no window: with only three, a rule against repeats would be a rotation.
-WINDOWS = {"words": 64, "shapes": 8, "voices": 8}
+#: How many chapters the word stays out of the draw once drawn. The limits (three values) have no window: with only
+#: three, a rule against repeats would be a rotation.
+WINDOWS = {"words": 64}
+
+#: The relay's own Chronicle voice (`EMPORIA_CHRONICLE_VOICE`): at most this many characters, and what it says when the
+#: operator sets none or sets one that is refused.
+VOICE_MAX = 40
+DEFAULT_VOICE = "a plain chronicle of the relay"
+_VOICE_OK = re.compile(r"[A-Za-z0-9 .,'&-]+")
+
+
+def voice_problem(raw: Any) -> str:
+    """Why `raw` cannot be the relay's voice, or "" when it can: plain text, trimmed, at most `VOICE_MAX` characters,
+    letters, digits, spaces and . , ' - & only, no link."""
+    if not isinstance(raw, str):
+        return "the voice must be text"
+    text = raw.strip()
+    if not text:
+        return "the voice is empty"
+    if raw != text:
+        return "the voice must not start or end with a space"
+    if len(text) > VOICE_MAX:
+        return f"the voice is {len(text)} characters, at most {VOICE_MAX}"
+    if has_url(text):
+        return "the voice must not be or hold a link"
+    if not _VOICE_OK.fullmatch(text):
+        return "the voice may hold only letters, digits, spaces and . , ' - &"
+    return ""
+
+
+def clean_voice(raw: Any) -> tuple[str, str]:
+    """(the voice to use, why `raw` was refused or ""): a blank or refused value gives `DEFAULT_VOICE`. Surrounding
+    spaces are trimmed first, as the setting is typed by a person."""
+    text = raw.strip() if isinstance(raw, str) else raw
+    if text == "" or text is None:
+        return DEFAULT_VOICE, ""
+    why = voice_problem(text)
+    return (DEFAULT_VOICE, why) if why else (text, "")
 
 
 @lru_cache(maxsize=1)
-def deck_versions() -> tuple[dict[str, Any], ...]:
-    """Every deck version, oldest first. A version starts at `from_chapter` and holds until the next one starts, so
-    editing the decks later means appending a version, never changing one: past chapters keep the cards they drew."""
+def decks() -> dict[str, Any]:
+    """The word deck and the limits, one list each. The Chronicle has not run on a public relay, so the deck is not
+    versioned: editing it later is a change of rules, announced as one."""
     d = json.loads((Path(__file__).resolve().parent.parent / "data" / "chronicle_decks.json").read_text())
-    vs = tuple(sorted(d["versions"], key=lambda v: v["from_chapter"]))
-    assert vs and vs[0]["from_chapter"] == 1 and len({v["version"] for v in vs}) == len(vs)
-    assert len({v["from_chapter"] for v in vs}) == len(vs)
-    for v in vs:
-        assert len(v["words"]) == len(set(v["words"])) >= WINDOWS["words"] + 1
-        for part in ("shapes", "voices"):
-            ids = [x["id"] for x in v[part]]
-            assert len(ids) == len(set(ids)) >= WINDOWS[part] + 1
-    return vs
-
-
-def decks(chapter: int | None = None) -> dict[str, Any]:
-    """The deck version in force at `chapter` (the latest when none is given)."""
-    vs = deck_versions()
-    if chapter is None:
-        return vs[-1]
-    return [v for v in vs if v["from_chapter"] <= chapter][-1]
-
-
-def deck_of(version: int) -> dict[str, Any]:
-    return next(v for v in deck_versions() if v["version"] == version)
+    assert len(d["words"]) == len(set(d["words"])) >= WINDOWS["words"] + 1 and d["limits"]
+    return d
 
 
 @dataclass(frozen=True)
 class Card:
-    word: str
-    limit: int
-    shape: str          # a shape id (code-checked)
-    voice: str          # a voice id (judged by the jury)
-    deck: int = 1       # the deck version it was drawn from, so its text is always read from that version
+    word: str           # code-checked: it must appear
+    limit: int          # code-checked: the most characters
+    voice: str = DEFAULT_VOICE      # the relay's voice for this chapter's arc (data; judged by the jury, never by code)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"word": self.word, "limit": self.limit, "shape": self.shape, "voice": self.voice, "deck": self.deck}
+        return {"word": self.word, "limit": self.limit, "voice": self.voice}
 
 
 def new_recent() -> dict[str, list[str]]:
@@ -275,10 +289,10 @@ def new_recent() -> dict[str, list[str]]:
 
 
 def push_recent(recent: dict[str, list[str]] | None, card: Card | dict[str, Any]) -> dict[str, list[str]]:
-    """The recent cards after `card`: the last `WINDOWS[part]` of each part, oldest first. A new dict."""
+    """The recent cards after `card`: the last `WINDOWS["words"]` words, oldest first. A new dict."""
     c = card.to_dict() if isinstance(card, Card) else card
     r = recent or new_recent()
-    return {k: (list(r.get(k, [])) + [c[key]])[-n:] for (k, n), key in zip(WINDOWS.items(), ("word", "shape", "voice"), strict=False)}
+    return {"words": (list(r.get("words", [])) + [c["word"]])[-WINDOWS["words"]:]}
 
 
 def _fresh(deck: list[Any], recent: list[str], key: Any) -> list[Any]:
@@ -286,39 +300,42 @@ def _fresh(deck: list[Any], recent: list[str], key: Any) -> list[Any]:
     return out or list(deck)
 
 
-def draw_card(scope: str, sig: bytes, chapter: int = 1, recent: dict[str, list[str]] | None = None) -> Card:
-    """The card of `chapter`, from the beacon: each part is the beacon's pick among the deck's entries that are not
-    in `recent` (the cards of the chapters before, see `WINDOWS`). `recent` is itself a pure function of the earlier
-    chapters' beacons (`draw_chain`), so anyone with the rounds and the deck recomputes every card."""
-    d = decks(chapter)
+def draw_card(scope: str, sig: bytes, chapter: int = 1, recent: dict[str, list[str]] | None = None,
+              voice: str = DEFAULT_VOICE) -> Card:
+    """The card of a chapter, from the beacon: the word is the beacon's pick among the deck's words not in `recent`
+    (the words of the 64 chapters before; itself a pure function of the earlier beacons, see `draw_chain`), the limit
+    a pick among three. `voice` is not drawn: it is the relay's voice recorded for the chapter's arc, passed in."""
+    d = decks()
     r = recent or new_recent()
     words = _fresh(d["words"], r.get("words", []), lambda x: x)
-    shapes = _fresh(d["shapes"], r.get("shapes", []), lambda x: x["id"])
-    voices = _fresh(d["voices"], r.get("voices", []), lambda x: x["id"])
     return Card(word=words[rand_game.pick(scope, "card:word", sig, len(words))],
-                limit=d["limits"][rand_game.pick(scope, "card:limit", sig, len(d["limits"]))],
-                shape=shapes[rand_game.pick(scope, "card:shape", sig, len(shapes))]["id"],
-                voice=voices[rand_game.pick(scope, "card:voice", sig, len(voices))]["id"],
-                deck=d["version"])
+                limit=d["limits"][rand_game.pick(scope, "card:limit", sig, len(d["limits"]))], voice=voice)
 
 
-def draw_chain(draws: list[tuple[str, bytes, int]]) -> list[Card]:
-    """The cards of consecutive called chapters of one kind (live or practice), from `(scope, call sig, chapter)`
-    alone: the whole chain a verifier needs."""
+def draw_chain(draws: list[tuple[str, bytes, int, str]]) -> list[Card]:
+    """The cards of consecutive called chapters of one kind (live or practice), from `(scope, call sig, chapter,
+    voice)` alone: the whole chain a verifier needs."""
     out: list[Card] = []
     recent = new_recent()
-    for scope, sig, chapter in draws:
-        card = draw_card(scope, sig, chapter, recent)
+    for scope, sig, chapter, voice in draws:
+        card = draw_card(scope, sig, chapter, recent, voice)
         recent = push_recent(recent, card)
         out.append(card)
     return out
 
 
 def card_text(card: Card) -> dict[str, str]:
-    d = deck_of(card.deck)
-    shape = next(s["text"] for s in d["shapes"] if s["id"] == card.shape)
-    voice = next(v["text"] for v in d["voices"] if v["id"] == card.voice)
-    return {"word": card.word, "limit": f"{card.limit} characters at most", "shape": shape, "voice": voice}
+    """What an agent sees of the card. The voice is labeled as data: a relay's words, not an instruction."""
+    return {"word": card.word, "limit": f"{card.limit} characters at most", "voice": f"This relay's voice: {card.voice}"}
+
+
+def opens_arc(same_kind_history: list[dict[str, Any]]) -> bool:
+    """Whether the next called chapter opens an arc, from the called pages of its kind before it (`{"canon": post_id |
+    None}`, oldest first): the book's arcs are `ARC_CHAPTERS` canon chapters each, so an arc opens with the first
+    called chapter after a multiple of seven canon chapters (the very first chapter included), and a chapter that
+    ends in no canon does not close it. The chapter that opens an arc records the relay's voice for the arc."""
+    canon = sum(1 for h in same_kind_history if h.get("canon"))
+    return canon % ARC_CHAPTERS == 0 and (not same_kind_history or bool(same_kind_history[-1].get("canon")))
 
 
 # ---------------------------------------------------------------- seats (2.5, 11.2)
@@ -382,16 +399,6 @@ _URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
 _URL_BARE = re.compile(r"(?<![a-z0-9@.-])[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){0,8}\.[a-z]{2,24}/", re.I)
 _SPLIT = re.compile(r"(?<=[.!?])[\"')\]]*\s+")
 _WORD = re.compile(r"[A-Za-z0-9']+")
-_HANDLE_OR_ID = re.compile(r"@\w+|\b[A-Za-z_][A-Za-z_:]*\d\w*")      # @mentions, handles (e21c), ids (pst_9f2)
-
-
-def _numerals(t: str) -> list[str]:
-    """The numbers a passage writes: digit runs, not the digits inside a handle, a mention or a post id."""
-    return re.findall(r"\d+", _HANDLE_OR_ID.sub(" ", t))
-
-
-_YOU = re.compile(r"\byou(?:r|rs|rself|rselves)?\b", re.I)
-_I_OR_WE = re.compile(r"\b(?:I|[Ww]e)\b")
 _FIRST = re.compile(r"\b(?:I|me|my|mine|we|us|our|ours)\b")
 
 
@@ -406,63 +413,6 @@ def sentences(text: str) -> list[str]:
 
 def words(text: str) -> list[str]:
     return _WORD.findall(text.translate(_CURLY))
-
-
-def _ends_q(s: str) -> bool:
-    return s.rstrip("\"')] ").endswith("?")
-
-
-def _initial(s: str) -> str:
-    for ch in s:
-        if ch.isalpha():
-            return ch.lower()
-    return ""
-
-
-def _paragraphs(text: str) -> list[str]:
-    return [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
-
-
-def _lines(text: str) -> list[str]:
-    return [ln for ln in text.strip().splitlines() if ln.strip()]
-
-
-def _bare(w: str) -> str:
-    return w.strip("'").lower()
-
-
-#: Each shape: a function (text) -> bool. Hard checks, one small function each.
-SHAPES = {
-    "only_questions": lambda t: bool(sentences(t)) and all(_ends_q(s) for s in sentences(t)),
-    "three_sentences": lambda t: len(sentences(t)) == 3,
-    "short_sentences": lambda t: bool(sentences(t)) and all(len(words(s)) <= 12 for s in sentences(t)),
-    "one_quote": lambda t: t.translate(_CURLY).count('"') == 2,
-    "distinct_initials": lambda t: bool(sentences(t)) and len({_initial(s) for s in sentences(t)}) == len(sentences(t))
-        and "" not in {_initial(s) for s in sentences(t)},
-    "list_of_five": lambda t: len([ln for ln in t.strip().splitlines() if ln.strip()]) == 5
-        and all(ln.startswith("- ") and ln[2:].strip() for ln in t.strip().splitlines() if ln.strip()),
-    "second_person": lambda t: bool(sentences(t)) and all(_YOU.search(s) for s in sentences(t))
-        and not _FIRST.search(re.sub(r'"[^"]*"', "", t.translate(_CURLY))),
-    "echo_end": lambda t: len(words(t)) >= 2 and _bare(words(t)[0]) == _bare(words(t)[-1]),
-    "two_paragraphs": lambda t: len(_paragraphs(t)) == 2,
-    "no_commas": lambda t: "," not in t,
-    "one_numeral": lambda t: len(_numerals(t)) == 1,
-    "the_start": lambda t: bool(sentences(t)) and all(re.match(r"The\b", s) for s in sentences(t)),
-    "ends_with_question": lambda t: bool(sentences(t)) and _ends_q(sentences(t)[-1]),
-    "five_sentences": lambda t: len(sentences(t)) == 5,
-    "no_long_words": lambda t: all(len(re.sub(r"[^A-Za-z]", "", w)) <= 9 for w in words(t)),
-    "one_semicolon": lambda t: t.count(";") == 1,
-    "one_exclamation": lambda t: t.count("!") == 1,
-    "all_lowercase": lambda t: t == t.lower() and any(ch.isalpha() for ch in t),
-    "three_lines": lambda t: len(_lines(t)) == 3 and all(len(sentences(ln)) == 1 for ln in _lines(t)),
-    "one_colon": lambda t: t.count(":") == 1,
-    "no_the": lambda t: not re.search(r"\bthe\b", t.translate(_CURLY), re.I),
-    "first_person": lambda t: bool(sentences(t)) and all(_I_OR_WE.search(s) for s in sentences(t)),
-    "one_parenthesis": lambda t: t.count("(") == 1 and t.count(")") == 1 and t.index("(") < t.index(")")
-        and bool(t[t.index("(") + 1:t.index(")")].strip()),
-    "rising_sentences": lambda t: len(sentences(t)) >= 2 and all(
-        a < b for a, b in zip([len(words(s)) for s in sentences(t)], [len(words(s)) for s in sentences(t)][1:], strict=False)),
-}
 
 
 @dataclass
@@ -484,7 +434,7 @@ class Check:
 
 def check_passage(text: Any, cites: Any, card: Card, window_refs: set[str] | frozenset[str], anchors: list[str], *,
                   recent_openings: tuple[str, ...] = (), style: dict[str, Any] | None = None) -> Check:
-    """Every hard check of 4.3 (length, the Word, the Shape, 2-8 cites inside the window with at least one anchor, no
+    """Every hard check of 4.3 (length, the Word, 2-8 cites inside the window with at least one anchor, no
     URL) and the flags that need no model: the opening repeats one of your last three, the narrator and tense
     against the style card."""
     c = Check()
@@ -496,9 +446,6 @@ def check_passage(text: Any, cites: Any, card: Card, window_refs: set[str] | fro
     if not re.search(rf"\b(?:{re.escape(card.word)}(?:s|es)?"
                      + (rf"|{re.escape(card.word[:-1])}ies" if card.word.endswith("y") else "") + r")\b", text, re.I):
         c.hard.append(("word", f"the word '{card.word}' does not appear"))
-    shape = next(s["text"] for s in deck_of(card.deck)["shapes"] if s["id"] == card.shape)
-    if not SHAPES[card.shape](text):
-        c.hard.append(("shape", f"does not follow the shape: {shape}"))
     if has_url(text):
         c.hard.append(("url", "text has a link in it; posts carry no URLs"))
     if not isinstance(cites, (list, tuple)) or not all(isinstance(x, str) for x in cites):
@@ -519,8 +466,7 @@ def check_passage(text: Any, cites: Any, card: Card, window_refs: set[str] | fro
         c.flags.append(("opening", "the opening repeats one of your last three"))
     if style:
         outside_quotes = re.sub(r'"[^"]*"', "", text.translate(_CURLY))
-        if "third" in str(style.get("narrator", "")).lower() and _FIRST.search(outside_quotes) \
-                and card.shape != "second_person":
+        if "third" in str(style.get("narrator", "")).lower() and _FIRST.search(outside_quotes):
             c.flags.append(("narrator", "first person outside quotes; the style card says third person"))
         if str(style.get("tense", "")).lower() == "past":
             ss = sentences(outside_quotes)
@@ -769,7 +715,7 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
                     sigs: dict[str, bytes], seals: list[dict[str, Any]], reveals: list[dict[str, Any]],
                     ballots: list[dict[str, Any]], params: Params = Params(),
                     bench: frozenset[str] | set[str] = frozenset(), practice_mode: str | None = None,
-                    recent: dict[str, list[str]] | None = None) -> dict[str, Any]:
+                    recent: dict[str, list[str]] | None = None, voice: str = DEFAULT_VOICE) -> dict[str, Any]:
     """Everything a verifier needs, from signed records only: the verdict of one chapter.
 
     Inputs are what the relay stores: `members`, `events` (the public record), the three beacon `sigs`
@@ -790,7 +736,7 @@ def resolve_chapter(*, relay_id: str, numbering: dict[str, Any], members: list[M
         return {"mode": mode, "reason": "quiet", "refused": [], "events": len(window)}
     refs = {e["ref"] for e in window}
     anchors = draw_anchors(window, scope, sigs["call"])
-    card = draw_card(scope, sigs["call"], int(numbering["n"]), recent)
+    card = draw_card(scope, sigs["call"], int(numbering["n"]), recent, voice)
     seats = seat(units, scope, sigs["call"], mode)
     unit_of = {m.agent_id: (m.agent_id if mode == "practice" else unit_key(m, params)) for m in roster}
     team_of = {m.agent_id: m.team for m in roster if m.team and params.unit == "operator" and mode == "live"}
@@ -1014,7 +960,7 @@ def scribe_view(*, header: str, card: Card, anchors: list[tuple[str, str]], styl
     "dropped"}."""
     dropped: list[str] = []
     ct = card_text(card)
-    card_s = _cut(f"word '{ct['word']}'; {ct['limit']}; shape: {ct['shape']}; voice: {ct['voice']}", 300)
+    card_s = _cut(f"word '{ct['word']}'; {ct['limit']}; {ct['voice']}", 300)
     anchor_s = _cut("; ".join(f"{r} {ln}" for r, ln in anchors), 350)
     prev = _cut(canon[0], 600) if canon else ""
     prev2 = _cut(canon[1], 600) if len(canon) > 1 else ""
@@ -1078,7 +1024,7 @@ def juror_view(*, header: str, card: Card, style: dict[str, Any], previous_last:
         if "names" in s:
             s["names"] = dict(list(s["names"].items())[:st["names"]])
         head = _render([("role", _cut(header, 300)),
-                        ("card", f"word '{ct['word']}'; {ct['limit']}; shape: {ct['shape']}; voice: {ct['voice']}"),
+                        ("card", f"word '{ct['word']}'; {ct['limit']}; {ct['voice']}"),
                         ("style", _cut(json.dumps(s, separators=(",", ":"), ensure_ascii=False), 1200)),
                         ("previous", _cut(prev, st["prev"])), ("recap", _cut(recap, st["recap"]))])
         rec = "\n".join(f"{key[r]}: {_cut(lines.get(r, ''), st['line'])}" for r in refs)

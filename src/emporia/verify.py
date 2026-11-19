@@ -155,6 +155,8 @@ def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
     if r.get("round") != rnd or r.get("scope") != sid:
         return "rand", FAIL, "the game's round or scope is not the one its commitments name"
     sig = r.get("beacon_sig")
+    if (sig or r.get("beacons")) and not beacon.bls_available():
+        return "rand", UNCHECKED, beacon.BLS_MISSING             # not a forged signature: the check cannot run
     for b_round, b_sig in (r.get("beacons") or {}).items():       # a draw per turn: every round it used
         if not str(b_round).isdigit() or int(b_round) < 1:
             return "rand", FAIL, f"the stored beacons name {b_round!r}, which is not a drand round"

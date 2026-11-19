@@ -57,7 +57,7 @@ def test_follow_runs_the_chronicles_card_checks_over_each_agents_passages(w, mon
     from emporia.routes import standing as st
     ann, bob = w.register("ann", "o1"), w.register("bob", "o2")
     slots = [{"windows": {"count": [0, 10]}, "n": i} for i in range(3)] + [{"windows": {"count": [0, 10**12]}}]
-    verdicts = {0: {ann: None, bob: ["word"]}, 1: {ann: None}, 2: {ann: ["shape"], bob: None}}
+    verdicts = {0: {ann: None, bob: ["word"]}, 1: {ann: None}, 2: {ann: ["length"], bob: None}}
 
     def passages(ledger, slot):
         return {f"{k}{slot['n']}": {"author": k, "set_aside": v} for k, v in verdicts[slot["n"]].items()}

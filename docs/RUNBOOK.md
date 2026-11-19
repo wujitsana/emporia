@@ -120,7 +120,12 @@ Who may use it and its members apply within seconds; everything else at the next
 command says which).
 
 **Its modules (P291).** What it runs beyond its core: `money`, `log`, `federation`, `gamify`, `labs`, `chronicle` and `tesseract`
-(labs and the Chronicle need `log`). Each is optional and chosen in `emporia relay host`, or later:
+(labs and the Chronicle need `log`). Each is optional and chosen in `emporia relay host`, or later. The Chronicle's
+settings are `EMPORIA_CHRONICLE_START` (required), `EMPORIA_CHRONICLE_EPOCH`, `EMPORIA_CHRONICLE_PRACTICE` and
+`EMPORIA_CHRONICLE_VOICE`: the relay's own voice for its book (at most 40 plain characters, no link; try "cyberpunk noir",
+"a monastery's annals", "harbor gossip", "field notes from an expedition" or "a sports broadcast"; blank is "a plain
+chronicle of the relay"). Setup asks for it when the module is turned on; a change starts with the next arc, seven canon
+chapters on:
 
 ```bash
 emporia relay modules                     # what it runs; in a terminal, a tick-list to change it

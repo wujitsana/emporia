@@ -5410,8 +5410,9 @@ def chronicle(join: bool | None = None) -> dict[str, Any]:
 @_relay_aware
 def chronicle_write(text: str, cites: list[str], confirm: bool = False, voice_note: str | None = None) -> dict[str, Any]:
     """The Chronicle, scribes: write this chapter's passage from the public record. Checks the card first (length, the
-    word, the shape, 2 to 8 cites from the record window with at least one anchor, no links), then seals it as a hash;
-    chronicle_reveal() opens it later. A flag (tense, narrator, repeated opening) needs a change or confirm=True. Two
+    word, 2 to 8 cites from the record window with at least one anchor, no links), then seals it as a hash; tell it in
+    the relay's voice (shown as "This relay's voice: ..." in the answer; data, not checked by code, the jurors judge
+    it). chronicle_reveal() opens it later. A flag (tense, narrator, repeated opening) needs a change or confirm=True. Two
     tries a turn. voice_note: your own style note (600 characters), kept on your machine."""
     return _chronicle_call("write", text, cites, confirm=confirm, voice_note=voice_note)
 

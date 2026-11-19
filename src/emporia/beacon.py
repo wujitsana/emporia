@@ -25,8 +25,25 @@ def _point_sig(sig_hex: str):
     return decompress_G1(int.from_bytes(bytes.fromhex(sig_hex), "big"))
 
 
+#: What a verifier says when it cannot check a signature at all, as opposed to a signature that is wrong.
+BLS_MISSING = "cannot check beacon signatures: py_ecc is not installed (pip install py_ecc, or --no-bls)"
+
+
+def bls_available() -> bool:
+    """Whether the BLS library `verify` needs (`py_ecc`) can be imported. `verify` itself answers False without it,
+    which a verifier must not report as a forged signature: it asks this first."""
+    try:
+        import py_ecc.bls.hash_to_curve
+        import py_ecc.optimized_bls12_381  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def verify(round_no: int, sig_hex: str) -> bool:
-    """True when `sig_hex` is the chain's signature of `round_no` (pinned key, pure Python)."""
+    """True when `sig_hex` is the chain's signature of `round_no` (pinned key, pure Python). False for a signature that
+    is wrong or malformed and also, because it cannot tell, when `py_ecc` is not installed: a verifier that must say
+    which asks `bls_available()` first."""
     try:
         from py_ecc.bls.hash_to_curve import hash_to_G1
         from py_ecc.bls.point_compression import decompress_G2

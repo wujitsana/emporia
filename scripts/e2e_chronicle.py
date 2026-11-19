@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Chronicle T1, end to end: six scripted agents (no model) play three chapters on a throwaway relay.
 
-    EMPORIA_NO_DOTENV=1 python scripts/e2e_chronicle.py [--chapters 3] [--no-bls]
+    EMPORIA_NO_DOTENV=1 python scripts/e2e_chronicle.py [--chapters 3] [--no-bls] [--change-voice]
 
 The relay is this repo's own, in process, on a throwaway database and key folder (the test suite's pinned
 environment, `tests/conftest.py`), with the test beacon (every drand round a fixed fake signature) and a fake clock
@@ -9,6 +9,10 @@ that runs days in seconds. The agents use the four real tools (`chronicle`, `chr
 `chronicle_reveal`, as `mcp_server` defines them) over the relay's REST routes: nothing is called around them.
 Posts and replies that make the day's record are signed with the fake clock's time. After each chapter the script runs
 `scripts/verify_chronicle.py` against the relay and prints whether it agrees. Nothing leaves this machine.
+
+The relay's voice (`EMPORIA_CHRONICLE_VOICE`) is set for the run; `--change-voice` plays four chapters with arcs of two
+chapters and changes the setting after the first arc, so the verifier meets a voice that changes between arcs (and
+none inside one).
 
 `World` is also what `tests/test_chronicle_relay.py` plays with.
 """
@@ -262,7 +266,7 @@ class _AsAgent:
 def scripted_passage(card: dict) -> str:
     import sim_chronicle as sim
     from emporia.modules import chronicle as C
-    return sim.valid_passage(C.Card(**{k: card[k] for k in ("word", "limit", "shape", "voice")}))
+    return sim.valid_passage(C.Card(**{k: card[k] for k in ("word", "limit", "voice")}))
 
 
 def pick_cites(world: World, chapter: str) -> list[str]:
@@ -361,8 +365,16 @@ def fixture_story(world: World, log=print) -> dict:
     return {"book": w.get("/chronicle/book").json(), "state": w.get("/chronicle").json()}
 
 
-def run(chapters: int = 3, bls: bool = False, log=print) -> int:
+def run(chapters: int = 3, bls: bool = False, log=print, change_voice: bool = False) -> int:
     from fastapi.testclient import TestClient
+
+    from emporia.modules import chronicle as C
+    first, second = "harbor gossip", "a sports broadcast"
+    os.environ["EMPORIA_CHRONICLE_VOICE"] = first
+    arc_was = C.ARC_CHAPTERS
+    if change_voice:
+        C.ARC_CHAPTERS = 2          # arcs of two chapters, so a voice can change inside a short run
+        chapters = max(chapters, 4)
 
     from emporia import relay_server as rs
     from emporia.relay_server import init_db
@@ -379,7 +391,10 @@ def run(chapters: int = 3, bls: bool = False, log=print) -> int:
             with w.tools(n) as t:
                 assert t.chronicle(join=True)["success"]
         ok = True
+        voices: dict[str, str] = {}
         for ch in range(1, chapters + 1):
+            if change_voice and ch == 3:
+                os.environ["EMPORIA_CHRONICLE_VOICE"] = second      # takes effect from the next arc, which is chapter 3
             w.activity(w.start + (ch - 1) * DAY + 0.8 * DAY, names)
             did = play_chapter(w, names, ch)
             rep = V.verify(lambda p, _w=w: _w.get(p).json(), bls=bls)
@@ -387,9 +402,16 @@ def run(chapters: int = 3, bls: bool = False, log=print) -> int:
             log(f"chapter {did['chapter']}: wrote {len(did['wrote'])}, picked {len(did['picked'])}, "
                 f"canon {c['canon']}, reason {c['reason']}; verify {'agrees' if c['ok'] else 'DISAGREES: ' + str(c['problems'])}")
             ok &= c["ok"]
+            voices[did["chapter"]] = w.get(f"/chronicle/chapters/{did['chapter']}").json()["card"]["voice"]
+        log(f"voices by chapter: {voices}")
+        want = ([first] * 2 + [second] * (chapters - 2)) if change_voice else [first] * chapters
+        if list(voices.values()) != want:
+            log(f"WRONG VOICES: wanted {want}")
+            ok = False
         log("all chapters agree with the independent count" if ok else "DISAGREEMENT")
         return 0 if ok else 1
     finally:
+        C.ARC_CHAPTERS = arc_was
         w.close()
 
 
@@ -397,6 +419,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--chapters", type=int, default=3)
     ap.add_argument("--no-bls", action="store_true", help="the test beacon has no BLS signatures to check (default here)")
+    ap.add_argument("--change-voice", action="store_true", help="four chapters in arcs of two; the voice changes at the arc")
     ap.add_argument("--dump-book", metavar="PATH", help="instead: play a relay's first days (practice pages, then "
                     "chapters) and write the public reads the Book page shows to PATH as JSON")
     args = ap.parse_args()
@@ -414,7 +437,7 @@ def main() -> int:
         Path(args.dump_book).write_text(json.dumps(out, indent=1, sort_keys=True))
         print(f"wrote {args.dump_book}")
         return 0
-    return run(args.chapters, bls=False)
+    return run(args.chapters, bls=False, change_voice=args.change_voice)
 
 
 if __name__ == "__main__":

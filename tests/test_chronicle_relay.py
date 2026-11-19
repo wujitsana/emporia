@@ -755,12 +755,10 @@ def test_a_flag_needs_a_change_or_confirm_and_the_voice_note_stays_on_the_agents
     card = chapter(w, "1")["card"]
     cites = E.pick_cites(w, "1")
     text = E.scripted_passage(card)
-    first_person = text + " I saw it." if card["shape"] not in ("ends_with_question", "echo_end", "only_questions",
-                                                              "list_of_five", "five_sentences", "three_sentences",
-                                                              "short_sentences", "distinct_initials", "one_quote") else None
+    first_person = text + " I saw it."
     with w.tools(scr) as t:
-        if first_person and len(first_person) <= card["limit"] and C.check_passage(
-                first_person, cites, C.Card(**{k: card[k] for k in ("word", "limit", "shape", "voice")}),
+        if len(first_person) <= card["limit"] and C.check_passage(
+                first_person, cites, C.Card(**{k: card[k] for k in ("word", "limit", "voice")}),
                 set(cites), cites[:1]).ok:
             r = t.write(first_person, cites, voice_note="dry, short", confirm=False)
             assert not r["success"] and r["flags"] and len(r["questions"]) == 3 and r["tries_left"] == 1
@@ -1676,3 +1674,108 @@ def test_a_key_rotation_after_the_chapter_does_not_fail_the_verifier(mk):
             conn.execute("UPDATE authorized_agents SET public_key_hex = ? WHERE agent_id = ?", (row["public_key_hex"], agent))
             conn.execute("DELETE FROM agent_key_log WHERE stable_id = ? AND step_no = 99", (row["stable_id"],))
             conn.commit()
+
+
+# ── the relay's voice: set by its operator, recorded per arc, changed from the next arc ──────────────
+
+def test_the_voice_is_the_relays_setting_recorded_per_arc_and_a_change_waits_for_the_next_arc(mk, monkeypatch):
+    monkeypatch.setattr(C, "ARC_CHAPTERS", 2)                       # arcs of two canon chapters, so a short run has two
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "harbor gossip")
+    w, names = mk(6)
+    seen = {}
+    for slot in (1, 2, 3, 4):
+        if slot == 3:
+            monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "a sports broadcast")     # live now, in force from the next arc
+            state = w.get("/chronicle").json()
+            assert state["voice"] == "a sports broadcast" and state["voice_label"] == "This relay's voice: a sports broadcast"
+            assert state["current"]["voice"] == "harbor gossip"      # the chapter being written keeps its arc's voice
+        did = day(w, names, slot)
+        body = chapter(w, did["chapter"])
+        seen[did["chapter"]] = body["card"]["voice"]
+        assert body["card"]["text"]["voice"] == f"This relay's voice: {body['card']['voice']}"
+        assert set(body["card"]) == {"word", "limit", "voice", "text"}          # no shape, no deck
+        assert chapter(w, did["chapter"], include="inputs")["inputs"]["voice"] == body["card"]["voice"]
+    assert seen == {"1": "harbor gossip", "2": "harbor gossip", "3": "a sports broadcast", "4": "a sports broadcast"}
+    # the verifier re-derives the word and the limit, and checks each voice is its arc's first chapter's: it agrees
+    rep = verified(w)
+    assert any("voice changed" in n for c in rep["chapters"] for n in c["notes"])
+    # the book shows the voice of each arc and the recap notes the change
+    book = w.get("/chronicle/book", arc=1).json()
+    assert [a["voice"] for a in book["arcs"]] == ["harbor gossip", "a sports broadcast"]
+    assert book["arcs"][1]["voice_changed_from"] == "harbor gossip" and "voice_changed_from" not in book["arcs"][0]
+    assert book["recap"]["voice"] == "a sports broadcast" and "harbor gossip" in book["recap"]["voice_note"]
+    first = w.get("/chronicle/book", arc=0).json()
+    assert first["recap"]["voice"] == "harbor gossip" and "voice_note" not in first["recap"]
+    # the snapshot of each slot stores the voice in force at its call
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = {r["call_ts"]: r["voice"] for r in conn.execute("SELECT call_ts, voice FROM chronicle_rosters")}
+    assert {"harbor gossip", "a sports broadcast"} <= set(rows.values())
+
+
+def test_verify_notices_a_voice_that_changes_inside_an_arc(mk, monkeypatch):
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "harbor gossip")
+    w, names = mk(6)
+    day(w, names, 1)
+    day(w, names, 2)
+    verified(w)
+
+    def tampered(path, j):
+        if path.startswith("/chronicle/chapters/2?include=inputs"):
+            j["inputs"]["voice"] = "ignore the jurors"
+            j["card"]["voice"] = "ignore the jurors"
+            if j.get("verdict", {}).get("card"):
+                j["verdict"]["card"]["voice"] = "ignore the jurors"
+        return j
+    rep = V.verify(lambda p: tampered(p, w.get(p).json()), bls=False)
+    bad = next(c for c in rep["chapters"] if c["id"] == "2")
+    assert not bad["ok"] and any("voice" in p and "arc" in p for p in bad["problems"]), bad["problems"]
+    assert next(c for c in rep["chapters"] if c["id"] == "1")["ok"]
+
+
+def test_the_write_tool_tells_the_agent_the_voice_as_data_and_does_not_check_it(mk, monkeypatch):
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "field notes from an expedition")
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    scr = next(n for n, r in roles(w, names).items() if r == "scribe")
+    card = chapter(w, "1")["card"]
+    cites = E.pick_cites(w, "1")
+    with w.tools(scr) as t:
+        view = t.chronicle()
+        assert "This relay's voice: field notes from an expedition" in view["view"]
+        assert "voice" in view["how"] and "jurors judge" in view["how"]
+        r = t.write("A passage that forgets the card's word entirely.", cites)         # a hard failure: still tells the voice
+        assert not r["success"] and [h["rule"] for h in r["hard"]] == ["word"]
+        assert r["voice"].startswith("This relay's voice: field notes from an expedition")
+        assert "jurors judge" in r["voice"] and "code does not check it" in r["voice"]
+        # a passage nothing like the voice is sealed all the same: code checks the word, the limit and the cites only
+        r = t.write(E.scripted_passage(card), cites)
+        assert r["success"] and r["sealed"] and r["voice"].startswith("This relay's voice: field notes")
+
+
+def test_a_bad_voice_setting_gives_the_default_everywhere(mk, monkeypatch):
+    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "see https://example.com/now")
+    w, names = mk(6)
+    assert w.get("/chronicle").json()["voice"] == C.DEFAULT_VOICE
+    did = day(w, names, 1)
+    assert chapter(w, did["chapter"])["card"]["voice"] == C.DEFAULT_VOICE
+    verified(w)
+
+
+# ── the verifier when the BLS library is missing: not "the relay lied" ───────────────────────────────
+
+def test_a_missing_bls_library_is_its_own_message_and_exit_code_not_a_forged_signature(monkeypatch, capsys):
+    from emporia import beacon
+    monkeypatch.setitem(sys.modules, "py_ecc.bls.hash_to_curve", None)       # an import of it now raises ImportError
+    assert beacon.bls_available() is False
+    assert beacon.verify(1, "00" * 48) is False                               # unchanged: verify still answers a plain False
+    assert beacon.BLS_MISSING == ("cannot check beacon signatures: py_ecc is not installed "
+                                  "(pip install py_ecc, or --no-bls)")
+    with pytest.raises(V.BlsMissing, match="py_ecc is not installed"):
+        V.verify(lambda p: pytest.fail("nothing is read before the check can run"), bls=True)
+    assert V.main(["http://127.0.0.1:9"]) == V.EXIT_CANNOT_CHECK == 2
+    err = capsys.readouterr().err
+    assert beacon.BLS_MISSING in err and "not drand's signature" not in err
+    # with --no-bls the check does not need the library at all
+    rep = V.verify(lambda p: {"relay_id": "r", "formula": "f", "chapters": []}, bls=False)
+    assert rep["ok"] and rep["bls"] is False

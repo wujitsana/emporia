@@ -15,8 +15,10 @@ For every finished chapter (`GET /chronicle/chapters`, then `GET /chronicle/chap
 4. checks the agents' signatures on the joins, seals, ballots and passages the chapter used, against their keys;
 5. checks the frozen receipt (the hash the log carries) against the recomputed verdict;
 6. checks continuity: a chapter's number, reply target and benched units are what the earlier verified chapters make
-   them, and so are the earlier cards its draw avoided (a shape or voice does not come back within 8 chapters, a word
-   within 64); the card is then drawn again from the beacon, the deck version of that chapter and those cards.
+   them, and so are the earlier words its draw avoided (a word does not come back within 64 chapters); the word and
+   the limit are then drawn again from the beacon and those words. The card's voice is not drawn: it is the relay's
+   voice recorded when the arc's first chapter was called, so the verifier checks that it is the voice of the arc's
+   first chapter (and is the same one in `inputs.voice`), and lists each change of voice between arcs as a note.
 
 7. checks the drawn rounds are the first published after each boundary, and the log order: every seal counted for the
    chapter entered the transparency log before the first reveal of its kind, and `received_at` does not decrease along
@@ -26,7 +28,8 @@ What it does not check, and says so: the **record window's events and the units'
 word (events are public things on the relay, the grouping is private by design: units are opaque tokens). Both are
 inputs; every number computed from them is checked.
 
-Exit 0 when every chapter agrees, 1 when any does not.
+Exit 0 when every chapter agrees, 1 when any does not, 2 when the check could not run (py_ecc missing: install it
+or pass `--no-bls`; an unreachable relay): that is not a finding about the relay.
 """
 
 from __future__ import annotations
@@ -52,9 +55,16 @@ from emporia.modules import chronicle as C
 from sim_chronicle import _ramp, _truth_seats
 
 DAY = 86_400
+#: Exit codes: 0 every chapter agrees, 1 the relay's records disagree with the rules, 2 the check could not run (a
+#: missing library, an unreachable relay): that says nothing about the relay.
+EXIT_CANNOT_CHECK = 2
 
 
 # ── the independent count ─────────────────────────────────────────────────────────────────────────────
+
+class BlsMissing(RuntimeError):
+    """The BLS library is not installed: the beacon signatures cannot be checked. Not a finding about the relay."""
+
 
 def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     """{reason, canon, totals, none} of a chapter from its inputs, with the roster, mode, seats, the standing seals, the
@@ -82,7 +92,7 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     jurors, scribes, alts = _truth_seats(units, scope, sigs["call"], mode)
     refs = {e["ref"] for e in window}
     anchors = C.draw_anchors(window, scope, sigs["call"])
-    card = C.draw_card(scope, sigs["call"], n, inp.get("recent"))
+    card = C.draw_card(scope, sigs["call"], n, inp.get("recent"), inp.get("voice") or C.DEFAULT_VOICE)
     w_write, w_open, w_pick, w_count = (C.windows(call, E)[k] for k in ("write", "open", "pick", "count"))
 
     seniority = {m["agent_id"]: (m["base_since"] if m.get("base_since") is not None else 0.0) for m in roster}
@@ -342,12 +352,15 @@ def roster_notes(chapter: str, inp: dict[str, Any], receipt: dict[str, Any] | No
 
 def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> dict[str, Any]:
     """Check every finished chapter. `get(path)` returns the public JSON at `path` (query string included)."""
+    if bls and not beacon.bls_available():
+        raise BlsMissing(beacon.BLS_MISSING)      # before anything is read: no chapter is judged by a check that cannot run
     state = get("/chronicle")
     rows = get("/chronicle/chapters?limit=500")["chapters"]
     out: list[dict[str, Any]] = []
     history: list[dict[str, Any]] = []
     live_outcomes: list[dict[str, str]] = []
     recents = {"live": C.new_recent(), "practice": C.new_recent()}
+    arc_voice: dict[str, str] = {}            # the voice of each kind's current arc (its first chapter's)
     for row in rows:
         if not row["complete"]:
             continue
@@ -401,12 +414,28 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
         if C.benched(live_outcomes, len(live_outcomes)) != set(inp.get("bench", [])):
             problems.append("benched units differ from what the earlier chapters' missed seals make them")
         if (inp.get("recent") or C.new_recent()) != recents[mode]:
-            problems.append("the cards the draw avoided are not the earlier chapters' cards (shape and voice 8, word 64)")
+            problems.append("the words the draw avoided are not the earlier chapters' words (64 chapters)")
         if v.get("card"):
-            want_card = C.draw_card(inp_scope(inp, mode), bytes.fromhex(inp["sigs"]["call"]), int(inp["numbering"]["n"]), recents[mode])
+            voice = v["card"].get("voice")
+            same = [h for h in history if h["mode"] == mode]
+            if inp.get("voice") != voice:
+                problems.append(f"the card's voice {voice!r} is not the voice recorded in the chapter's inputs "
+                                f"{inp.get('voice')!r}")
+            if mode in arc_voice and not C.opens_arc(same) and voice != arc_voice[mode]:
+                problems.append(f"the voice {voice!r} is not the voice of its arc's first chapter {arc_voice[mode]!r}: "
+                                "a voice changes only with a new arc")
+            elif mode in arc_voice and C.opens_arc(same) and voice != arc_voice[mode]:
+                notes.append(f"chapter {row['id']}: a new arc, and the relay's voice changed from "
+                             f"{arc_voice[mode]!r} to {voice!r}")
+            if not isinstance(voice, str) or C.voice_problem(voice) and voice != C.DEFAULT_VOICE:
+                problems.append("the card's voice is not a valid relay voice (40 characters, plain text, no link)")
+            want_card = C.draw_card(inp_scope(inp, mode), bytes.fromhex(inp["sigs"]["call"]), int(inp["numbering"]["n"]),
+                                    recents[mode], voice if isinstance(voice, str) else C.DEFAULT_VOICE)
             if want_card.to_dict() != v["card"]:
-                problems.append("the card is not the beacon's draw from the deck version and the earlier cards")
+                problems.append("the card is not the beacon's draw of the word and the limit from the earlier words, "
+                                "with the recorded voice")
             recents[mode] = C.push_recent(recents[mode], v["card"])
+            arc_voice[mode] = voice
         history.append({"mode": mode, "canon": ("post:" + v["canon"]) if v.get("canon") else None})
         if mode == "live":
             live_outcomes.append(v.get("outcome") or {})
@@ -440,7 +469,14 @@ def main(argv: list[str] | None = None) -> int:
             return {}                  # a relay with its log off: the check then reports the rows as unlogged
         r.raise_for_status()
         return r.json()
-    rep = verify(get, bls=not args.no_bls, only=args.chapter)
+    try:
+        rep = verify(get, bls=not args.no_bls, only=args.chapter)
+    except BlsMissing as e:
+        print(str(e), file=sys.stderr)
+        return EXIT_CANNOT_CHECK
+    except Exception as e:  # noqa: BLE001 - an unreachable relay is not a disagreement either
+        print(f"cannot check: {e}", file=sys.stderr)
+        return EXIT_CANNOT_CHECK
     for c in rep["chapters"]:
         print(f"{'ok  ' if c['ok'] else 'FAIL'} {c['label']}: {c['reason']}"
               f"{', canon ' + c['canon'] if c['canon'] else ''}{' (thin jury)' if c['thin_jury'] else ''}")

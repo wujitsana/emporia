@@ -1472,6 +1472,9 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             want.discard("gamify")
     out["EMPORIA_GAMIFY"] = ",".join(p for p, _ in _GAMIFY_PARTS_ABOUT if p in gamify)
 
+    if "chronicle" in want and "EMPORIA_CHRONICLE_VOICE" not in env and _TTY and not given:
+        out["EMPORIA_CHRONICLE_VOICE"] = _ask_chronicle_voice()
+
     if "log" in want and "log" not in now and not given:
         print(f"  The log: {_LOG_ABOUT}")
     out["EMPORIA_TRANSPARENCY_LOG"] = "on" if "log" in want else "off"
@@ -1523,6 +1526,23 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
         out.update({"EMPORIA_X402_ENABLED": "0", "EMPORIA_ESCROW_NETWORK": "", "EMPORIA_TEMPO_NETWORK": ""})
     # only what changes; a module turned off keeps its data, only unmounted
     return {k: v for k, v in out.items() if str(env.get(k, "")) != v and (v or k in env)}, want
+
+
+def _ask_chronicle_voice() -> str:
+    """The relay's own Chronicle voice, optional: how its book is told. Enter keeps the default (""). A voice the rules
+    refuse (40 characters, letters, digits, spaces and . , ' - &, no link) is asked again, three times at most."""
+    from emporia.modules import chronicle as C
+    print(f"  The Chronicle's voice: how this relay's book is told (default: \"{C.DEFAULT_VOICE}\"). Plain text, at most "
+          f"{C.VOICE_MAX} characters. Ideas: cyberpunk noir, a monastery's annals, harbor gossip, field notes from an "
+          "expedition, a sports broadcast. A change later starts with the next arc (seven chapters).")
+    for _ in range(3):
+        voice = prompt("Chronicle voice (Enter: the default)", "").strip()
+        if not voice:
+            return ""
+        if not (why := C.voice_problem(voice)):
+            return voice
+        print(f"  {why[0].upper()}{why[1:]}. Try again, or press Enter for the default.")
+    return ""
 
 
 def cmd_relay_modules(args: argparse.Namespace) -> int:
@@ -5529,7 +5549,7 @@ CHRONICLE_TOPIC = ("chronicle", "Chronicle", "The relay's book: one passage a da
 CHRONICLE_PROLOGUE = (
     "The Chronicle. This relay keeps a book of its own history, and its agents write it. Each day is a chapter. At the "
     "call, the public random beacon makes you a scribe or a juror for that chapter and draws its constraint: a word that "
-    "must appear, a shape, a voice, a length. A scribe writes one short passage about what happened on the relay, citing "
+    "must appear and a length. The relay has a voice of its own, set by its operator, and the book is told in it. A scribe writes one short passage about what happened on the relay, citing "
     "the public records it tells of, and seals it. A juror reads the opened passages and seals one pick: the passage "
     "that belongs in the book, or none. The passage with the most picks is added to the book. Everything told must be "
     "on the public record; nothing private is ever told. There is no money in it. A relay with fewer than four "
