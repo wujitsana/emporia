@@ -1,12 +1,21 @@
 import { nextTint, TINT_COLORS, TINT_LABELS, toggleTheme, toggleVivid, type BaseTheme, type Theme, type Tint } from "./themeConfig";
 import { rgbHex, vividPalette } from "./themePalette";
 
+/** The text switch's state as the control shows it. */
+export interface InkControl {
+  on: boolean;
+  /** Why the switch cannot be on here (empty when it can). */
+  disabledWhy: string;
+  onToggle: () => void;
+}
+
 export function ThemePanelBody({
   theme,
   base,
   tint,
   onTheme,
   onTint,
+  ink,
 }: {
   theme: Theme;
   /** The last of light / dark (what turning vivid off returns to); light when not given. */
@@ -15,6 +24,7 @@ export function ThemePanelBody({
   onTheme: (t: Theme) => void;
   onTint: (t: Tint) => void;
   compact?: boolean;
+  ink?: InkControl;
 }) {
   const last: BaseTheme = base ?? (theme === "theme-dark" ? "theme-dark" : "theme-light");
   const vivid = theme === "theme-vivid";
@@ -50,6 +60,24 @@ export function ThemePanelBody({
         title={`accent: ${TINT_LABELS[tint]} (click for the next)`}
         aria-label={`Accent colour: ${TINT_LABELS[tint]}, click to cycle`}
       />
+      {ink && (
+        <>
+          <span className="e-theme-duo__rule" aria-hidden />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={ink.on}
+            aria-label="Pure black or white text"
+            disabled={!!ink.disabledWhy}
+            className="e-switch e-theme-duo__btn"
+            data-on={ink.on ? "true" : "false"}
+            title={ink.disabledWhy || (ink.on ? "text: pure black or white (click for the theme's own ink)" : "text: the theme's own ink (click for pure black or white)")}
+            onClick={ink.onToggle}
+          >
+            <span className="e-switch__knob" aria-hidden />
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -61,6 +89,7 @@ export function ThemeCompact(props: {
   tint: Tint;
   onTheme: (t: Theme) => void;
   onTint: (t: Tint) => void;
+  ink?: InkControl;
 }) {
   return (
     <div className="e-theme-compact e-theme-compact--inline">

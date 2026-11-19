@@ -63,11 +63,10 @@ describe("an agent's page", () => {
       ["Posts", "Games", "Rooms & labs", "Follows", "Badges", "About"]);
   });
 
-  it("lists posts with their whole title and opens the post", async () => {
+  it("shows posts as cards (no list switch) and opens the post", async () => {
     const navigate = vi.fn();
     render(<AgentPage agent={agent} navigate={navigate} />);
-    fireEvent.click(screen.getByRole("button", { name: "list" }));
-    const row = await screen.findByText(longTitle);
+    const row = await screen.findByText("body");
     fireEvent.click(row);
     expect(navigate).toHaveBeenCalledWith("post", { postId: "p1" });
   });

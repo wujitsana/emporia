@@ -21,6 +21,7 @@ import { NotAnAgentNote } from "./ui/NotAnAgentNote";
 import { NotOnRelayNote } from "./ui/NotOnRelayNote";
 import { hermesProfile, MODE } from "./transport";
 import { clearRemovedPrefs, readPref, writePref } from "./prefs";
+import { LS_INK, normalizeInk, pureInk } from "./inkSwitch";
 import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayDownCtx, RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, type BaseTheme, type Theme, type Tint } from "./themeConfig";
@@ -111,6 +112,15 @@ function AppInner() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [base, setBase] = useState<BaseTheme>(() => readBase(theme));
+  // The text switch: this browser's choice (or `?ink=on`, not saved); it applies only where pure ink is readable.
+  const [inkPref, setInkPref] = useState<boolean>(() => new URLSearchParams(window.location.search).get("ink") === "on" || (!CAPTURE && normalizeInk(readPref(LS_INK))));
+  const pure = pureInk(theme, tint);
+  const inkOn = inkPref && pure.ok;
+  const ink = {
+    on: inkOn,
+    disabledWhy: pure.ok ? "" : pure.why,
+    onToggle: () => { const next = !inkPref; setInkPref(next); if (!CAPTURE) writePref(LS_INK, next ? "on" : "off"); },
+  };
   const baseRef = useRef(base);
   useEffect(() => { baseRef.current = base; }, [base]);
   const [navOpen, setNavOpen] = useState(false);
@@ -224,9 +234,9 @@ function AppInner() {
   // A change from the theme picker fades; one from the t/T hotkeys (or any in capture mode) is instant.
   const instantNext = useRef(false);
   useEffect(() => {
-    applyTheme(theme, tint, { fade: !CAPTURE && !instantNext.current, capture: CAPTURE });
+    applyTheme(theme, tint, { fade: !CAPTURE && !instantNext.current, capture: CAPTURE, ink: inkOn ? pure.color : null });
     instantNext.current = false;
-  }, [theme, tint]);
+  }, [theme, tint, inkOn, pure.color]);
 
   const setThemeAndApply = (t: Theme) => {
     setTheme(t);
@@ -479,6 +489,7 @@ function AppInner() {
             tint={tint}
             onTheme={setThemeAndApply}
             onTint={setTintAndApply}
+            ink={ink}
             badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
             lead={<ChatMenuItem onOpen={() => setNavOpen(false)} />}
           />
@@ -514,6 +525,7 @@ function AppInner() {
                   tint={tint}
                   onTheme={setThemeAndApply}
                   onTint={setTintAndApply}
+                  ink={ink}
                 />
                 <ViewerSwitcher />
                 <HeaderLinks view={view} onGo={goToView} />

@@ -78,6 +78,8 @@ describe("the CSS carries the palette", () => {
     expect(WHITE_INK).toEqual(["tint-blue", "tint-red", "tint-purple"]);
     expect(LIGHT_PANEL).toEqual(["tint-orange", "tint-pink"]);
     expect(DASH).toContain("body.e-look.theme-vivid.tint-blue,\nbody.e-look.theme-vivid.tint-red,\nbody.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }");
+    // The dark theme's chip ink is white on the same tints (crimson was missing here: dark red ink on crimson chips).
+    expect(DASH).toContain("body.e-look.theme-dark.tint-blue,\nbody.e-look.theme-dark.tint-red,\nbody.e-look.theme-dark.tint-purple { --anim-ink: #fff; }");
     expect(DASH).toContain("body.e-look.theme-vivid.tint-orange,\nbody.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
   });
 

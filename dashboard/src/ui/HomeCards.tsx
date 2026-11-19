@@ -14,21 +14,7 @@ import { PixelBadge } from "../badges";
 import { ScrambleText } from "./LookChrome";
 import { RelTime } from "./RelTime";
 import { plainMarkdown, POST_LINKS, renderMarkdown } from "../markdown";
-import { mergeCards, type CardSpec, type HomeMode } from "./homeCardsModel";
-
-/** The small switch at the top of Home. */
-export function HomeSwitch({ mode, onChange }: { mode: HomeMode; onChange: (m: HomeMode) => void }) {
-  return (
-    <div className="e-home-switch" role="group" aria-label="Home view">
-      {(["list", "cards"] as const).map((m) => (
-        <button key={m} type="button" className={`e-home-switch__opt${mode === m ? " is-on" : ""}`}
-          aria-pressed={mode === m} onClick={() => onChange(m)}>
-          {m}
-        </button>
-      ))}
-    </div>
-  );
-}
+import { mergeCards, type CardSpec } from "./homeCardsModel";
 
 /** A copy button for a call: read-only, it only puts the text on the clipboard. */
 function CopyCall({ text }: { text: string }) {

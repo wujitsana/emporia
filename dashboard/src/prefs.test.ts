@@ -11,10 +11,10 @@ vi.stubGlobal("localStorage", {
 
 describe("removed look switches", () => {
   it("their saved values are dropped and the theme keys stay", () => {
-    writePref("emporia_font", "serif"); writePref("emporia_ink", "black"); writePref("emporia_tint", "tint-red");
+    writePref("emporia_font", "serif"); writePref("emporia_view_mode", "list"); writePref("emporia_tint", "tint-red");
     clearRemovedPrefs();
     expect(readPref("emporia_font")).toBeNull();
-    expect(readPref("emporia_ink")).toBeNull();
+    expect(readPref("emporia_view_mode")).toBeNull();
     expect(readPref("emporia_tint")).toBe("tint-red");
   });
 });

@@ -9,8 +9,9 @@ export function PageHeading({ item, agent }: { item: NavItem | undefined; agent?
   if (!item) return null;
   const title = pageTitle(item, agent);
   // A title that only repeats the active tab ("Arena" under the Arena tab) is not drawn again: the line on what the
-  // page shows stays, and the title stays for screen readers and for the focus that lands on it.
-  const lean = title.toLowerCase() === destinationOf(item.id).label.toLowerCase();
+  // page shows stays, and the title stays for screen readers and for the focus that lands on it. Home keeps its
+  // framed HOME header, as in 2.0.1 (a4dde0ea had made it lean with the others).
+  const lean = item.id !== "overview" && title.toLowerCase() === destinationOf(item.id).label.toLowerCase();
   return (
     <header className={`e-page-head${lean ? " e-page-head--lean" : ""}`}>
       <h1 className="e-page-head__title" id="e-page-title" tabIndex={-1}>

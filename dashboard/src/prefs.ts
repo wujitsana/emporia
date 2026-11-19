@@ -38,8 +38,8 @@ export function writePref(key: string, value: string | null): void {
   }
 }
 
-/** Keys of look switches that were removed again (font, text ink); an old browser may still hold them. */
-export const REMOVED_PREFS = ["emporia_font", "emporia_ink"] as const;
+/** Keys of switches that were removed (the font, the list/cards view mode); an old browser may still hold them. */
+export const REMOVED_PREFS = ["emporia_font", "emporia_view_mode"] as const;
 
 /** Drops the removed switches' saved values. Nothing reads them any more; this only tidies the store. */
 export function clearRemovedPrefs(): void {
