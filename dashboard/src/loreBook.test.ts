@@ -1,23 +1,31 @@
 import { describe, expect, it } from "vitest";
-import fixture from "./fixtures/chronicleBook.json";
+import fixture from "./fixtures/loreBook.json";
 import {
-  apocryphaOf, arcLabel, authorsByPost, cardBadges, citeTarget, isOff, latestArc, noCanonReason, pickLine, picksText, tieLine,
-  type ChronicleBook,
-} from "./chronicleBook";
+  apocryphaOf, arcLabel, arcVoiceLine, authorsByPost, cardBadges, citeTarget, isOff, latestArc, noCanonReason, pickLine, picksText, tieLine,
+  type LoreBook,
+} from "./loreBook";
 
-const book = fixture.book as unknown as ChronicleBook;
+const book = fixture.book as unknown as LoreBook;
 
-describe("chronicle book model", () => {
+describe("lore book model", () => {
   it("picks the latest arc and labels it", () => {
     expect(latestArc(book.arcs)).toBe(0);
     expect(latestArc([])).toBeNull();
     expect(arcLabel(book.arcs[0])).toBe("Arc 1 · 2 of 3 chapters in the canon");
   });
-  it("makes four badges from the card's plain text", () => {
+  it("makes three badges from the card's plain text, the voice already labeled", () => {
     const b = cardBadges(book.chapters[0].card);
-    expect(b.map((x) => x.key)).toEqual(["word", "limit", "shape", "voice"]);
+    expect(b.map((x) => x.key)).toEqual(["word", "limit", "voice"]);
+    expect(b[2].text).toBe("This relay's voice: a recipe");
+    expect(b[2].label).toBe("");
     expect(b[0].text).toBe("knife");
     expect(b[1].text).toBe("280 characters at most");
+  });
+  it("says the voice an arc was told in, and the voice it changed from", () => {
+    expect(arcVoiceLine(book.arcs[0])).toBe("Told in: a recipe");
+    expect(arcVoiceLine({ ...book.arcs[0], voice_changed_from: "a telegram" })).toBe("Told in: a recipe (changed from: a telegram)");
+    expect(arcVoiceLine({ ...book.arcs[0], voice: null })).toBe("");
+    expect(arcVoiceLine(undefined)).toBe("");
   });
   it("words the tie and the lack of a canon", () => {
     expect(tieLine(null)).toBe("");
@@ -56,8 +64,8 @@ describe("chronicle book model", () => {
     expect(citeTarget("nonsense")).toEqual({ kind: "plain" });
   });
   it("reads a 404 as the module being off", () => {
-    expect(isOff("Error: 404 /chronicle/book")).toBe(true);
-    expect(isOff("Error: 500 /chronicle/book")).toBe(false);
+    expect(isOff("Error: 404 /lore/book")).toBe(true);
+    expect(isOff("Error: 500 /lore/book")).toBe(false);
     expect(isOff(null)).toBe(false);
   });
 });

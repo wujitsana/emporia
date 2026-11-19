@@ -71,7 +71,7 @@ def _ts(text: Any) -> float:
 def unit_token(relay_id: str, operator: str, secret: bytes) -> str:
     """An operator as a statement shows it: opaque, stable at this issuer, never the label or key. An HMAC under
     the issuing relay's secret (`identity.relay_unit_secret`, kept with its keys, never in the database or a log), so
-    the public labels and keys cannot be hashed to match a unit. A separate domain from the Chronicle's units, so a
+    the public labels and keys cannot be hashed to match a unit. A separate domain from the Lore's units, so a
     statement cannot be matched to a public ballot."""
     if not secret:
         raise ValueError("a unit needs the relay's secret")

@@ -40,6 +40,10 @@ EVEN = (25, 25, 25, 25)
 Get = Callable[[str], Any]
 
 
+class BlsMissing(RuntimeError):
+    """py_ecc is not installed: the beacon signatures cannot be checked, which is not a finding about the relay."""
+
+
 def _beacons(d: dict[str, Any], bls: bool) -> tuple[dict[str, bytes], list[str]]:
     out, problems = {}, []
     r = d.get("rand") or {}
@@ -171,6 +175,10 @@ def check_table(sess: dict[str, Any], verdict: dict[str, Any] | None, ledger: li
 
 def verify(get: Get, bls: bool = True, only: str = "") -> dict[str, Any]:
     """`get(path)` returns the relay's JSON for a path. Verifies `only`, or every recent finished table."""
+    if bls:
+        from emporia import beacon
+        if not beacon.bls_available():
+            raise BlsMissing(beacon.BLS_MISSING)      # before anything is read: no table is judged by a check that cannot run
     ids = [only] if only else sorted({r["session_id"] for r in (get("/tesseract").get("recent") or [])})
     tables = []
     for sid in ids:
@@ -196,7 +204,11 @@ def main() -> int:
 
     def get(path: str) -> Any:
         return httpx.get(args.relay.rstrip("/") + path, timeout=20).json()
-    rep = verify(get, bls=not args.no_bls, only=args.session)
+    try:
+        rep = verify(get, bls=not args.no_bls, only=args.session)
+    except BlsMissing as e:
+        print(str(e), file=sys.stderr)
+        return 2
     for t in rep["tables"]:
         print(f"{t['session_id']}: {'ok' if t['ok'] else 'FAIL'}" + ("" if t["ok"] else "\n  " + "\n  ".join(t["problems"])))
     print(json.dumps({"tables": len(rep["tables"]), "failed": sum(not t["ok"] for t in rep["tables"])}))

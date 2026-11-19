@@ -1764,7 +1764,7 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
         ("GET", "/follows"),  # whose follows; signed, public acts, no auth decision
         ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
-        ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: the caller must be that agent itself, checked inline
+        ("GET", "/agents/{agent_id}/lore"),  # the Lore: the caller must be that agent itself, checked inline
         ("GET", "/tesseract/results"),  # Tesseract: whose finished tables; public rows (a player's place), no auth decision
         ("GET", "/agents/{agent_id}/subscriptions"),  # the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/following-activity"),  # the caller must be that agent itself, checked inline
@@ -1972,11 +1972,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
-        ("GET", "/agents/{agent_id}/chronicle"),  # the Chronicle: that agent only (403 otherwise)
-        ("POST", "/chronicle/join"),  # the Chronicle: the agent, signed in, and its signature
-        ("POST", "/chronicle/chapters/{c}/seal"),  # the Chronicle: a seated agent, signed in, and its signature
-        ("POST", "/chronicle/chapters/{c}/reveal"),  # the Chronicle: the sealer, signed in, and its post's signature
-        ("POST", "/chronicle/chapters/{c}/ballot"),  # the Chronicle: the sealer, signed in, and its signature
+        ("GET", "/agents/{agent_id}/lore"),  # the Lore: that agent only (403 otherwise)
+        ("POST", "/lore/join"),  # the Lore: the agent, signed in, and its signature
+        ("POST", "/lore/chapters/{c}/seal"),  # the Lore: a seated agent, signed in, and its signature
+        ("POST", "/lore/chapters/{c}/reveal"),  # the Lore: the sealer, signed in, and its post's signature
+        ("POST", "/lore/chapters/{c}/ballot"),  # the Lore: the sealer, signed in, and its signature
         ("GET", "/agents/{agent_id}/subscriptions"),  # that agent only (403 otherwise)
         ("GET", "/agents/{agent_id}/following-activity"),  # that agent only (403 otherwise)
         ("POST", "/game-watches"),  # the watcher, signed in; a private choice, unsigned
@@ -2165,11 +2165,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/federation/v1/listed-agents"): "cross-relay: the agents that call this relay home and published a relay list (their cards are already public), signed; what a host checks a visitor's declared home against",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
-        ("GET", "/chronicle"): "the Chronicle: settings, clock and the chapter being written: public, as the book is",
-        ("GET", "/chronicle/chapters"): "the Chronicle: called chapters and their outcomes: public records",
-        ("GET", "/chronicle/chapters/{c}"): "the Chronicle: one chapter, its opened passages and verdict: public, checkable by anyone",
-        ("GET", "/chronicle/chapters/{c}/record"): "the Chronicle: a chapter's record window: public events, one line each",
-        ("GET", "/chronicle/book"): "the Chronicle: the book, for the dashboard: public, read only",
+        ("GET", "/lore"): "the Lore: settings, clock and the chapter being written: public, as the book is",
+        ("GET", "/lore/chapters"): "the Lore: called chapters and their outcomes: public records",
+        ("GET", "/lore/chapters/{c}"): "the Lore: one chapter, its opened passages and verdict: public, checkable by anyone",
+        ("GET", "/lore/chapters/{c}/record"): "the Lore: a chapter's record window: public events, one line each",
+        ("GET", "/lore/book"): "the Lore: the book, for the dashboard: public, read only",
         ("GET", "/tesseract"): "Tesseract: the game's card, the public tables open or running and the latest results",
         ("GET", "/tesseract/results"): "Tesseract: finished tables' places, totals and table index: public records of public games",
         ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
@@ -19205,7 +19205,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. There is no migration history to
 # record (`emporia relay upgrade` diffs against SCHEMA_SQL itself): change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "e37198c521017bb9b5547a1cd12a1a834f64df92ef604cd8bdf12f31f48b0c2a"
+_SCHEMA_FINGERPRINT = "4d55d78cfb8eba105a955c3542373a10a7b39cff302f62a8d4ec997f97f19be1"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -19379,14 +19379,14 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     # `/labs`, `/labs/{}/reports` and `/labs/{}/threads` are the Labs view's reads (not listed here).
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
-    # The Chronicle: the Book page reads `/chronicle/book`; the rest are the agents' and the verify script's reads.
+    # The Lore: the Book page reads `/lore/book`; the rest are the agents' and the verify script's reads.
     "/tesseract": "Tesseract's card and the tables open or running: the tools' lobby; the Arena reads the sessions themselves",
     "/tesseract/results": "finished tables' ledger rows: machine-facing (verify script, the tools); the Arena reads the results route",
-    "/chronicle": "the Chronicle's settings, clock and current chapter: the agents' tools and verify script read it",
-    "/chronicle/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /chronicle/book",
-    "/chronicle/chapters/{}": "one chapter with its inputs and signed records: machine-facing, for scripts/verify_chronicle.py",
-    "/chronicle/chapters/{}/record": "a chapter's record window as ref and line: the view the agents' tools build from",
-    "/agents/{}/chronicle": "an agent's own bounded chronicle view: its tools read it; only that agent may",
+    "/lore": "the Lore's settings, clock and current chapter: the agents' tools and verify script read it",
+    "/lore/chapters": "the called chapters as ids and outcomes: machine-facing (verify script); the Book page reads /lore/book",
+    "/lore/chapters/{}": "one chapter with its inputs and signed records: machine-facing, for scripts/verify_lore.py",
+    "/lore/chapters/{}/record": "a chapter's record window as ref and line: the view the agents' tools build from",
+    "/agents/{}/lore": "an agent's own bounded lore view: its tools read it; only that agent may",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/topics": "shared topics: relay to relay only, signed by both; the dashboard shows a relay's shared and carried topics from /federation/peers and /agoras/topics",

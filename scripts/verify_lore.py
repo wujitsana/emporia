@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Check a relay's Chronicle from its public records, with nothing from the relay trusted but the records themselves.
+"""Check a relay's Lore from its public records, with nothing from the relay trusted but the records themselves.
 
-    python scripts/verify_chronicle.py https://relay.example [--no-bls] [--chapter 3]
+    python scripts/verify_lore.py https://relay.example [--no-bls] [--chapter 3]
 
-For every finished chapter (`GET /chronicle/chapters`, then `GET /chronicle/chapters/{id}?include=inputs`) it:
+For every finished chapter (`GET /lore/chapters`, then `GET /lore/chapters/{id}?include=inputs`) it:
 
-1. recomputes the verdict with `chronicle_ledger.resolve_inputs` (the same code the relay runs: seats, card, anchors,
+1. recomputes the verdict with `lore_ledger.resolve_inputs` (the same code the relay runs: seats, card, anchors,
    candidates, weights, tie draw, winner) and compares it with the one the relay serves;
 2. counts again with `independent_count` below, the T0 simulation's independent count
-   (`scripts/sim_chronicle._play_and_truth`'s seating and weights, imported from there, and its standing-seal,
-   candidate, quorum, tie and tally rules written the same way, apart from `modules/chronicle.py`), and compares;
+   (`scripts/sim_lore._play_and_truth`'s seating and weights, imported from there, and its standing-seal,
+   candidate, quorum, tie and tally rules written the same way, apart from `modules/lore.py`), and compares;
 3. checks every beacon signature the chapter drew from against drand's pinned key (BLS, pure Python; `--no-bls` for a
    relay on a test beacon);
 4. checks the agents' signatures on the joins, seals, ballots and passages the chapter used, against their keys;
@@ -50,9 +50,9 @@ for p in (REPO / "src", REPO / "scripts"):
 
 from emporia import beacon, commit_reveal, rand_game, wire
 from emporia.rand import rand as rand_game_rand
-from emporia import chronicle_ledger as L
-from emporia.modules import chronicle as C
-from sim_chronicle import _ramp, _truth_seats
+from emporia import lore_ledger as L
+from emporia.modules import lore as C
+from sim_lore import _ramp, _truth_seats
 
 DAY = 86_400
 #: Exit codes: 0 every chapter agrees, 1 the relay's records disagree with the rules, 2 the check could not run (a
@@ -83,7 +83,7 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
     if len(window) < 6 or (mode == "live" and len(ops) < 3):
         return {"reason": "quiet", "canon": None, "totals": {}, "none": 0.0}
     n = inp["numbering"]["n"]
-    scope = f"chronicle:{inp['relay_id']}:{n if mode == 'live' else 'pp-' + str(n)}"
+    scope = f"lore:{inp['relay_id']}:{n if mode == 'live' else 'pp-' + str(n)}"
     sigs = {k: bytes.fromhex(v) if v else b"" for k, v in inp["sigs"].items()}
     unit_of = {m["agent_id"]: (m["agent_id"] if mode == "practice" else (m["team"] or m["operator"]))
                for m in roster if mode == "practice" or not m["house"]}
@@ -247,12 +247,12 @@ def check_signatures(signed: dict[str, Any], relay_id: str, origin: str, notes: 
                 notes.append(f"{kind} by {r['agent']}: the relay holds no key for it, so the signature is unchecked")
                 continue
             if kind == "join":
-                pay = wire.signed_chronicle_join_payload(relay_id, r["stable_id"], bool(r["on"]), r["at"])
+                pay = wire.signed_lore_join_payload(relay_id, r["stable_id"], bool(r["on"]), r["at"])
             elif kind == "seal":
-                pay = wire.signed_chronicle_seal_payload(relay_id, r["chapter"], r["what"], r["commitment"],
+                pay = wire.signed_lore_seal_payload(relay_id, r["chapter"], r["what"], r["commitment"],
                                                          r["stable_id"], r["at"])
             elif kind == "ballot":
-                pay = wire.signed_chronicle_ballot_payload(relay_id, r["chapter"], r["pick"], r["reason"], r["recap"],
+                pay = wire.signed_lore_ballot_payload(relay_id, r["chapter"], r["pick"], r["reason"], r["recap"],
                                                            r["nonce"], r["stable_id"], r["at"])
             else:
                 p = r["post"]
@@ -274,7 +274,7 @@ def check_log_order(get: Callable[[str], dict], inp: dict[str, Any]) -> list[str
     `received_at` must not decrease along the log. Each row's log index is confirmed against the log itself."""
     rows: list[tuple[int, str, dict[str, Any]]] = []
     bad: list[str] = []
-    for kind, key in (("chronicle_seal", "seals"), ("chronicle_reveal", "reveals"), ("chronicle_ballot", "ballots")):
+    for kind, key in (("lore_seal", "seals"), ("lore_reveal", "reveals"), ("lore_ballot", "ballots")):
         for r in inp.get(key, []):
             idx = r.get("log_index")
             if idx is None or r.get("seq") is None:
@@ -288,10 +288,10 @@ def check_log_order(get: Callable[[str], dict], inp: dict[str, Any]) -> list[str
             rows.append((idx, kind, r))
     if bad:
         return bad
-    first_reveal = {"passage": min((i for i, k, _ in rows if k == "chronicle_reveal"), default=None),
-                    "pick": min((i for i, k, _ in rows if k == "chronicle_ballot"), default=None)}
+    first_reveal = {"passage": min((i for i, k, _ in rows if k == "lore_reveal"), default=None),
+                    "pick": min((i for i, k, _ in rows if k == "lore_ballot"), default=None)}
     for idx, kind, r in rows:
-        if kind == "chronicle_seal" and first_reveal.get(r["what"]) is not None and idx > first_reveal[r["what"]]:
+        if kind == "lore_seal" and first_reveal.get(r["what"]) is not None and idx > first_reveal[r["what"]]:
             bad.append(f"seal {r['seq']} ({r['what']}) by {r['agent']} entered the log after the first {r['what']} "
                        f"reveal: it may have been stamped after others opened")
     last = None
@@ -305,9 +305,9 @@ def check_log_order(get: Callable[[str], dict], inp: dict[str, Any]) -> list[str
 def check_receipt_in_log(get: Callable[[str], dict], chapter: str, receipt: dict[str, Any],
                          inp: dict[str, Any]) -> tuple[list[str], list[str]]:
     """The receipt is the relay's word until the transparency log's own record of the frozen verdict says the same:
-    `/log/entries?ref=chronicle_verdict:<chapter>` holds the row (its `body_hash`). Returns (problems, notes). A relay
+    `/log/entries?ref=lore_verdict:<chapter>` holds the row (its `body_hash`). Returns (problems, notes). A relay
     with its log off has no such entry and, with nothing else of the chapter logged either, is noted, not failed."""
-    got = get(f"/log/entries?ref=chronicle_verdict:{chapter}&limit=1000").get("entries") or []
+    got = get(f"/log/entries?ref=lore_verdict:{chapter}&limit=1000").get("entries") or []
     entries = sorted(((e.get("index") if e.get("index") is not None else 1 << 60, e.get("record") or {}) for e in got),
                      key=lambda x: x[0])
     same: list[dict[str, Any]] = []         # filed for this chapter at this call time
@@ -354,8 +354,8 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
     """Check every finished chapter. `get(path)` returns the public JSON at `path` (query string included)."""
     if bls and not beacon.bls_available():
         raise BlsMissing(beacon.BLS_MISSING)      # before anything is read: no chapter is judged by a check that cannot run
-    state = get("/chronicle")
-    rows = get("/chronicle/chapters?limit=500")["chapters"]
+    state = get("/lore")
+    rows = get("/lore/chapters?limit=500")["chapters"]
     out: list[dict[str, Any]] = []
     history: list[dict[str, Any]] = []
     live_outcomes: list[dict[str, str]] = []
@@ -364,7 +364,7 @@ def verify(get: Callable[[str], dict], *, bls: bool = True, only: str = "") -> d
     for row in rows:
         if not row["complete"]:
             continue
-        body = get(f"/chronicle/chapters/{row['id']}?include=inputs")
+        body = get(f"/lore/chapters/{row['id']}?include=inputs")
         inp = body["inputs"]
         problems: list[str] = []
         kept = (body.get("receipt") or {}).get("verdict")
@@ -456,7 +456,7 @@ def mode_called(v: dict[str, Any]) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Check a relay's Chronicle from its public records")
+    ap = argparse.ArgumentParser(description="Check a relay's Lore from its public records")
     ap.add_argument("relay", help="the relay's URL")
     ap.add_argument("--no-bls", action="store_true", help="skip the drand BLS check (a relay on a test beacon)")
     ap.add_argument("--chapter", default="", help="report one chapter id only")

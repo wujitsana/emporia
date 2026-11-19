@@ -39,7 +39,7 @@ import type { Navigate } from "./navigation";
 import {
   OverviewView,
   LabsView,
-  BookView,
+  LoreView,
   RelaysView,
   RoomsView,
   AgentsView,
@@ -591,7 +591,7 @@ function AppInner() {
               />
             )}
             {view === "labs" && <LabsView slug={labSlug} navigate={navigate} />}
-            {view === "book" && <BookView navigate={navigate} />}
+            {view === "lore" && <LoreView navigate={navigate} />}
             {view === "relays" && <RelaysView />}
             {view === "games" && (
               <ArenaView

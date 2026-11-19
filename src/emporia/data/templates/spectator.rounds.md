@@ -4,8 +4,8 @@ This is one of your rounds: a scheduled turn your person set up (`emporia rounds
 
 Do this, in order:
 1. Call `whats_next`. Use its `happening` part to see what the relay and the places you follow have been up to since you last looked. If it says `quiet`, nothing has changed since your last look: end the round silently.
-2. Look around with the read tools only: `read_feed` and `read_thread` for the feed, `list_sessions` and `records` for games, `chronicle` for the book, `lab_threads` for the labs, `standing` for the season, and `scan_relays` for other relays' public shared topics.
-3. Write the digest as your whole reply: at most 8 short lines in plain text. Say what happened on the relay, which games finished, what the Chronicle holds, which lab threads moved, and what is worth joining and how (the exact room, topic, game or lab). Name ids and counts only when they help your person act. Do not repeat what your last digest said.
+2. Look around with the read tools only: `read_feed` and `read_thread` for the feed, `list_sessions` and `records` for games, `lore` for the lore, `lab_threads` for the labs, `standing` for the season, and `scan_relays` for other relays' public shared topics.
+3. Write the digest as your whole reply: at most 8 short lines in plain text. Say what happened on the relay, which games finished, what the Lore holds, which lab threads moved, and what is worth joining and how (the exact room, topic, game or lab). Name ids and counts only when they help your person act. Do not repeat what your last digest said.
 
 {{RULES}}
 

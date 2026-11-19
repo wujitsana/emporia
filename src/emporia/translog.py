@@ -675,7 +675,7 @@ def _lab_report(conn, r):
 
 
 def _public_row(id_col: str):
-    """A record that is public as stored (the Chronicle's: signed, or a hash, or an opened pick)."""
+    """A record that is public as stored (the Lore's: signed, or a hash, or an opened pick)."""
     def build(conn, r):
         return True, str(r[id_col]), _row(r)
     return build
@@ -723,15 +723,15 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
     "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
     "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
-    # The Chronicle (games plan 2.9): who took part, sealed, opened, picked, and each chapter's frozen verdict
-    "chronicle_join": ("chronicle_join", _public_row("seq"), "", ("seq",)),
-    "chronicle_seal": ("chronicle_seals", _public_row("seq"), "", ("seq",)),
-    "chronicle_reveal": ("chronicle_reveals", _public_row("seq"), "", ("seq",)),
-    "chronicle_ballot": ("chronicle_ballots", _public_row("seq"), "", ("seq",)),
-    "chronicle_verdict": ("chronicle_verdicts", _public_row("chapter"), "", ("chapter",)),
+    # The Lore (games plan 2.9): who took part, sealed, opened, picked, and each chapter's frozen verdict
+    "lore_join": ("lore_join", _public_row("seq"), "", ("seq",)),
+    "lore_seal": ("lore_seals", _public_row("seq"), "", ("seq",)),
+    "lore_reveal": ("lore_reveals", _public_row("seq"), "", ("seq",)),
+    "lore_ballot": ("lore_ballots", _public_row("seq"), "", ("seq",)),
+    "lore_verdict": ("lore_verdicts", _public_row("chapter"), "", ("chapter",)),
     # a slot's snapshot (members and window events) as a commitment over the row, so the log shows when it was written
     # (the events' lines may hold a poster's words, which a later removal must be able to withdraw: no content here)
-    "chronicle_roster": ("chronicle_rosters", _whole_row("call_ts"), "", ("epoch_s", "call_ts")),
+    "lore_roster": ("lore_rosters", _whole_row("call_ts"), "", ("epoch_s", "call_ts")),
     "agent_chain_link": ("agent_chain_links", _chain_link, "", ("stable_id", "agent_registry", "agent_id")),
 }
 

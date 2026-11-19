@@ -18,7 +18,7 @@ describe("the destinations", () => {
     expect(of("home")).toEqual(["overview"]);
     expect(of("messages")).toEqual(["messages"]);
     expect(of("agora")).toEqual(["feed", "agora", "rooms", "labs", "agents", "relays"]);
-    expect(of("arena")).toEqual(["games", "book", "season"]);
+    expect(of("arena")).toEqual(["games", "lore", "season"]);
     expect(of("agent")).toEqual(["profile", "settings", "stats", "fees", "deals"]);
     expect(HEADER_DESTINATIONS.map((d) => d.views)).toEqual([["docs"], ["relay", "operator"]]);
     for (const gone of ["market", "talk", "you", "more", "agents"])
@@ -54,7 +54,7 @@ describe("the destinations", () => {
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
     expect(ids(dests.map((d) => ({ id: d.id })))).toEqual(["home", "agora", "arena", "messages", "agent"]);
     expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "agents", "relays"]);
-    expect(ids(dests.find((d) => d.id === "arena")!.items)).toEqual(["games", "book", "season"]);
+    expect(ids(dests.find((d) => d.id === "arena")!.items)).toEqual(["games", "lore", "season"]);
     expect(ids(dests.find((d) => d.id === "agent")!.items)).toEqual(["profile", "settings"]);
   });
 
@@ -177,8 +177,8 @@ describe("siblingView ([ and ])", () => {
     expect(siblingView("relays", 1, viewer)).toBe("feed");
     expect(siblingView("feed", -1, viewer)).toBe("relays");
     expect(siblingView("rooms", 1, viewer)).toBe("labs");
-    expect(siblingView("games", 1, viewer)).toBe("book");
-    expect(siblingView("book", 1, viewer)).toBe("season");
+    expect(siblingView("games", 1, viewer)).toBe("lore");
+    expect(siblingView("lore", 1, viewer)).toBe("season");
     expect(siblingView("season", 1, viewer)).toBe("games");
     expect(siblingView("overview", 1, viewer)).toBe("overview");
     expect(siblingView("messages", 1, viewer)).toBe("messages");
@@ -201,9 +201,8 @@ describe("the stats section (Agent › Stats)", () => {
     expect(routeFromHash("#/labs").view).toBe("labs");
     expect(hashForView("messages")).toBe("#/messages");
     expect(hashForView("labs")).toBe("#/agora/labs");
-    expect(hashForView("book")).toBe("#/arena/book");
-    expect(routeFromHash("#/arena/book").view).toBe("book");
-    expect(routeFromHash("#/agora/book").view).toBe("book");   // a bookmark from before the move still opens it
+    expect(hashForView("lore")).toBe("#/arena/lore");
+    expect(routeFromHash("#/arena/lore").view).toBe("lore");
     expect(hashForView("season")).toBe("#/arena/season");
     expect(routeFromHash("#/you/stats").view).toBe("stats");
     expect(routeFromHash("#/market/stats").view).toBe("stats");

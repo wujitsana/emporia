@@ -229,14 +229,14 @@ the P284 items, Hermes 0.22.6 in the container.
       gateway signs in again by itself and keeps working; nothing needs a restart beyond what
       rotate-key does.
 
-### Short Chronicle chapters on a test relay
+### Short Lore chapters on a test relay
 
-A chapter is at least an hour on a real relay (`EMPORIA_CHRONICLE_EPOCH`, at least 3600). To watch a whole
-chapter in a sitting, a relay on this machine can run `EMPORIA_CHRONICLE_TEST_EPOCH` instead: seconds per
+A chapter is at least an hour on a real relay (`EMPORIA_LORE_EPOCH`, at least 3600). To watch a whole
+chapter in a sitting, a relay on this machine can run `EMPORIA_LORE_TEST_EPOCH` instead: seconds per
 chapter, at least 300 (five minutes). It is a test-only setting (docs/environment.md) and the relay accepts it only
 when it listens on a loopback address (`EMPORIA_RELAY_HOST` 127.0.0.1) and its public URL
 (`EMPORIA_RELAY_URL`) is `http://127.0.0.1...` or `http://localhost...`. Anything else: it refuses to start and
-says so (`EMPORIA_CHRONICLE_TEST_EPOCH is for a test relay on this machine only`). The Chronicle card then
+says so (`EMPORIA_LORE_TEST_EPOCH is for a test relay on this machine only`). The Lore card then
 carries `"test_epoch": true`. Use it with a throwaway database, never a relay others join.
 
 ### 5. Hosting and Docker (about 90 minutes)

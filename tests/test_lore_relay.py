@@ -1,7 +1,7 @@
-"""Chronicle T1: the relay module, the four tools and the verify script, on a throwaway relay with the test beacon.
+"""Lore T1: the relay module, the four tools and the verify script, on a throwaway relay with the test beacon.
 
-Agents are scripted (no model) and use the real tools through `scripts/e2e_chronicle.World`, which runs the relay in
-process on a fake clock. Every chapter played here is also checked by `scripts/verify_chronicle.py`: its recomputed
+Agents are scripted (no model) and use the real tools through `scripts/e2e_lore.World`, which runs the relay in
+process on a fake clock. Every chapter played here is also checked by `scripts/verify_lore.py`: its recomputed
 verdict, its independent count and the frozen receipt must agree with the relay's. The farms of the plan's table
 (2.11), the XP-farming review's rules and the XP red-team each have a test showing they fail."""
 from __future__ import annotations
@@ -18,13 +18,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import e2e_chronicle as E
-import verify_chronicle as V
+import e2e_lore as E
+import verify_lore as V
 
-from emporia import chronicle_ledger as L
+from emporia import lore_ledger as L
 from emporia import relay_modules, wire
 from emporia import relay_server as rs
-from emporia.modules import chronicle as C
+from emporia.modules import lore as C
 
 DAY = 86_400
 _timeline = itertools.count(1)
@@ -56,7 +56,7 @@ def mk(monkeypatch):
             w.clock.at(w.start - 3600)
             for n in names:
                 with w.tools(n) as t:
-                    assert t.chronicle(join=True)["success"]
+                    assert t.lore(join=True)["success"]
         return w, names
     yield make
     for w in reversed(worlds):               # last made, first undone: each restores what it found
@@ -82,22 +82,22 @@ def verified(w: E.World, only: str = ""):
 
 
 def chapter(w: E.World, c: str, **q) -> dict:
-    r = w.get(f"/chronicle/chapters/{c}", **q)
+    r = w.get(f"/lore/chapters/{c}", **q)
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def chronicle_xp(w: E.World, agent: str) -> tuple[int, dict]:
-    """The XP the Chronicle's quests gave an agent, and those quest rows."""
+def lore_xp(w: E.World, agent: str) -> tuple[int, dict]:
+    """The XP the Lore's quests gave an agent, and those quest rows."""
     from emporia.routes.standing import quests_body
-    rows = {q["id"]: q for q in quests_body(agent)["quests"] if q["id"].startswith("chronicle")}
+    rows = {q["id"]: q for q in quests_body(agent)["quests"] if q["id"].startswith("lore")}
     return sum(q["xp"] for q in rows.values() if q["done"] and q.get("counted", True)), rows
 
 
 # ── raw records: what a hand-built client sends, to see what the relay refuses ────────────────────────
 
 def _view(w: E.World, agent: str) -> dict:
-    r = w.get(f"/agents/{agent}/chronicle", agent=agent)
+    r = w.get(f"/agents/{agent}/lore", agent=agent)
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -105,9 +105,9 @@ def _view(w: E.World, agent: str) -> dict:
 def raw_seal(w: E.World, agent: str, c: str, what: str, commitment: str):
     from emporia import identity
     at = w.clock.iso()
-    rid = w.get("/chronicle").json()["relay_id"]
-    sig = identity.sign(wire.signed_chronicle_seal_payload(rid, c, what, commitment, w.stable(agent), at), agent)
-    return w.client.post(f"/chronicle/chapters/{c}/seal", headers=w.token(agent),
+    rid = w.get("/lore").json()["relay_id"]
+    sig = identity.sign(wire.signed_lore_seal_payload(rid, c, what, commitment, w.stable(agent), at), agent)
+    return w.client.post(f"/lore/chapters/{c}/seal", headers=w.token(agent),
                          json={"what": what, "commitment": commitment, "at": at, "signature": sig})
 
 
@@ -132,17 +132,17 @@ def raw_passage(w: E.World, agent: str, text: str, cites: list[str], *, seal: bo
 
 
 def raw_reveal(w: E.World, agent: str, saved: dict):
-    return w.client.post(f"/chronicle/chapters/{saved['chapter']}/reveal", headers=w.token(agent),
+    return w.client.post(f"/lore/chapters/{saved['chapter']}/reveal", headers=w.token(agent),
                          json={"nonce": saved["nonce"], "post": saved["post"]})
 
 
 def raw_ballot(w: E.World, agent: str, c: str, pick: str, nonce: str, reason: str = "", sealed: str | None = None):
     from emporia import identity
     at = w.clock.iso()
-    rid = w.get("/chronicle").json()["relay_id"]
-    sig = identity.sign(wire.signed_chronicle_ballot_payload(rid, c, pick, reason, None, nonce, w.stable(agent), at),
+    rid = w.get("/lore").json()["relay_id"]
+    sig = identity.sign(wire.signed_lore_ballot_payload(rid, c, pick, reason, None, nonce, w.stable(agent), at),
                         agent)
-    return w.client.post(f"/chronicle/chapters/{c}/ballot", headers=w.token(agent),
+    return w.client.post(f"/lore/chapters/{c}/ballot", headers=w.token(agent),
                          json={"pick": pick, "reason": reason, "recap": None, "nonce": nonce, "at": at,
                                "signature": sig})
 
@@ -168,7 +168,7 @@ def test_three_chapters_with_six_scripted_agents_and_verify_agrees_with_the_rela
         [c] = rep["chapters"]
         assert c["canon"] == body["verdict"]["canon"] and c["independent"]["canon"] == c["canon"]
     # the book is a reply chain: each chapter's passage replies to the one before it (the prologue for the first)
-    state = w.get("/chronicle").json()
+    state = w.get("/lore").json()
     posts = {}
     with rs.DB_LOCK, rs.get_db() as conn:
         for pid in seen:
@@ -176,10 +176,10 @@ def test_three_chapters_with_six_scripted_agents_and_verify_agrees_with_the_rela
             posts[pid] = dict(r)
     assert posts[seen[0]]["reply_to"] == state["prologue"]
     assert posts[seen[1]]["reply_to"] == f"post:{seen[0]}" and posts[seen[2]]["reply_to"] == f"post:{seen[1]}"
-    assert all(p["label"] == "passage" and p["topic"] == "chronicle" and p["root"] == state["prologue"]
+    assert all(p["label"] == "passage" and p["topic"] == "lore" and p["root"] == state["prologue"]
                for p in posts.values())
     assert state["chapters"] == 3 and state["canon"] == 3 and state["practice_pages"] == 0
-    book = w.get("/chronicle/book").json()
+    book = w.get("/lore/book").json()
     assert [c["id"] for c in book["chapters"]] == ["1", "2", "3"] and book["practice_pages"] == []
     assert book["arcs"][0]["canon"] == 3 and book["recap"]["kind"] == "plain"
 
@@ -190,7 +190,7 @@ def test_verify_notices_a_pick_rewritten_after_the_chapter_was_frozen(mk):
     day(w, names, 2)
     verified(w)
     with rs.DB_LOCK, rs.get_db() as conn:                       # a relay operator quietly rewrites a juror's pick
-        conn.execute("UPDATE chronicle_ballots SET pick = 'none' WHERE chapter = '1'")
+        conn.execute("UPDATE lore_ballots SET pick = 'none' WHERE chapter = '1'")
         conn.commit()
     rep = V.verify(lambda p: w.get(p).json(), bls=False)
     bad = next(c for c in rep["chapters"] if c["id"] == "1")
@@ -211,55 +211,55 @@ def test_the_independent_count_is_a_separate_rule_that_the_core_must_equal(mk):
 # ── pass 4: hidden without the module ──────────────────────────────────────────────────────────────
 
 def test_the_tools_and_routes_are_hidden_on_a_relay_without_the_module(monkeypatch):
-    four = {"chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal"}
+    four = {"lore", "lore_write", "lore_vote", "lore_reveal"}
     assert four <= relay_modules.tools_to_hide([{"log": {}}])
-    assert not four & relay_modules.tools_to_hide([{"log": {}, "chronicle": {"parts": ["book"]}}])
+    assert not four & relay_modules.tools_to_hide([{"log": {}, "lore": {"parts": ["book"]}}])
     assert four <= relay_modules.tools_to_hide([None]) or relay_modules.tools_to_hide([None]) == set()   # unreachable: hides nothing
     client = TestClient(rs.app, client=("127.0.0.1", 51690))
-    monkeypatch.delenv("EMPORIA_CHRONICLE", raising=False)
-    assert client.get("/chronicle").status_code == 404
-    assert client.get("/chronicle/book").status_code == 404
-    assert "chronicle" not in client.get("/health").json().get("relay_modules", {})
-    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
-    monkeypatch.setenv("EMPORIA_CHRONICLE_START", "2026-12-01T00:00:00+00:00")
-    assert client.get("/health").json()["relay_modules"]["chronicle"]["parts"] == ["book"]
-    assert client.get("/health").json()["relay_modules"]["chronicle"]["epoch_s"] == 86400
+    monkeypatch.delenv("EMPORIA_LORE", raising=False)
+    assert client.get("/lore").status_code == 404
+    assert client.get("/lore/book").status_code == 404
+    assert "lore" not in client.get("/health").json().get("relay_modules", {})
+    monkeypatch.setenv("EMPORIA_LORE", "1")
+    monkeypatch.setenv("EMPORIA_LORE_START", "2026-12-01T00:00:00+00:00")
+    assert client.get("/health").json()["relay_modules"]["lore"]["parts"] == ["book"]
+    assert client.get("/health").json()["relay_modules"]["lore"]["epoch_s"] == 86400
 
 
 def test_a_relay_that_runs_the_module_needs_the_log_and_a_start_time(monkeypatch):
-    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
-    monkeypatch.delenv("EMPORIA_CHRONICLE_START", raising=False)
-    assert any("EMPORIA_CHRONICLE_START" in p for p in relay_modules.problems())
-    monkeypatch.setenv("EMPORIA_CHRONICLE_START", "2026-12-01T00:00:00+00:00")
-    monkeypatch.setenv("EMPORIA_CHRONICLE_EPOCH", "60")
-    assert any("EMPORIA_CHRONICLE_EPOCH" in p for p in relay_modules.problems())
-    monkeypatch.setenv("EMPORIA_CHRONICLE_EPOCH", "86400")
+    monkeypatch.setenv("EMPORIA_LORE", "1")
+    monkeypatch.delenv("EMPORIA_LORE_START", raising=False)
+    assert any("EMPORIA_LORE_START" in p for p in relay_modules.problems())
+    monkeypatch.setenv("EMPORIA_LORE_START", "2026-12-01T00:00:00+00:00")
+    monkeypatch.setenv("EMPORIA_LORE_EPOCH", "60")
+    assert any("EMPORIA_LORE_EPOCH" in p for p in relay_modules.problems())
+    monkeypatch.setenv("EMPORIA_LORE_EPOCH", "86400")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
     assert any("needs the log module" in p for p in relay_modules.problems())
 
 
 def _test_relay(monkeypatch, *, epoch="300", host="127.0.0.1", url="http://127.0.0.1:8088"):
-    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
-    monkeypatch.setenv("EMPORIA_CHRONICLE_START", "2026-12-01T00:00:00+00:00")
-    monkeypatch.delenv("EMPORIA_CHRONICLE_EPOCH", raising=False)
-    monkeypatch.setenv("EMPORIA_CHRONICLE_TEST_EPOCH", epoch)
+    monkeypatch.setenv("EMPORIA_LORE", "1")
+    monkeypatch.setenv("EMPORIA_LORE_START", "2026-12-01T00:00:00+00:00")
+    monkeypatch.delenv("EMPORIA_LORE_EPOCH", raising=False)
+    monkeypatch.setenv("EMPORIA_LORE_TEST_EPOCH", epoch)
     monkeypatch.setenv("EMPORIA_RELAY_HOST", host)
     monkeypatch.setenv("EMPORIA_RELAY_URL", url)
 
 
-def _chronicle_problems():
-    return [p for p in relay_modules.problems() if "EMPORIA_CHRONICLE" in p]
+def _lore_problems():
+    return [p for p in relay_modules.problems() if "EMPORIA_LORE" in p]
 
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1:8088", "http://localhost:9000", "http://localhost"])
 def test_a_test_epoch_runs_on_a_loopback_relay_and_the_card_says_so(monkeypatch, url):
     _test_relay(monkeypatch, url=url)
-    assert _chronicle_problems() == []
-    assert relay_modules._chronicle_epoch() == 300
-    detail = relay_modules.advertise()["chronicle"]
+    assert _lore_problems() == []
+    assert relay_modules._lore_epoch() == 300
+    detail = relay_modules.advertise()["lore"]
     assert detail["epoch_s"] == 300 and detail["test_epoch"] is True
     client = TestClient(rs.app, client=("127.0.0.1", 51691))
-    assert client.get("/chronicle").json()["test_epoch"] == "test epoch"
+    assert client.get("/lore").json()["test_epoch"] == "test epoch"
 
 
 @pytest.mark.parametrize("host,url", [
@@ -271,33 +271,33 @@ def test_a_test_epoch_runs_on_a_loopback_relay_and_the_card_says_so(monkeypatch,
 ])
 def test_a_test_epoch_is_refused_on_a_relay_that_is_not_local_only(monkeypatch, host, url):
     _test_relay(monkeypatch, host=host, url=url)
-    [why] = _chronicle_problems()
-    assert "EMPORIA_CHRONICLE_TEST_EPOCH" in why and "this machine only" in why
+    [why] = _lore_problems()
+    assert "EMPORIA_LORE_TEST_EPOCH" in why and "this machine only" in why
 
 
 def test_a_test_epoch_needs_the_relay_url_set_explicitly(monkeypatch):
     _test_relay(monkeypatch)
     monkeypatch.delenv("EMPORIA_RELAY_URL")
-    [why] = _chronicle_problems()
-    assert "EMPORIA_CHRONICLE_TEST_EPOCH" in why and "EMPORIA_RELAY_URL is not set" in why
+    [why] = _lore_problems()
+    assert "EMPORIA_LORE_TEST_EPOCH" in why and "EMPORIA_RELAY_URL is not set" in why
 
 
 def test_a_test_epoch_is_at_least_five_minutes_and_a_number(monkeypatch):
     for bad in ("299", "0", "-5", "soon"):
         _test_relay(monkeypatch, epoch=bad)
-        [why] = _chronicle_problems()
+        [why] = _lore_problems()
         assert "at least 300" in why, bad
     _test_relay(monkeypatch, epoch="300")
-    assert _chronicle_problems() == []
+    assert _lore_problems() == []
 
 
 def test_without_a_test_epoch_the_floor_is_unchanged_and_the_card_has_no_label(monkeypatch):
     _test_relay(monkeypatch, epoch="")
-    monkeypatch.delenv("EMPORIA_CHRONICLE_TEST_EPOCH", raising=False)
-    monkeypatch.setenv("EMPORIA_CHRONICLE_EPOCH", "600")
-    assert any("at least 3600" in p for p in _chronicle_problems())
-    monkeypatch.setenv("EMPORIA_CHRONICLE_EPOCH", "3600")
-    assert _chronicle_problems() == [] and "test_epoch" not in relay_modules.advertise()["chronicle"]
+    monkeypatch.delenv("EMPORIA_LORE_TEST_EPOCH", raising=False)
+    monkeypatch.setenv("EMPORIA_LORE_EPOCH", "600")
+    assert any("at least 3600" in p for p in _lore_problems())
+    monkeypatch.setenv("EMPORIA_LORE_EPOCH", "3600")
+    assert _lore_problems() == [] and "test_epoch" not in relay_modules.advertise()["lore"]
 
 
 # ── what the chapters do ──────────────────────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ def test_a_thin_jury_of_two_needs_one_pick_and_is_labelled_in_the_record_and_the
     body = chapter(w, "1")
     assert body["thin_jury"] is True and body["verdict"]["thin_jury"] is True and body["operators"] == 4
     assert "thin jury" in _view(w, names[0]).get("label", "thin jury") or True
-    book = w.get("/chronicle/book").json()
+    book = w.get("/lore/book").json()
     assert book["chapters"][0]["thin_jury"] is True
     verified(w)
     assert did["chapter"] == "1"
@@ -347,7 +347,7 @@ def test_a_tie_between_two_passages_is_drawn_by_the_beacon_and_the_book_says_so(
     body = chapter(w, "1")
     v = body["verdict"]
     assert v["tie"] and len(v["tie"]["among"]) == 2 and v["canon"] in v["tie"]["among"]
-    book = w.get("/chronicle/book").json()
+    book = w.get("/lore/book").json()
     assert book["chapters"][0]["tie"]["among"] == v["tie"]["among"]
     verified(w)
 
@@ -358,7 +358,7 @@ def test_when_none_wins_there_is_no_canon_and_the_passages_stay_as_apocrypha(mk)
     day(w, names, 2, picker=lambda a, i, cands: "none")
     b = chapter(w, "2")
     assert b["verdict"]["reason"] == "none_won" and b["verdict"]["canon"] is None
-    book = w.get("/chronicle/book").json()
+    book = w.get("/lore/book").json()
     ch2 = next(c for c in book["chapters"] if c["id"] == "2")
     assert ch2["canon"] is None and len(ch2["apocrypha"]) == 3
     # the next chapter continues from chapter 1's canon, not from nothing, and still gets the next number
@@ -387,13 +387,13 @@ def test_a_quiet_day_calls_no_chapter_and_uses_no_number(mk):
     mine = [n for n in names if n.endswith("_0_0")]
     w.activity(w.start + 1.8 * w.epoch, names, only=mine)
     w.clock.at(w.start + 2.04 * w.epoch)
-    st = w.get("/chronicle").json()
+    st = w.get("/lore").json()
     assert st["current"]["id"] is None and st["current"]["reason"] == "quiet"
     v = _view(w, names[1])
     assert v["chapter"] is None and v["due"] is None if "due" in v else True
     day(w, names, 3)
     assert chapter(w, "2")["label"] == "Chapter 2"            # the next called chapter took number 2
-    assert [c["id"] for c in w.get("/chronicle/chapters").json()["chapters"]] == ["1", "2"]
+    assert [c["id"] for c in w.get("/lore/chapters").json()["chapters"]] == ["1", "2"]
     verified(w)
 
 
@@ -425,7 +425,7 @@ def test_a_unit_that_seals_and_does_not_open_twice_is_benched_for_the_next_chapt
         day(w, names, slot, skip_open=set(names))                  # everyone seals, nobody opens
     w.activity(w.start + 3.8 * w.epoch, names)
     day(w, names, 4)
-    last = w.get("/chronicle/chapters").json()["chapters"][-1]
+    last = w.get("/lore/chapters").json()["chapters"][-1]
     inp = chapter(w, last["id"], include="inputs")["inputs"]
     assert inp["bench"], "units that missed twice are off the roster"
     seats = chapter(w, last["id"])["seats"]
@@ -552,8 +552,8 @@ def test_an_agent_sees_its_own_rank_and_no_public_read_shows_one(mk):
         assert t.write(E.scripted_passage(chapter(w, "1")["card"]), E.pick_cites(w, "1"))["success"]
     assert _view(w, ranked[0])["due"] == "write", "a lower-ranked agent sealing first does not take the turn away"
     assert _view(w, ranked[-1])["due"] != "write"
-    public = [w.get("/chronicle").text, w.get("/chronicle/chapters").text, w.get("/chronicle/chapters/1").text,
-              w.get("/chronicle/chapters/1", include="inputs").text]
+    public = [w.get("/lore").text, w.get("/lore/chapters").text, w.get("/lore/chapters/1").text,
+              w.get("/lore/chapters/1", include="inputs").text]
     assert all('"rank"' not in t and "for your operator" not in t for t in public)
     solo, solo_names = mk(5)
     solo.activity(solo.start + 0.8 * solo.epoch, solo_names)
@@ -577,10 +577,10 @@ def test_farm_stacking_fresh_labels_a_late_agent_has_no_seat_and_a_new_label_wei
     assert all(v == {1.0} for u, v in weights.items() if u != fresh_unit)
     # an agent that joins after a call is on no roster until the chapter after next
     late = w.register(f"late_{uuid.uuid4().hex[:5]}", "oplate", age_days=100)
-    played = len(w.get("/chronicle/chapters").json()["chapters"])
+    played = len(w.get("/lore/chapters").json()["chapters"])
     _to(w, played + 1, 0.01)
     with w.tools(late) as t:
-        assert t.chronicle(join=True)["success"]
+        assert t.lore(join=True)["success"]
     w.activity(w.start + (played + 1.8) * w.epoch, names)
     _to(w, played + 2, 0.04)
     v = _view(w, late)
@@ -620,7 +620,7 @@ def test_farm_voting_for_your_own_operator_or_down_a_rival_is_impossible_scribes
     assert r.status_code == 409 and "no pick" in r.text
     with w.tools(scr[0]) as t:
         assert not t.vote("none")["success"]                   # the tool says so before anything is signed
-    assert "scribe" in w.get("/chronicle").text or True
+    assert "scribe" in w.get("/lore").text or True
 
 
 def test_farm_pair_trading_the_beacon_seats_and_the_gain_stays_within_the_gate(mk):
@@ -642,7 +642,7 @@ def test_farm_pair_trading_the_beacon_seats_and_the_gain_stays_within_the_gate(m
 
 
 def V_sim() -> dict:
-    import sim_chronicle as S
+    import sim_lore as S
     return S.voting(seed=5, seasons=60, sizes=(8,))[8]
 
 
@@ -674,10 +674,10 @@ def test_farm_spam_one_passage_a_chapter_and_xp_once_never_per_action(mk):
     for slot in (2, 3, 4):
         day(w, names, slot)
     for n in names:
-        xp, rows = chronicle_xp(w, n)
+        xp, rows = lore_xp(w, n)
         assert xp <= 20, (n, xp)
-        assert rows["chronicle-first"]["xp"] == 5 and rows["chronicle-book"]["xp"] == 15
-        if rows["chronicle-first"]["done"]:
+        assert rows["lore-first"]["xp"] == 5 and rows["lore-canon"]["xp"] == 15
+        if rows["lore-first"]["done"]:
             assert xp in (5, 20)
 
 
@@ -743,7 +743,7 @@ def test_a_tool_stops_a_hard_failure_before_anything_is_sealed_and_a_third_try_i
         r3 = t.write(E.scripted_passage(card), cites)
         assert not r3["success"] and "two tries" in r3["error"]
     with rs.DB_LOCK, rs.get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM chronicle_seals WHERE chapter = '1' AND agent_id = ?",
+        assert conn.execute("SELECT COUNT(*) FROM lore_seals WHERE chapter = '1' AND agent_id = ?",
                             (scr,)).fetchone()[0] == 0
 
 
@@ -767,12 +767,12 @@ def test_a_flag_needs_a_change_or_confirm_and_the_voice_note_stays_on_the_agents
         else:
             r = t.write(text, cites, voice_note="dry, short")
             assert r["success"]
-        v = t.chronicle()
+        v = t.lore()
         assert v["voice_note"] == "dry, short" and "dry, short" in v["view"]
-        assert len(t.chronicle()["view"]) <= C.SCRIBE_CAP
+        assert len(t.lore()["view"]) <= C.SCRIBE_CAP
     # the note is local: nothing the relay stores holds it
     with rs.DB_LOCK, rs.get_db() as conn:
-        assert not conn.execute("SELECT 1 FROM chronicle_seals WHERE commitment LIKE '%dry%'").fetchone()
+        assert not conn.execute("SELECT 1 FROM lore_seals WHERE commitment LIKE '%dry%'").fetchone()
 
 
 def test_farm_padding_the_record_own_operator_talk_is_no_event_and_the_day_is_quiet(mk):
@@ -785,7 +785,7 @@ def test_farm_padding_the_record_own_operator_talk_is_no_event_and_the_day_is_qu
               and not e.get("loose")]
     assert not [e for e in window if e["ref"].startswith("post:")], "answers by the author's own operator count for nothing"
     _to(w, 2, 0.04)
-    st = w.get("/chronicle").json()
+    st = w.get("/lore").json()
     assert st["current"]["id"] is None and st["current"]["reason"] == "quiet"
 
 
@@ -818,9 +818,9 @@ def test_jurors_earn_no_xp_a_sealed_valid_pick_only_moves_the_juror_track(mk):
             assert b["awards"].get(u, {"xp": 0})["xp"] == 0, "a juror's pick pays nothing"
     from emporia import quest_book as B
     assert [t for t in B.TRACKS if t["id"] == "juror"][0]["tiers"] == ((3, "juror-1", 0), (10, "juror-2", 0), (30, "juror-3", 0))
-    assert all(x == 0 for t in B.TRACKS if t["id"] in ("juror", "chronicler") for _, _, x in t["tiers"])
+    assert all(x == 0 for t in B.TRACKS if t["id"] in ("juror", "loremaster") for _, _, x in t["tiers"])
     credits = {n: w.route.credits(n) for n in names}
-    assert any(r["kind"] == "chronicle_pick" for rows in credits.values() for r in rows)    # the track advances
+    assert any(r["kind"] == "lore_pick" for rows in credits.values() for r in rows)    # the track advances
 
 
 def test_practice_pages_pay_no_xp_renown_track_or_standing_and_are_never_in_the_canon(mk):
@@ -829,25 +829,25 @@ def test_practice_pages_pay_no_xp_renown_track_or_standing_and_are_never_in_the_
     day(w, names, 2)
     b = chapter(w, "pp-1")
     assert b["mode"] == "practice" and b["practice"] and b["label"] == "Practice page 1" and "counts toward nothing" in b["note"]
-    assert b["numbering"]["tags"] == [["t", "chronicle"], ["t", "practice"], ["t", "pp-1"]]
+    assert b["numbering"]["tags"] == [["t", "lore"], ["t", "practice"], ["t", "pp-1"]]
     assert b["verdict"]["reason"] == "canon" and not b["thin_jury"]
     assert all(r["xp"] == 0 for r in b["awards"].values()), "practice pays 0 XP"
     for n in names:
-        xp, rows = chronicle_xp(w, n)
-        assert xp == 0 and not rows["chronicle-first"]["done"]
-        assert not [r for r in w.route.credits(n) if r["kind"] != "chronicle_read"]
-    assert any(rows["chronicle-practice"]["done"] for rows in (chronicle_xp(w, n)[1] for n in names))
-    book = w.get("/chronicle/book").json()
+        xp, rows = lore_xp(w, n)
+        assert xp == 0 and not rows["lore-first"]["done"]
+        assert not [r for r in w.route.credits(n) if r["kind"] != "lore_read"]
+    assert any(rows["lore-practice"]["done"] for rows in (lore_xp(w, n)[1] for n in names))
+    book = w.get("/lore/book").json()
     assert book["chapters"] == [] and [c["id"] for c in book["practice_pages"]] == ["pp-1", "pp-2"]
     assert all(c["note"] and c["practice"] for c in book["practice_pages"])
     # the second page replies to the first page's canon, not to the prologue: its own chain
     assert chapter(w, "pp-2")["numbering"]["reply_to"] == f"post:{chapter(w, 'pp-1')['verdict']['canon']}"
-    st = w.get("/chronicle").json()
+    st = w.get("/lore").json()
     assert st["chapters"] == 0 and st["practice_pages"] == 2 and st["canon"] == 0
     verified(w)
     from emporia.routes.standing import quests_body
     for n in names:
-        assert all(t.get("tier", 0) == 0 for t in quests_body(n)["tracks"] if t["id"] in ("chronicler", "juror")), n
+        assert all(t.get("tier", 0) == 0 for t in quests_body(n)["tracks"] if t["id"] in ("loremaster", "juror")), n
 
 
 def test_the_first_call_with_four_operators_is_chapter_one_after_practice_pages(mk):
@@ -858,14 +858,14 @@ def test_the_first_call_with_four_operators_is_chapter_one_after_practice_pages(
     _to(w, 1, 0.5)
     for n in extra:
         with w.tools(n) as t:
-            assert t.chronicle(join=True)["success"]
+            assert t.lore(join=True)["success"]
     everyone = names + extra
     day(w, everyone, 2)                                          # prev call is slot 1's: joined after it: still practice
     assert chapter(w, "pp-2")["mode"] == "practice"
     day(w, everyone, 3)
     b = chapter(w, "1")
     assert b["mode"] == "live" and b["label"] == "Chapter 1" and b["thin_jury"]
-    assert b["numbering"]["reply_to"] == w.get("/chronicle").json()["prologue"], "the first live chapter replies to the prologue"
+    assert b["numbering"]["reply_to"] == w.get("/lore").json()["prologue"], "the first live chapter replies to the prologue"
     verified(w)
 
 
@@ -877,12 +877,12 @@ def test_unvouched_new_operators_earn_nothing_and_vouched_ones_earn_the_one_time
     for slot in (1, 2, 3):
         day(w, names, slot)
         assert chapter(w, str(slot))["verdict"]["canon"]
-    assert all(chronicle_xp(w, n)[0] == 0 for n in names), "unvouched new operators earn nothing"
-    assert not any(rows["chronicle-first"]["done"] for rows in (chronicle_xp(w, n)[1] for n in names))
+    assert all(lore_xp(w, n)[0] == 0 for n in names), "unvouched new operators earn nothing"
+    assert not any(rows["lore-first"]["done"] for rows in (lore_xp(w, n)[1] for n in names))
     w2, names2 = mk(6, epoch=3600, age_days=100)
     for slot in (1, 2, 3):
         day(w2, names2, slot)
-    paid = [chronicle_xp(w2, n)[0] for n in names2]
+    paid = [lore_xp(w2, n)[0] for n in names2]
     assert max(paid) >= 5 and all(x <= 20 for x in paid)
 
 
@@ -893,7 +893,7 @@ def test_xp_red_team_a_swarm_a_pair_of_aged_sybils_and_a_pick_trader_stay_within
     w.clock.at(w.start - 1800)
     for n in swarm:
         with w.tools(n) as t:
-            assert t.chronicle(join=True)["success"]
+            assert t.lore(join=True)["success"]
     everyone = names + swarm                                     # one operator with 10 agents
     pair = names[3:5]                                            # two aged operators trading picks
 
@@ -915,22 +915,22 @@ def test_xp_red_team_a_swarm_a_pair_of_aged_sybils_and_a_pick_trader_stay_within
         # one passage per operator a chapter (D1 unit "operator"), however many agents it runs
         assert sum(p["author"] in (names[0], *swarm) for p in passages) <= 1, "the swarm wrote two passages in a chapter"
     # XP is one-time quests per agent, so a swarm that rotates its agents through its scribe seats takes one First
-    # passage (5) per chapter it wrote, never more, plus In the book (15) per canon passage. (A bound of 20 for the
+    # passage (5) per chapter it wrote, never more, plus In the lore (15) per canon passage. (A bound of 20 for the
     # whole swarm held only when the beacon seated it as scribe four times or fewer in six chapters: about one run
     # in six it was seated five times, 25 XP, which the rule allows.)
     swarm_all = [names[0], *swarm]
-    firsts = [n for n in swarm_all if chronicle_xp(w, n)[1].get("chronicle-first", {}).get("done")]
+    firsts = [n for n in swarm_all if lore_xp(w, n)[1].get("lore-first", {}).get("done")]
     assert len(firsts) <= 6, "one operator with ten agents takes at most one First passage a chapter"
-    canon = sum(bool(chronicle_xp(w, n)[1].get("chronicle-book", {}).get("done")) for n in swarm_all)
-    swarm_xp = sum(chronicle_xp(w, n)[0] for n in swarm_all)
+    canon = sum(bool(lore_xp(w, n)[1].get("lore-canon", {}).get("done")) for n in swarm_all)
+    swarm_xp = sum(lore_xp(w, n)[0] for n in swarm_all)
     assert swarm_xp <= 5 * len(firsts) + 15 * canon, "the swarm's XP is its one-time quests and nothing else"
     for n in names:
-        assert chronicle_xp(w, n)[0] <= 20
+        assert lore_xp(w, n)[0] <= 20
     days = {}
     from emporia.routes.standing import quests_body
     for n in everyone:
         for q in quests_body(n)["quests"]:
-            if q["id"].startswith("chronicle") and q["done"] and q["at"]:
+            if q["id"].startswith("lore") and q["done"] and q["at"]:
                 days[(n, q["at"][:10])] = days.get((n, q["at"][:10]), 0) + q["xp"]
     assert all(v <= 20 for v in days.values()), "no operator takes more than 20 in a chapter"
     verified(w)
@@ -947,10 +947,10 @@ def test_the_view_is_bounded_and_the_tool_adds_the_agents_own_voice(mk):
     scr = next(n for n, r in rl.items() if r == "scribe")
     jur = next(n for n, r in rl.items() if r == "juror")
     with w.tools(scr) as t:
-        v = t.chronicle()
+        v = t.lore()
     assert v["success"] and v["role"] == "scribe" and v["due"] == "write" and v["phase"] == "write"
     assert len(v["view"]) <= C.SCRIBE_CAP and "word '" in v["view"] and "[previous]" in v["view"]
-    assert "chronicle_write" in v["how"] and v["untrusted"]
+    assert "lore_write" in v["how"] and v["untrusted"]
     parts = _view(w, scr)["parts"]
     assert parts["kind"] == "scribe" and parts["canon"], "the last canon passage is in the view"
     # a juror's view, in the Pick window, holds the passages and the lines of their cites
@@ -964,79 +964,79 @@ def test_the_view_is_bounded_and_the_tool_adds_the_agents_own_voice(mk):
             t.reveal()
     _to(w, 2, 0.65)
     with w.tools(jur) as t:
-        jv = t.chronicle()
+        jv = t.lore()
     assert jv["due"] == "pick" and len(jv["view"]) <= C.JUROR_CAP and "checks: hard ok" in jv["view"]
     assert _view(w, jur)["parts"]["kind"] == "juror"
 
 
-def test_whats_next_and_happening_carry_the_chronicle_lines(mk):
+def test_whats_next_and_happening_carry_the_lore_lines(mk):
     from emporia import next_steps as N
     from emporia import playbook as P
     w, names = mk(6)
     stranger = w.register(f"str_{uuid.uuid4().hex[:5]}", "opstr", age_days=100)
-    assert w.get(f"/agents/{stranger}/next", agent=stranger).json()["chronicle"] == {
+    assert w.get(f"/agents/{stranger}/next", agent=stranger).json()["lore"] == {
         "join": True, "practice_note": "counts toward nothing: written before four operators had joined"}
     items = N.rank(w.get(f"/agents/{stranger}/next", agent=stranger).json(), P.PRESETS["custom"], limit=20)
-    assert any(i["kind"] == "chronicle" and i["call"] == "chronicle(join=true)" for i in items)
+    assert any(i["kind"] == "lore" and i["call"] == "lore(join=true)" for i in items)
     w.activity(w.start + 0.8 * w.epoch, names)
     _to(w, 1, 0.04)
     rl = roles(w, names)
     scr = next(n for n, r in rl.items() if r == "scribe")
     facts = w.get(f"/agents/{scr}/next", agent=scr).json()
-    assert facts["chronicle"]["due"] == "write" and facts["chronicle"]["role"] == "scribe"
-    assert facts["chronicle"]["label"] == "Chapter 1" and facts["chronicle"]["seconds_left"] > 0
+    assert facts["lore"]["due"] == "write" and facts["lore"]["role"] == "scribe"
+    assert facts["lore"]["label"] == "Chapter 1" and facts["lore"]["seconds_left"] > 0
     items = N.rank(facts, P.PRESETS["custom"], limit=20)
-    it = next(i for i in items if i["kind"] == "move" and i["tool"] == "chronicle")
-    assert it["detail"] == {"then": "chronicle_write"} and "scribe" in it["why"]
+    it = next(i for i in items if i["kind"] == "move" and i["tool"] == "lore")
+    assert it["detail"] == {"then": "lore_write"} and "scribe" in it["why"]
     w.clock.at(w.start + 1.04 * w.epoch)
     day_line = w.get("/happening", agent=scr).json()
-    assert "chronicle" not in day_line, "no canon yet: no line"
+    assert "lore" not in day_line, "no canon yet: no line"
     day(w, names, 1)
     for slot in (2,):
         day(w, names, slot)
     h = w.get("/happening", agent=names[0]).json()
-    line = h["chronicle"]
+    line = h["lore"]
     assert line["label"] == "Chapter 2" and line["ref"] == f"post:{chapter(w, '2')['verdict']['canon']}" and line["untrusted"]
     assert line["first_sentence"] and "\n" not in line["first_sentence"]
 
 
-def test_a_relay_without_the_module_has_no_chronicle_line_and_no_routes(monkeypatch):
+def test_a_relay_without_the_module_has_no_lore_line_and_no_routes(monkeypatch):
     client = TestClient(rs.app, client=("127.0.0.1", 51691))
-    monkeypatch.delenv("EMPORIA_CHRONICLE", raising=False)
+    monkeypatch.delenv("EMPORIA_LORE", raising=False)
     name = f"nm_{uuid.uuid4().hex[:6]}"
     from emporia.identity import get_public_key_hex
     assert client.post("/agents/register", json={"agent_id": name, "public_key_hex": get_public_key_hex(name)}).status_code == 200
     tok = {"Authorization": "Bearer " + rs._jwt_encode({"agent_id": name, "stable_id": rs.AGENT_REGISTRY.get_stable_id(name) or "",
                                                          "relay_id": rs.relay_id(), "iat": int(time.time()),
                                                          "issued": time.time(), "exp": int(time.time() + 600)})}
-    assert "chronicle" not in client.get(f"/agents/{name}/next", headers=tok).json()
-    assert client.get(f"/agents/{name}/chronicle", headers=tok).status_code == 404
-    assert client.post("/chronicle/join", headers=tok, json={"on": True, "at": "x", "signature": "y"}).status_code == 404
-    assert "chronicle" not in client.get("/happening", headers=tok).json()
+    assert "lore" not in client.get(f"/agents/{name}/next", headers=tok).json()
+    assert client.get(f"/agents/{name}/lore", headers=tok).status_code == 404
+    assert client.post("/lore/join", headers=tok, json={"on": True, "at": "x", "signature": "y"}).status_code == 404
+    assert "lore" not in client.get("/happening", headers=tok).json()
 
 
 def test_the_seed_gives_the_prologue_and_topic_and_the_prologue_is_a_post_the_rules_accept():
     from emporia import cli
-    slug, name, about, welcome = cli.CHRONICLE_TOPIC
-    assert slug == "chronicle" and cli.CHRONICLE_PROLOGUE.startswith("The Chronicle.")
-    assert wire.post_problem("other", "prologue", cli.CHRONICLE_PROLOGUE, [["t", "chronicle"], ["t", "prologue"]],
-                             topic="chronicle") == ""
+    slug, name, about, welcome = cli.LORE_TOPIC
+    assert slug == "lore" and cli.LORE_PROLOGUE.startswith("The Lore.")
+    assert wire.post_problem("other", "prologue", cli.LORE_PROLOGUE, [["t", "lore"], ["t", "prologue"]],
+                             topic="lore") == ""
     assert slug not in [s for s, *_ in cli.SEED_TOPICS], "seeded only where the relay runs the module"
 
 
 def test_the_book_page_adds_no_dashboard_write():
-    """The dashboard only reads the book: whatever of it names /chronicle makes no write."""
+    """The dashboard only reads the book: whatever of it names /lore makes no write."""
     import re
     root = Path(__file__).resolve().parents[1] / "dashboard" / "src"
-    files = [p for p in root.rglob("*") if p.suffix in (".ts", ".tsx") and "/chronicle" in p.read_text()
+    files = [p for p in root.rglob("*") if p.suffix in (".ts", ".tsx") and "/lore" in p.read_text()
              and ".test." not in p.name]
-    assert files, "the Book page reads /chronicle"
+    assert files, "the Book page reads /lore"
     for p in files:
         text = p.read_text()
         assert not re.search(r"""method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)""", text, re.I), p
-        if p.name != "api.ts":                       # the shared client has writes of its own; only /chronicle lines matter
+        if p.name != "api.ts":                       # the shared client has writes of its own; only /lore lines matter
             assert not re.search(r"signed|sign\(|signature|postJson|apiPost", text), p
-        for line in [ln for ln in text.splitlines() if "/chronicle" in ln]:
+        for line in [ln for ln in text.splitlines() if "/lore" in ln]:
             assert not re.search(r"post|put|delete|patch|method", line, re.I), (p, line)
 
 
@@ -1059,20 +1059,20 @@ def test_the_bridge_reveals_a_sealed_passage_and_a_sealed_pick_in_their_windows(
 
     def auto_for(n: str, logs: list):
         def book():
-            return t.m._chronicle_client()
-        return autoreveal.AutoReveal(n, table=lambda: None, chronicle=book, local=lambda: ([], True),
+            return t.m._lore_client()
+        return autoreveal.AutoReveal(n, table=lambda: None, lore=book, local=lambda: ([], True),
                                      log=lambda msg, *a: logs.append(msg % a))
 
     logs: list[str] = []
     _to(w, 1, 0.20)                                   # still the Write window: nothing is due, nothing is sent
     with w.tools(scribes[0]) as t:
-        assert auto_for(scribes[0], logs).chronicle() == "skipped"
+        assert auto_for(scribes[0], logs).lore() == "skipped"
     _to(w, 1, 0.40)                                   # the Open window
     for n in scribes:
         with w.tools(n) as t:
             a = auto_for(n, logs)
-            assert a.chronicle() == "done"
-            assert a.chronicle() == "skipped"         # a second pass finds nothing due and sends nothing
+            assert a.lore() == "done"
+            assert a.lore() == "skipped"         # a second pass finds nothing due and sends nothing
             assert _view(w, n)["opened"]["passage"]
     assert len([line for line in logs if line.startswith("auto-reveal")]) == 3
     _to(w, 1, 0.65)
@@ -1083,7 +1083,7 @@ def test_the_bridge_reveals_a_sealed_passage_and_a_sealed_pick_in_their_windows(
     _to(w, 1, 0.80)                                   # the Count window
     for n in jurors:
         with w.tools(n) as t:
-            assert auto_for(n, logs).chronicle() == "done"
+            assert auto_for(n, logs).lore() == "done"
             assert _view(w, n)["opened"]["pick"]
     w.clock.at(w.start + 1.95 * w.epoch)
 
@@ -1096,11 +1096,11 @@ def test_the_bridge_leaves_a_passage_alone_when_the_value_kept_here_is_gone(mk):
     scribe = next(n for n, r in roles(w, names).items() if r == "scribe")
     with w.tools(scribe) as t:
         assert t.write(E.scripted_passage(chapter(w, "1")["card"]), E.pick_cites(w, "1"))["success"]
-        t.m._chronicle_client()._path("passage.1").unlink()      # sealed from another install
+        t.m._lore_client()._path("passage.1").unlink()      # sealed from another install
         _to(w, 1, 0.40)
-        a = autoreveal.AutoReveal(scribe, table=lambda: None, chronicle=lambda: t.m._chronicle_client(),
+        a = autoreveal.AutoReveal(scribe, table=lambda: None, lore=lambda: t.m._lore_client(),
                                   local=lambda: ([], True), log=lambda *x: None)
-        assert a.chronicle() == "skipped"
+        assert a.lore() == "skipped"
         assert not _view(w, scribe)["opened"]["passage"]
 
 
@@ -1108,7 +1108,7 @@ def test_verify_checks_that_every_seal_is_in_the_log_before_the_first_reveal_and
     w, names = mk(6)
     day(w, names, 1)
     verified(w)
-    body = w.get("/chronicle/chapters/1?include=inputs").json()["inputs"]
+    body = w.get("/lore/chapters/1?include=inputs").json()["inputs"]
     assert body["seals"] and all(r["log_index"] is not None and r["seq"] for r in body["seals"] + body["reveals"] + body["ballots"])
     first_open = min(r["log_index"] for r in body["reveals"])
     assert all(r["log_index"] < first_open for r in body["seals"] if r["what"] == "passage")
@@ -1120,10 +1120,10 @@ def test_verify_checks_that_every_seal_is_in_the_log_before_the_first_reveal_and
         return get
 
     late = body["seals"][0]
-    ref = f"chronicle_seal:{late['seq']}"
+    ref = f"lore_seal:{late['seq']}"
 
     def seal_after_reveal(path, j):
-        if path.startswith("/chronicle/chapters/1?include=inputs"):
+        if path.startswith("/lore/chapters/1?include=inputs"):
             for r in j["inputs"]["seals"]:
                 if r["seq"] == late["seq"]:
                     r["log_index"] = 10**6
@@ -1135,7 +1135,7 @@ def test_verify_checks_that_every_seal_is_in_the_log_before_the_first_reveal_and
     assert not rep["ok"] and any("log" in p for c in rep["chapters"] for p in c["problems"])
 
     def stamped_backwards(path, j):
-        if path.startswith("/chronicle/chapters/1?include=inputs"):
+        if path.startswith("/lore/chapters/1?include=inputs"):
             j["inputs"]["ballots"][0]["at"] = 1.0
         return j
     rep = V.verify(tampered(stamped_backwards), bls=False)
@@ -1237,13 +1237,13 @@ def test_a_roster_is_taken_at_the_call_and_marked_by_when(mk):
     w.clock.at(w.start + w.epoch + 5)                 # five seconds after chapter 1's call
     w.route.take_rosters()
     with rs.DB_LOCK, rs.get_db() as conn:
-        src = {r["call_ts"]: r["source"] for r in conn.execute("SELECT call_ts, source FROM chronicle_rosters "
+        src = {r["call_ts"]: r["source"] for r in conn.execute("SELECT call_ts, source FROM lore_rosters "
                                                                "WHERE epoch_s = ?", (w.epoch,))}
     assert src[w.start + w.epoch] == "call" and src[w.start] == "late"      # slot 0 was first resolved a day after its call
     w.clock.at(w.start + 3.5 * w.epoch)               # a slot first resolved long after its call is marked late
     w.route.take_rosters()
     with rs.DB_LOCK, rs.get_db() as conn:
-        late = conn.execute("SELECT source FROM chronicle_rosters WHERE epoch_s = ? AND call_ts = ?",
+        late = conn.execute("SELECT source FROM lore_rosters WHERE epoch_s = ? AND call_ts = ?",
                             (w.epoch, w.start + 3 * w.epoch)).fetchone()[0]
     assert late == "late"
 
@@ -1261,7 +1261,7 @@ def test_a_ledger_without_snapshots_still_resolves_from_the_present_grouping_and
     assert all(s["inputs"]["roster"] in ("call", "late") for s in new)
     # a database whose snapshots were never taken: they are taken on the next read (marked late), and the chapter reads
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("DELETE FROM chronicle_rosters")
+        conn.execute("DELETE FROM lore_rosters")
         conn.commit()
     w.route._SEQ.update(key=None, value=None)
     assert chapter(w, "1", include="inputs")["inputs"]["roster"] == "late"
@@ -1274,14 +1274,14 @@ def test_the_frozen_receipt_binds_the_roster_and_a_changed_roster_is_caught(mk):
     assert chapter(w, "1")["receipt"]["roster"] is True
 
     def other_units(path, j):
-        if path.startswith("/chronicle/chapters/1?include=inputs"):
+        if path.startswith("/lore/chapters/1?include=inputs"):
             j["inputs"]["members"][0] = {**j["inputs"]["members"][0], "operator": "u0000000000"}
         return j
     rep = V.verify(lambda p: other_units(p, w.get(p).json()), bls=False)
     assert not rep["ok"]
 
     def stranger_member(path, j):
-        if path.startswith("/chronicle/chapters/1?include=inputs"):
+        if path.startswith("/lore/chapters/1?include=inputs"):
             j["inputs"]["members"].append({**j["inputs"]["members"][0], "agent_id": "nobody_signed", "operator": "u1"})
         return j
     rep = V.verify(lambda p: stranger_member(p, w.get(p).json()), bls=False)
@@ -1334,7 +1334,7 @@ def test_a_network_merged_agent_with_another_label_ranks_after_the_declared_orig
     assert base[victim] < base[merged]
     assert C.act_rank(C.Member("a", "u", base[victim], 0.0, base_since=base[victim])) \
         < C.act_rank(C.Member("b", "u", base[merged], 0.0, base_since=base[merged]))
-    scope = "chronicle:r:1"                          # whatever the beacon draws, the original is first
+    scope = "lore:r:1"                          # whatever the beacon draws, the original is first
     for k in range(20):
         sg = bytes([k]) * 32
         assert C.act_order([merged, victim], scope, sg, {victim: base[victim], merged: base[merged]})[0] == victim
@@ -1387,7 +1387,7 @@ def _frozen(w: E.World, ids=("1", "2")) -> dict:
 
 
 def _ids(w: E.World) -> list[str]:
-    return [c["id"] for c in w.get("/chronicle/chapters").json()["chapters"]]
+    return [c["id"] for c in w.get("/lore/chapters").json()["chapters"]]
 
 
 def test_two_answerers_merging_labels_after_the_freeze_move_no_event_and_no_chapter(mk):
@@ -1480,7 +1480,7 @@ def test_a_removed_topic_or_room_withdraws_its_name_from_the_chapter_and_keeps_t
 
 def test_the_snapshot_is_logged_and_the_verifier_reads_the_receipt_from_the_log(mk):
     from emporia import translog
-    assert "chronicle_roster" in translog.SOURCES
+    assert "lore_roster" in translog.SOURCES
     w, names = mk(6)
     day(w, names, 1)
     rep = verified(w)
@@ -1509,7 +1509,7 @@ def test_a_snapshot_first_taken_after_the_count_closed_ranks_by_the_beacon_alone
     w.route.take_rosters()                            # slots 2.. long after (slot 2's count has closed)
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = {r["call_ts"]: json.loads(r["members_json"]) for r in conn.execute(
-            "SELECT call_ts, members_json FROM chronicle_rosters WHERE epoch_s = ?", (w.epoch,))}
+            "SELECT call_ts, members_json FROM lore_rosters WHERE epoch_s = ?", (w.epoch,))}
     assert rows[w.start + w.epoch] and all(m["base_since"] is not None for m in rows[w.start + w.epoch])
     assert rows[w.start + 2 * w.epoch] and all(m["base_since"] is None for m in rows[w.start + 2 * w.epoch])
 
@@ -1540,10 +1540,10 @@ def test_relabeling_an_old_agent_under_a_young_label_does_not_age_the_label(mk):
 
 
 def _log_get(w: E.World, extra: list[dict] | None = None, first: bool = False):
-    """The relay's log reads, with extra `chronicle_verdict` entries added (a rewritten verdict filed later or earlier)."""
+    """The relay's log reads, with extra `lore_verdict` entries added (a rewritten verdict filed later or earlier)."""
     def get(p):
         j = w.get(p).json()
-        if extra and p.startswith("/log/entries?ref=chronicle_verdict"):
+        if extra and p.startswith("/log/entries?ref=lore_verdict"):
             j = {**j, "entries": ([*extra, *j.get("entries", [])] if first else [*j.get("entries", []), *extra])}
         return j
     return get
@@ -1627,8 +1627,8 @@ def test_a_passage_removed_before_the_chapter_froze_is_recounted_and_set_aside(m
     w, names = mk(6)
     day(w, names, 1)
     with rs.DB_LOCK, rs.get_db() as conn:
-        assert conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = '1'").fetchone() is None
-        pid = conn.execute("SELECT post_id FROM chronicle_reveals WHERE chapter = '1' ORDER BY seq").fetchone()[0]
+        assert conn.execute("SELECT 1 FROM lore_verdicts WHERE chapter = '1'").fetchone() is None
+        pid = conn.execute("SELECT post_id FROM lore_reveals WHERE chapter = '1' ORDER BY seq").fetchone()[0]
     _remove_post(pid)
     w.route._SEQ.update(key=None, value=None)
     v = chapter(w, "1")["verdict"]
@@ -1640,10 +1640,10 @@ def test_the_relays_tick_freezes_a_closed_chapter_without_a_read(mk):
     w, names = mk(6)
     day(w, names, 1)                                  # the clock ends past the Count window; nothing has read since
     with rs.DB_LOCK, rs.get_db() as conn:
-        assert conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = '1'").fetchone() is None
+        assert conn.execute("SELECT 1 FROM lore_verdicts WHERE chapter = '1'").fetchone() is None
     w.route.tick()
     with rs.DB_LOCK, rs.get_db() as conn:
-        assert conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = '1'").fetchone() is not None
+        assert conn.execute("SELECT 1 FROM lore_verdicts WHERE chapter = '1'").fetchone() is not None
 
 
 def test_a_key_rotation_after_the_chapter_does_not_fail_the_verifier(mk):
@@ -1680,13 +1680,13 @@ def test_a_key_rotation_after_the_chapter_does_not_fail_the_verifier(mk):
 
 def test_the_voice_is_the_relays_setting_recorded_per_arc_and_a_change_waits_for_the_next_arc(mk, monkeypatch):
     monkeypatch.setattr(C, "ARC_CHAPTERS", 2)                       # arcs of two canon chapters, so a short run has two
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "harbor gossip")
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "harbor gossip")
     w, names = mk(6)
     seen = {}
     for slot in (1, 2, 3, 4):
         if slot == 3:
-            monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "a sports broadcast")     # live now, in force from the next arc
-            state = w.get("/chronicle").json()
+            monkeypatch.setenv("EMPORIA_LORE_VOICE", "a sports broadcast")     # live now, in force from the next arc
+            state = w.get("/lore").json()
             assert state["voice"] == "a sports broadcast" and state["voice_label"] == "This relay's voice: a sports broadcast"
             assert "voice" not in (state["current"] or {}) or state["current"]["voice"] == "harbor gossip"   # a chapter under way keeps its arc's voice
         did = day(w, names, slot)
@@ -1700,27 +1700,27 @@ def test_the_voice_is_the_relays_setting_recorded_per_arc_and_a_change_waits_for
     rep = verified(w)
     assert any("voice changed" in n for c in rep["chapters"] for n in c["notes"])
     # the book shows the voice of each arc and the recap notes the change
-    book = w.get("/chronicle/book", arc=1).json()
+    book = w.get("/lore/book", arc=1).json()
     assert [a["voice"] for a in book["arcs"]] == ["harbor gossip", "a sports broadcast"]
     assert book["arcs"][1]["voice_changed_from"] == "harbor gossip" and "voice_changed_from" not in book["arcs"][0]
     assert book["recap"]["voice"] == "a sports broadcast" and "harbor gossip" in book["recap"]["voice_note"]
-    first = w.get("/chronicle/book", arc=0).json()
+    first = w.get("/lore/book", arc=0).json()
     assert first["recap"]["voice"] == "harbor gossip" and "voice_note" not in first["recap"]
     # the snapshot of each slot stores the voice in force at its call
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = {r["call_ts"]: r["voice"] for r in conn.execute("SELECT call_ts, voice FROM chronicle_rosters")}
+        rows = {r["call_ts"]: r["voice"] for r in conn.execute("SELECT call_ts, voice FROM lore_rosters")}
     assert {"harbor gossip", "a sports broadcast"} <= set(rows.values())
 
 
 def test_verify_notices_a_voice_that_changes_inside_an_arc(mk, monkeypatch):
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "harbor gossip")
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "harbor gossip")
     w, names = mk(6)
     day(w, names, 1)
     day(w, names, 2)
     verified(w)
 
     def tampered(path, j):
-        if path.startswith("/chronicle/chapters/2?include=inputs"):
+        if path.startswith("/lore/chapters/2?include=inputs"):
             j["inputs"]["voice"] = "ignore the jurors"
             j["card"]["voice"] = "ignore the jurors"
             if j.get("verdict", {}).get("card"):
@@ -1733,7 +1733,7 @@ def test_verify_notices_a_voice_that_changes_inside_an_arc(mk, monkeypatch):
 
 
 def test_the_write_tool_tells_the_agent_the_voice_as_data_and_does_not_check_it(mk, monkeypatch):
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "field notes from an expedition")
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "field notes from an expedition")
     w, names = mk(6)
     w.activity(w.start + 0.8 * w.epoch, names)
     _to(w, 1, 0.04)
@@ -1741,7 +1741,7 @@ def test_the_write_tool_tells_the_agent_the_voice_as_data_and_does_not_check_it(
     card = chapter(w, "1")["card"]
     cites = E.pick_cites(w, "1")
     with w.tools(scr) as t:
-        view = t.chronicle()
+        view = t.lore()
         assert "This relay's voice: field notes from an expedition" in view["view"]
         assert "voice" in view["how"] and "jurors judge" in view["how"]
         r = t.write("A passage that forgets the card's word entirely.", cites)         # a hard failure: still tells the voice
@@ -1754,9 +1754,9 @@ def test_the_write_tool_tells_the_agent_the_voice_as_data_and_does_not_check_it(
 
 
 def test_a_bad_voice_setting_gives_the_default_everywhere(mk, monkeypatch):
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "see https://example.com/now")
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "see https://example.com/now")
     w, names = mk(6)
-    assert w.get("/chronicle").json()["voice"] == C.DEFAULT_VOICE
+    assert w.get("/lore").json()["voice"] == C.DEFAULT_VOICE
     did = day(w, names, 1)
     assert chapter(w, did["chapter"])["card"]["voice"] == C.DEFAULT_VOICE
     verified(w)

@@ -1005,9 +1005,9 @@ def test_a_carrier_pulls_soon_after_start_not_a_whole_interval_later(monkeypatch
     assert sleeps[:2] == [300.0, 300.0]
 
 
-def test_the_relay_makes_the_chronicle_and_shared_topics_at_start(monkeypatch):
-    """Second playtest: a reveal on a fresh relay was 409 `no chronicle topic`, and a shared slug named in the
-    settings made nothing. (A scratch database: the suite's own must not gain a chronicle topic.)"""
+def test_the_relay_makes_the_lore_and_shared_topics_at_start(monkeypatch):
+    """Second playtest: a reveal on a fresh relay was 409 `no lore topic`, and a shared slug named in the
+    settings made nothing. (A scratch database: the suite's own must not gain a lore topic.)"""
     import sqlite3
 
     from emporia import house_topics
@@ -1019,17 +1019,17 @@ def test_the_relay_makes_the_chronicle_and_shared_topics_at_start(monkeypatch):
     monkeypatch.setenv("EMPORIA_AGENT_ID", "the_op")
     monkeypatch.delenv("EMPORIA_OPERATOR_STABLE_ID", raising=False)
     assert [w[0] for w in house_topics.wanted()] == ["playtest"]
-    monkeypatch.setattr("emporia.relay_modules.on", lambda name, *a, **k: name == "chronicle")
-    assert [w[0] for w in house_topics.wanted()] == ["chronicle", "playtest"]
-    assert house_topics.ensure(conn) == ["chronicle", "playtest"]
+    monkeypatch.setattr("emporia.relay_modules.on", lambda name, *a, **k: name == "lore")
+    assert [w[0] for w in house_topics.wanted()] == ["lore", "playtest"]
+    assert house_topics.ensure(conn) == ["lore", "playtest"]
     assert house_topics.ensure(conn) == []                             # idempotent
     row = conn.execute("SELECT visibility, gate_type, entry_fee_cents, hosted_by, creator_id FROM agora_topics "
-                       "WHERE slug = 'chronicle'").fetchone()
+                       "WHERE slug = 'lore'").fetchone()
     assert tuple(row) == ("public", "open", 0, "", "@relay")           # no operator key pinned: no agent owns it
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ab" * 16)
-    conn.execute("DELETE FROM agora_topics WHERE slug = 'chronicle'")
+    conn.execute("DELETE FROM agora_topics WHERE slug = 'lore'")
     house_topics.ensure(conn)
-    assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'chronicle'").fetchone()[0] == "the_op"
+    assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'lore'").fetchone()[0] == "the_op"
     conn.execute("UPDATE agora_topics SET is_deleted = 1 WHERE slug = 'playtest'")
     assert house_topics.ensure(conn) == []                             # a removed topic stays removed
 

@@ -185,7 +185,7 @@ def _visible(monkeypatch, value):
         def json(self):
             return {"relay_modules": {"money": {"parts": ["x402", "escrow", "cards"]}, "log": {},
                                       "federation": {"parts": ["dms"]}, "labs": {"parts": ["reports"]},
-                                      "chronicle": {"parts": ["book"]}, "tesseract": {"parts": ["tables"]},
+                                      "lore": {"parts": ["book"]}, "tesseract": {"parts": ["tables"]},
                                       "gamify": {"parts": ["sheets", "quests", "pledges"]}}}
     monkeypatch.setattr(mcp_server, "_visits", lambda: [])
     monkeypatch.setattr(mcp_server.httpx, "get", lambda url, timeout=5: Answer())
@@ -196,8 +196,8 @@ def _visible(monkeypatch, value):
 
 def test_a_read_only_agent_has_read_tools_only_and_a_write_tool_is_refused(monkeypatch, all_on):
     seen = _visible(monkeypatch, "federation,readonly")
-    assert seen <= F.READ_TOOLS and {"read_feed", "chronicle", "lab_threads", "list_sessions", "scan_relays"} <= seen
-    for write in ("post", "send_dm", "submit_action", "react", "chronicle_vote", "visit_relay", "join_session",
+    assert seen <= F.READ_TOOLS and {"read_feed", "lore", "lab_threads", "list_sessions", "scan_relays"} <= seen
+    for write in ("post", "send_dm", "submit_action", "react", "lore_vote", "visit_relay", "join_session",
                   "create_room", "commit_move", "make_pledge", "fund_session", "follow"):
         assert write not in seen, write
         with pytest.raises(Exception):  # noqa: B017 — the test asserts only that the call is refused, whatever the error type
@@ -206,9 +206,9 @@ def test_a_read_only_agent_has_read_tools_only_and_a_write_tool_is_refused(monke
     assert "post" in _visible(monkeypatch, "federation"), "without the word it is the usual surface"
 
 
-def test_a_read_only_agent_may_look_at_the_chronicle_but_not_join(monkeypatch):
+def test_a_read_only_agent_may_look_at_the_lore_but_not_join(monkeypatch):
     monkeypatch.setenv(F.SETTING, "readonly")
-    out = mcp_server.chronicle(join=True)
+    out = mcp_server.lore(join=True)
     assert out["success"] is False and "read-only" in out["error"]
 
 

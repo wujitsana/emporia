@@ -52,8 +52,8 @@ def test_follow_is_a_pass_rate_with_n_from_fixtures():
     assert "never ranked" in rows["ann"]["note"]
 
 
-def test_follow_runs_the_chronicles_card_checks_over_each_agents_passages(w, monkeypatch):
-    from emporia.routes import chronicle as ch
+def test_follow_runs_the_lores_card_checks_over_each_agents_passages(w, monkeypatch):
+    from emporia.routes import lore as ch
     from emporia.routes import standing as st
     ann, bob = w.register("ann", "o1"), w.register("bob", "o2")
     slots = [{"windows": {"count": [0, 10]}, "n": i} for i in range(3)] + [{"windows": {"count": [0, 10**12]}}]
@@ -76,11 +76,11 @@ def _ob(agent, ok, kind="game", by="agent", at="2026-11-10T10:00:00+00:00"):
 
 def test_finish_is_a_pass_rate_with_n_the_split_and_the_last_date():
     rows = [_ob("ann", True)] * 5 + [_ob("ann", True, "reveal", "bridge")] * 2 + [_ob("ann", False, "clock")] \
-        + [_ob("ann", False, "chronicle", at="2026-11-12T00:00:00+00:00")]
+        + [_ob("ann", False, "lore", at="2026-11-12T00:00:00+00:00")]
     got = finish_follow.finish(rows)["ann"]
     assert got["shown"] and got["n"] == 9 and got["passed"] == 7 and got["rate"] == pytest.approx(0.778, abs=1e-3)
     assert got["by_agent"] == 5 and got["by_bridge"] == 2
-    assert got["missed"] == {"clock": 1, "chronicle": 1} and got["last"] == "2026-11-12"
+    assert got["missed"] == {"clock": 1, "lore": 1} and got["last"] == "2026-11-12"
     assert "bridge" in got["bridge_note"] and "setup finishing" in got["bridge_note"]
     assert "never ranked" in got["note"]
 
@@ -194,7 +194,7 @@ def test_the_sheet_carries_finish_additively_and_hidden_for_a_new_agent(w):
 
 def test_the_sheet_renders_finish_and_follow_lines():
     text = progression._render_finish(None, {"n": 4, "passed": 3, "rate": 0.75, "note": "never ranked"}, None)
-    assert text == ["Follow   3 of 4 Chronicle passages kept their card (never ranked)"]
+    assert text == ["Follow   3 of 4 Lore passages kept their card (never ranked)"]
 
 
 def test_finish_reads_the_bridge_mark_from_the_signed_rationale_in_the_audit_log(monkeypatch):
@@ -213,8 +213,8 @@ def test_finish_reads_the_bridge_mark_from_the_signed_rationale_in_the_audit_log
     assert finish_follow.done_by_bridge({"by": "bridge"})
 
 
-def test_a_chronicle_seal_opened_is_a_kept_finish_obligation_and_an_unopened_one_is_missed(monkeypatch):
-    from emporia.routes import chronicle as ch
+def test_a_lore_seal_opened_is_a_kept_finish_obligation_and_an_unopened_one_is_missed(monkeypatch):
+    from emporia.routes import lore as ch
     from emporia.routes import standing as st
 
     def slot(mode="live", opened=(), balloted=()):
@@ -226,9 +226,9 @@ def test_a_chronicle_seal_opened_is_a_kept_finish_obligation_and_an_unopened_one
              {**slot(), "windows": {"count": [0, 10**12]}}]
     monkeypatch.setattr(relay_modules, "off_because", lambda *a: "")
     monkeypatch.setattr(ch, "sequence", lambda: ({}, slots, 100.0))
-    got = st._chronicle_obligations("ann")
-    assert [(o["kind"], o["ok"], o["by"]) for o in got] == [("chronicle", True, "agent"), ("chronicle", False, "agent")]
+    got = st._lore_obligations("ann")
+    assert [(o["kind"], o["ok"], o["by"]) for o in got] == [("lore", True, "agent"), ("lore", False, "agent")]
     assert finish_follow.finish(got)["ann"]["n"] == 2
-    assert st._chronicle_obligations("bob")[0]["ok"] is False
+    assert st._lore_obligations("bob")[0]["ok"] is False
     monkeypatch.setattr(relay_modules, "off_because", lambda *a: "off")
-    assert st._chronicle_obligations("ann") == []
+    assert st._lore_obligations("ann") == []

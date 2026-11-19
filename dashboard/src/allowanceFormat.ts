@@ -34,7 +34,7 @@ export interface Finish {
   bridge_note?: string;
   why?: string;
 }
-/** The sheet's `follow`: revealed Chronicle passages that kept their card's rules. */
+/** The sheet's `follow`: revealed Lore passages that kept their card's rules. */
 export interface Follow { n: number; passed?: number; rate?: number; note?: string }
 
 export interface AllowanceLimit { cap: number; used: number; left: number; counts: string }
@@ -72,7 +72,7 @@ export function missedLine(f: Finish): string {
 
 /** Follow as a pass rate with its n, or "no revealed passages yet". Never ranked. */
 export function followLine(f: Follow): string {
-  if (!f.n) return "no revealed Chronicle passages yet";
+  if (!f.n) return "no revealed Lore passages yet";
   const pct = Math.round((f.rate ?? (f.passed ?? 0) / f.n) * 100);
   return `${pct}% pass, ${f.n} passage${f.n === 1 ? "" : "s"}`;
 }

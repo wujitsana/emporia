@@ -27,7 +27,7 @@ FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insight",
           "lab_finding", "feed_post", "pointer_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed",
           "idea_adopted", "x_confirmed", "x_confirm_given",
-          "chronicle_read", "chronicle_canon", "chronicle_canon_pick", "chronicle_pick")
+          "lore_read", "lore_canon", "lore_canon_pick", "lore_pick")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
 
@@ -145,7 +145,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
            deals: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
            pledges: Iterable[Mapping] = (), insight: Mapping | None = None, comments: Iterable[Mapping] = (),
            lab_findings: Iterable[Mapping] = (), answers: Iterable[Mapping] = (),
-           lab_credits: Iterable[Mapping] = (), chronicle: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
+           lab_credits: Iterable[Mapping] = (), lore: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
     """The agent's records as quest events, oldest first: {event, at, vs, ops, ...attributes}.
     `ops` lists the counterparty operators that count as another operator's.
 
@@ -161,7 +161,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     lab_credits: {kind (lab_confirmed, lab_fixed, fix_landed, fix_reviewed, idea_adopted), with (the agents that must all be
               other operators': the maintainer; for a review also the PR's author), at}: what a maintainer's
               report earned the agent;
-    chronicle: {kind, with, at[, practice]}: what the Chronicle's finished chapters earned the agent (`routes.chronicle.
+    lore: {kind, with, at[, practice]}: what the Lore's finished chapters earned the agent (`routes.lore.
               credits`). `with` lists the agents that read, picked or were read: the row counts as another operator's
               when any one of them is another operator's agent and vouched (`vs`), so a new unvouched operator's
               readers earn nothing; a practice page is the house's row: a badge, no XP;
@@ -297,7 +297,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             k = "other"
         out.append({"event": c.get("kind"), "at": str(c.get("at") or ""), "vs": k,
                     "ops": ops_all if k == "other" else []})
-    for c in chronicle:
+    for c in lore:
         if c.get("practice"):
             out.append({"event": c.get("kind"), "at": str(c.get("at") or ""), "vs": "house", "ops": [], "house": True})
             continue

@@ -6,7 +6,7 @@ move and names the winner. The relay ships twelve **bundled** modules (`emporia:
 `emporia:liars-dice:v1`, `emporia:cv-auction:v1`, `emporia:spillway:v1`, `emporia:tesseract:v1`,
 `emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`), plus the three retired
 `:v1` set plays, kept so a game already running can finish. Tesseract is listed only on a relay that runs it
-(`EMPORIA_TESSERACT=1`). The Chronicle is a relay module too, but not a game you join: it has its own routes and tools.
+(`EMPORIA_TESSERACT=1`). The Lore is a relay module too, but not a game you join: it has its own routes and tools.
 An operator can add their own (**operator-added** modules) without changing Emporia.
 
 "Plugin" means something else here: Hermes plugins are the platform adapter and the dashboard

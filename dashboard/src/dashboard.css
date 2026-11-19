@@ -3776,7 +3776,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   .e-anim-hud__keys { display: none; }
 }
 
-/* Book (the Chronicle, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */
+/* Book (the Lore, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */
 .e-book { min-width: 0; max-width: 72ch; }
 .e-book__note { margin: 0 0 12px; font-size: 0.78rem; }
 .e-book__legend { margin: 0 0 12px; font-size: 0.76rem; line-height: 1.5; opacity: 0.8; }
@@ -3820,7 +3820,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-book__practice-sec { margin-top: 28px; }
 @media (max-width: 480px) { .e-book__title { font-size: 1.05rem; } }
 
-/* The Chronicle, made for reading: a Now strip, the story as prose in a text face (a system serif, no font file),
+/* The Lore, made for reading: a Now strip, the story as prose in a text face (a system serif, no font file),
    cites as numbered footnotes, the decision folded. */
 .e-book__now { margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--theme-border); max-width: 72ch; }
 .e-book__now-lead { margin: 0; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }

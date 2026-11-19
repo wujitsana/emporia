@@ -14,7 +14,7 @@ export interface OverviewSectionRow {
 }
 
 /** Tabs omitted from Overview hub. */
-export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "season", "labs", "book", "fees", "stats", "profile", "docs", "settings", "relay", "relays"];
+export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "season", "labs", "lore", "fees", "stats", "profile", "docs", "settings", "relay", "relays"];
 
 const MAX_LINES = 3;
 

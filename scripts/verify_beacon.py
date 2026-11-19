@@ -63,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
     if not sig:
         print("  the round was not needed yet: no randomness has been drawn")
         return 2 if failed == 0 else 1
+    if not beacon.bls_available():
+        print(beacon.BLS_MISSING, file=sys.stderr)      # not a forged signature: the check cannot run
+        return 2
     report(beacon.verify(int(rnd), sig), f"the stored signature of round {rnd} is valid under drand's pinned key")
     if args.offline:
         print("  (offline: drand itself was not asked)")

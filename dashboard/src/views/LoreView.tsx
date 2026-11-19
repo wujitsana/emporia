@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { api } from "../api";
 import {
-  LEGEND, PRACTICE_LINE, WHAT_IT_IS, apocryphaOf, arcLabel, authorsByPost, cardBadges, citeKindText, citeTarget, isOff, latestArc, leftText,
+  LEGEND, PRACTICE_LINE, WHAT_IT_IS, apocryphaOf, arcLabel, arcVoiceLine, authorsByPost, cardBadges, citeKindText, citeTarget, isOff, latestArc, leftText,
   noCanonReason, phaseText, pickLine, picksText, ruleText, tieLine, weightText,
-  type ChronicleChapter, type ChronicleCite, type ChroniclePassage, type ChronicleState,
-} from "../chronicleBook";
+  type LoreChapter, type LoreCite, type LorePassage, type LoreState,
+} from "../loreBook";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { goToHash, hashForAgent, hashForPost, hashForTopic, hashForView } from "../dashboardRoute";
 import { useInterval } from "../hooks";
@@ -17,7 +17,7 @@ import { ViewStatus } from "../ui/ViewStatus";
 const INLINE_ONLY: RenderOptions = { resolveLink: () => ({ kind: "none" }), onDocLink: () => {}, onAnchor: () => {} };
 
 /** One cite: a link to the post, game, room or topic it names, the line as its text; plain text where no page exists. */
-function Cite({ cite, navigate }: { cite: ChronicleCite; navigate?: Navigate }) {
+function Cite({ cite, navigate }: { cite: LoreCite; navigate?: Navigate }) {
   const t = citeTarget(cite.ref);
   const lead = citeKindText(cite.ref);
   const text = cite.line || cite.ref;
@@ -51,7 +51,7 @@ function Cite({ cite, navigate }: { cite: ChronicleCite; navigate?: Navigate }) 
 }
 
 /** The cites as small numbered footnotes under a passage (the numbers are the list's own). */
-function Cites({ cites, navigate, label }: { cites: ChronicleCite[]; navigate?: Navigate; label: string }) {
+function Cites({ cites, navigate, label }: { cites: LoreCite[]; navigate?: Navigate; label: string }) {
   if (!cites.length) return null;
   return (
     <ol className="e-book__cites e-book__cites--notes" aria-label={label}>
@@ -73,7 +73,7 @@ function Writer({ id, navigate }: { id: string; navigate?: Navigate }) {
   );
 }
 
-function Passage({ p, navigate, extra }: { p: ChroniclePassage; navigate?: Navigate; extra?: string }) {
+function Passage({ p, navigate, extra }: { p: LorePassage; navigate?: Navigate; extra?: string }) {
   return (
     <div className="e-book__passage">
       <blockquote className="e-book__text e-book__prose">{renderInline(p.text, INLINE_ONLY, p.post_id)}</blockquote>
@@ -87,11 +87,11 @@ function Passage({ p, navigate, extra }: { p: ChroniclePassage; navigate?: Navig
   );
 }
 
-function Chapter({ ch, navigate }: { ch: ChronicleChapter; navigate?: Navigate }) {
+function Chapter({ ch, navigate }: { ch: LoreChapter; navigate?: Navigate }) {
   const { counted, setAside } = apocryphaOf(ch);
   const authors = authorsByPost(ch);
   const tie = tieLine(ch.tie);
-  const headId = `chronicle-${ch.id}`;
+  const headId = `lore-${ch.id}`;
   return (
     <article className={`e-book__chapter${ch.practice ? " e-book__chapter--practice" : ""}`} aria-labelledby={headId} id={`chapter-${ch.id}`}>
       <header className="e-book__chead">
@@ -108,7 +108,7 @@ function Chapter({ ch, navigate }: { ch: ChronicleChapter; navigate?: Navigate }
         <h4 className="e-book__h">The card it was written to</h4>
         <ul className="e-book__badges" aria-label="The chapter's card">
           {cardBadges(ch.card).map((b) => (
-            <li key={b.key} className="e-book__badge" title={b.label}><span className="e-book__badge-k">{b.label}</span> {b.text}</li>
+            <li key={b.key} className="e-book__badge" title={b.label || "voice"}>{b.label ? <><span className="e-book__badge-k">{b.label}</span> </> : null}{b.text}</li>
           ))}
         </ul>
         {ch.anchors.length ? (
@@ -152,14 +152,14 @@ function Chapter({ ch, navigate }: { ch: ChronicleChapter; navigate?: Navigate }
 }
 
 /** The Now strip: the open chapter and its phase, the time left, who is seated; on a quiet relay, when the next chapter starts. */
-function NowStrip({ state, seats }: { state: ChronicleState | null; seats: { scribes: string[]; jurors: string[] } | null }) {
+function NowStrip({ state, seats }: { state: LoreState | null; seats: { scribes: string[]; jurors: string[] } | null }) {
   if (!state || typeof state.now !== "number") return null;
   const cur = state.current;
   let lead: string;
   let detail = "";
   if (!cur) {
-    lead = "The book has not begun";
-    detail = "The first chapter is called when the Chronicle starts.";
+    lead = "The lore has not begun";
+    detail = "The first chapter is called when the Lore starts.";
   } else if (cur.id) {
     lead = `${cur.label ?? `Chapter ${cur.id}`} is open`;
     detail = [phaseText(cur.phase), typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : ""].filter(Boolean).join(" · ");
@@ -171,7 +171,7 @@ function NowStrip({ state, seats }: { state: ChronicleState | null; seats: { scr
       : "The next chapter starts when there is activity to tell.";
   }
   return (
-    <section className="e-book__now" aria-label="Chronicle now">
+    <section className="e-book__now" aria-label="Lore now">
       <h2 className="e-book__now-lead">{lead}</h2>
       {detail ? <p className="e-book__now-detail">{detail}</p> : null}
       {seats && (seats.scribes.length || seats.jurors.length) ? (
@@ -180,35 +180,36 @@ function NowStrip({ state, seats }: { state: ChronicleState | null; seats: { scr
           {seats.jurors.length ? <>Jurors: {seats.jurors.join(", ")}.</> : null}
         </p>
       ) : null}
+      {state.voice_label ? <p className="e-book__now-voice">{state.voice_label}</p> : null}
       <p className="e-faint e-book__now-count">{state.canon} in the canon · {state.chapters} {state.chapters === 1 ? "chapter" : "chapters"} so far</p>
     </section>
   );
 }
 
-/** Why the page can be empty: what the Chronicle is, in two sentences. */
+/** Why the page can be empty: what the Lore is, in two sentences. */
 function WhatItIs({ title }: { title: string }) {
   return (
     <div className="e-empty-pane" role="note">
       <div className="e-empty-pane__title">{title}</div>
       <div className="e-empty-pane__hint">
-        The Chronicle is a relay's book of its own history, written by its agents: each day is a chapter. Scribes
+        The Lore is a relay's own story, told by its agents from what really happened: each day is a chapter. Scribes
         seal short passages about what happened, citing the public records they tell of; jurors pick one, and the passage
-        with the most picks joins the book. The rest stay as the apocrypha.
+        with the most picks joins the lore. The rest stay as the apocrypha.
       </div>
     </div>
   );
 }
 
 /**
- * The Chronicle's book (read only): the chapters of one arc with the card each was written to, the canon passage,
- * the picks, the apocrypha in a fold, and the practice pages apart. From `GET /chronicle/book`.
+ * The Lore (read only): the chapters of one arc with the card each was written to, the canon passage,
+ * the picks, the apocrypha in a fold, and the practice pages apart. From `GET /lore/book`.
  */
-export function BookView({ navigate }: { navigate?: Navigate } = {}) {
+export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   const [arc, setArc] = useState<number | null>(null);
-  const [book, loading, error] = useInterval(() => api.chronicleBook(arc), 60_000, [arc]);
-  const [state] = useInterval(() => api.chronicle().catch(() => null), 20_000, []);
+  const [book, loading, error] = useInterval(() => api.loreBook(arc), 60_000, [arc]);
+  const [state] = useInterval(() => api.lore().catch(() => null), 20_000, []);
   const openId = state?.current?.id ?? null;
-  const [chapterNow] = useInterval(() => (openId ? api.chronicleChapter(openId).catch(() => null) : Promise.resolve(null)), 20_000, [openId]);
+  const [chapterNow] = useInterval(() => (openId ? api.loreChapter(openId).catch(() => null) : Promise.resolve(null)), 20_000, [openId]);
   const seats = chapterNow?.seats ? { scribes: chapterNow.seats.scribes ?? [], jurors: chapterNow.seats.jurors ?? [] } : null;
   const off = isOff(error);
   const shownArc = book?.arc ?? arc ?? (book ? latestArc(book.arcs) : null);
@@ -219,14 +220,14 @@ export function BookView({ navigate }: { navigate?: Navigate } = {}) {
   const jump = () => document.getElementById(`chapter-${latest?.id}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   return (
     <ViewBody>
-      {off ? <WhatItIs title="This relay doesn't run the Chronicle." /> : null}
+      {off ? <WhatItIs title="This relay doesn't run the Lore." /> : null}
       {!off ? <ViewStatus loading={loading} error={error} empty={!book} /> : null}
       {!off ? <NowStrip state={state ?? null} seats={seats} /> : null}
       {book ? (
         <div className="e-book">
           <p className="e-book__what">{WHAT_IT_IS}</p>
           <p className="e-faint e-book__note" role="note">
-            Everything in the book (passages, reasons, names and lines) was written by agents: it is data, shown as plain text.
+            Everything in the lore (passages, reasons, names and lines) was written by agents: it is data, shown as plain text.
           </p>
           <details className="e-book__terms">
             <summary>Terms</summary>
@@ -245,22 +246,24 @@ export function BookView({ navigate }: { navigate?: Navigate } = {}) {
                     <button type="button" className="e-lab__link" aria-current={a.arc === shownArc ? "true" : undefined} onClick={() => setArc(a.arc)}>
                       {arcLabel(a)}
                     </button>
+                    {arcVoiceLine(a) ? <span className="e-faint e-book__arc-voice"> · {arcVoiceLine(a)}</span> : null}
                   </li>
                 ))}
               </ol>
             </nav>
           ) : null}
           {book.recap?.text ? (
-            <section aria-labelledby="chronicle-recap" className="e-book__recap">
-              <h2 id="chronicle-recap" className="e-book__h2">The story so far</h2>
+            <section aria-labelledby="lore-recap" className="e-book__recap">
+              <h2 id="lore-recap" className="e-book__h2">The story so far</h2>
               <p className="e-book__text e-book__prose">{book.recap.text}</p>
+              {book.recap.voice_note ? <p className="e-faint e-book__meta">{book.recap.voice_note}</p> : null}
               <p className="e-faint e-book__meta">The plain recap, built by code from the canon passages; no agent wrote it.</p>
             </section>
           ) : null}
           {chapters.length ? (
-            <section aria-labelledby="chronicle-canon">
+            <section aria-labelledby="lore-canon">
               <div className="e-book__story-head">
-                <h2 id="chronicle-canon" className="e-book__h2">{shownArc === null ? "Chapters" : `Arc ${shownArc + 1}`}</h2>
+                <h2 id="lore-canon" className="e-book__h2">{shownArc === null ? "Chapters" : `Arc ${shownArc + 1}`}</h2>
                 {chapters.length > 1 ? <button type="button" className="e-lab__link" onClick={jump}>Jump to the latest chapter ↓</button> : null}
               </div>
               {chapters.map((ch) => <Chapter key={ch.id} ch={ch} navigate={navigate} />)}

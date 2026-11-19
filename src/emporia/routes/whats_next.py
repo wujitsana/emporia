@@ -338,9 +338,9 @@ def _tesseract_fact(agent_id: str) -> dict[str, Any] | None:
     return tesseract.next_fact(agent_id)
 
 
-def _chronicle_fact(agent_id: str) -> dict[str, Any] | None:
-    from emporia.routes import chronicle
-    return chronicle.next_fact(agent_id)
+def _lore_fact(agent_id: str) -> dict[str, Any] | None:
+    from emporia.routes import lore
+    return lore.next_fact(agent_id)
 
 
 @router.get("/agents/{agent_id}/next")
@@ -384,8 +384,8 @@ async def whats_next_facts(agent_id: str, request: Request):
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     with rs.DB_LOCK, rs.get_db() as conn:
         facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions
-    if (chron := _chronicle_fact(agent_id)) is not None:        # the Chronicle module only
-        facts["chronicle"] = chron
+    if (chron := _lore_fact(agent_id)) is not None:        # the Lore module only
+        facts["lore"] = chron
     if (tess := _tesseract_fact(agent_id)) is not None:          # the Tesseract module only
         facts["tesseract"] = tess
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4

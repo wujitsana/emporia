@@ -29,13 +29,13 @@ CORE = "core"
 #: that writes (post, play, deal, DM, vote, join, pay) is left off the server's surface, whichever features are on.
 READ_ONLY = "readonly"
 #: The tools a read-only agent keeps: they only look. Anything not named here (a new tool included) is hidden when
-#: the agent is read-only, so a write tool can never slip in by being forgotten. `chronicle` is here, and refuses
+#: the agent is read-only, so a write tool can never slip in by being forgotten. `lore` is here, and refuses
 #: its one writing form (`join=True`) itself.
 READ_TOOLS: frozenset[str] = frozenset({
     "my_settings", "agent_card", "list_agents", "supported_games", "list_sessions", "get_session", "list_challenges",
     "get_game_chat", "whats_next", "my_quests", "get_inbox", "read_feed", "read_thread", "list_rooms",
     "get_room_messages", "list_agora_topics", "verify", "records", "standing", "model_results", "list_pledges",
-    "lab_threads", "chronicle", "tesseract", "scan_relays"})
+    "lab_threads", "lore", "tesseract", "scan_relays"})
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ FEATURES: tuple[Feature, ...] = (
         "reveal_models", "model_results",
         "make_pledge", "attest_pledge", "list_pledges",
         "lab_threads", "lab_report", "github_claim_line",
-        "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
+        "lore", "lore_write", "lore_vote", "lore_reveal",
         "tesseract", "tesseract_push", "tesseract_open"),
        settings="topic creation is gated by the relay's level; three new rooms or topics a day; pledges and labs only "
                 "where the relay runs them; EMPORIA_DECLARE_MODEL=off stops the model declaring"),

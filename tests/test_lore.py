@@ -1,4 +1,4 @@
-"""The Chronicle's pure core (games plan, phase T0): decks, seats, passage checks, the sealed-pick tally, a whole
+"""The Lore's pure core (games plan, phase T0): decks, seats, passage checks, the sealed-pick tally, a whole
 chapter from the signed records, practice mode, teams, recaps and the bounded views. No relay, no network."""
 import hashlib
 import importlib.util
@@ -7,10 +7,10 @@ import pathlib
 import pytest
 
 from emporia import commit_reveal, progression, rand_game, wire
-from emporia.modules import chronicle as C
+from emporia.modules import lore as C
 
 spec = importlib.util.spec_from_file_location(
-    "sim_chronicle", pathlib.Path(__file__).resolve().parent.parent / "scripts" / "sim_chronicle.py")
+    "sim_lore", pathlib.Path(__file__).resolve().parent.parent / "scripts" / "sim_lore.py")
 sim = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sim)
 
@@ -132,8 +132,9 @@ def test_the_card_has_a_word_a_limit_and_the_relays_voice_and_nothing_else():
     other = C.draw_card("s", sig(1), voice="a sports broadcast")
     assert (other.word, other.limit) == (card.word, card.limit)
     t = C.card_text(C.Card("lantern", 280, "harbor gossip"))
-    assert t == {"word": "lantern", "limit": "280 characters at most", "voice": "This relay's voice: harbor gossip"}
-    assert set(t) == {"word", "limit", "voice"}
+    assert t == {"word": "lantern", "limit": "280 characters at most", "voice": "This relay's voice: harbor gossip",
+                 "task": C.WRITE_RULE}
+    assert set(t) == {"word", "limit", "voice", "task"}
 
 
 def test_a_passage_of_any_form_passes_when_it_has_the_word_inside_the_limit():
@@ -156,7 +157,7 @@ def test_a_relay_voice_is_trimmed_and_blank_means_the_default():
     assert C.clean_voice("  harbor gossip \n") == ("harbor gossip", "")
     for blank in ("", "   ", None):
         assert C.clean_voice(blank) == (C.DEFAULT_VOICE, "")
-    assert C.DEFAULT_VOICE == "a plain chronicle of the relay" and C.VOICE_MAX == 40
+    assert C.DEFAULT_VOICE == "a plain telling of the relay" and C.VOICE_MAX == 40
 
 
 @pytest.mark.parametrize("raw,why", [
@@ -172,27 +173,27 @@ def test_a_bad_relay_voice_is_refused_and_the_default_is_used(raw, why):
 
 def test_the_relay_voice_setting_is_read_from_the_environment_and_a_bad_one_warns(monkeypatch):
     from emporia import relay_modules as rm
-    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
-    monkeypatch.delenv("EMPORIA_CHRONICLE_VOICE", raising=False)
-    assert rm.chronicle_voice() == C.DEFAULT_VOICE and rm.chronicle_voice_warning() == ""
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "  cyberpunk noir ")
-    assert rm.chronicle_voice() == "cyberpunk noir" and rm.chronicle_voice_warning() == ""
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "visit http://x.example now")
-    assert rm.chronicle_voice() == C.DEFAULT_VOICE
-    warn = rm.chronicle_voice_warning()
-    assert "EMPORIA_CHRONICLE_VOICE refused" in warn and C.DEFAULT_VOICE in warn
+    monkeypatch.setenv("EMPORIA_LORE", "1")
+    monkeypatch.delenv("EMPORIA_LORE_VOICE", raising=False)
+    assert rm.lore_voice() == C.DEFAULT_VOICE and rm.lore_voice_warning() == ""
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "  cyberpunk noir ")
+    assert rm.lore_voice() == "cyberpunk noir" and rm.lore_voice_warning() == ""
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "visit http://x.example now")
+    assert rm.lore_voice() == C.DEFAULT_VOICE
+    warn = rm.lore_voice_warning()
+    assert "EMPORIA_LORE_VOICE refused" in warn and C.DEFAULT_VOICE in warn
     assert rm.problems() == [] or all("VOICE" not in p for p in rm.problems())    # a bad voice never stops the relay
-    monkeypatch.setenv("EMPORIA_CHRONICLE", "0")
-    assert rm.chronicle_voice_warning() == ""
+    monkeypatch.setenv("EMPORIA_LORE", "0")
+    assert rm.lore_voice_warning() == ""
 
 
 def test_the_module_info_a_relay_advertises_carries_its_voice(monkeypatch):
     from emporia import relay_modules as rm
-    monkeypatch.setenv("EMPORIA_CHRONICLE", "1")
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "harbor gossip")
-    assert rm._chronicle_detail([], {"book"})["voice"] == "harbor gossip"
-    monkeypatch.setenv("EMPORIA_CHRONICLE_VOICE", "")
-    assert rm._chronicle_detail([], {"book"})["voice"] == C.DEFAULT_VOICE
+    monkeypatch.setenv("EMPORIA_LORE", "1")
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "harbor gossip")
+    assert rm._lore_detail([], {"book"})["voice"] == "harbor gossip"
+    monkeypatch.setenv("EMPORIA_LORE_VOICE", "")
+    assert rm._lore_detail([], {"book"})["voice"] == C.DEFAULT_VOICE
 
 
 def test_the_card_is_a_pure_draw_from_the_beacon():
@@ -229,7 +230,7 @@ def test_the_chain_is_recomputed_from_the_beacon_alone():
 
 
 def test_the_ledger_carries_the_chain_and_the_verifier_rule_recomputes_every_card():
-    from emporia import chronicle_ledger as L
+    from emporia import lore_ledger as L
     N, E = 90, DAY
     start = CALL
     rng = random.Random(3)
@@ -259,7 +260,7 @@ def test_the_ledger_carries_the_chain_and_the_verifier_rule_recomputes_every_car
 
 
 def test_a_missing_earlier_round_keeps_every_later_chapter_waiting_so_ids_never_shift():
-    from emporia import chronicle_ledger as L
+    from emporia import lore_ledger as L
     N, E = 12, DAY
     start = CALL
     rng = random.Random(5)
@@ -317,7 +318,7 @@ def test_an_arc_opens_with_the_first_called_chapter_after_every_seventh_canon_ch
 
 
 def test_the_voice_of_a_chapter_is_the_one_recorded_at_its_arcs_first_call_and_a_change_waits_for_the_next_arc():
-    from emporia import chronicle_ledger as L
+    from emporia import lore_ledger as L
     N = 12
     # the setting changes at slot 3 and again at slot 6; no chapter has a canon (no seals), so one arc runs throughout
     ledger = _voice_ledger({i: "harbor gossip" if i < 3 else "a sports broadcast" if i < 6 else "cyberpunk noir"
@@ -726,7 +727,7 @@ def test_a_practice_page_feeds_no_renown_track_board_or_recap():
 def test_the_first_call_with_four_operators_is_chapter_one_whatever_practice_came_before():
     hist = [{"mode": "practice", "canon": "pst_pp1"}, {"mode": "practice", "canon": None}]
     n = C.next_numbering(hist, "live")
-    assert n["n"] == 1 and n["label"] == "Chapter 1" and n["reply_to"] == C.PROLOGUE and n["tags"] == [["t", "chronicle"], ["t", "ch-1"]]
+    assert n["n"] == 1 and n["label"] == "Chapter 1" and n["reply_to"] == C.PROLOGUE and n["tags"] == [["t", "lore"], ["t", "ch-1"]]
     run = Run(mk_members(4), history=hist)
     assert run.mode == "live" and run.numbering["n"] == 1
     # practice keeps its own chain, and a roster that falls under four goes back to it, canon waiting where it stopped
@@ -740,8 +741,8 @@ def test_the_first_call_with_four_operators_is_chapter_one_whatever_practice_cam
 def test_the_passage_is_a_post_with_the_tags_the_plan_names():
     n = C.next_numbering([], "live")
     post = C.passage_post("text", ["session:a", "post:b"], n, teammates=["agent_x"])
-    assert post["kind"] == "other" and post["label"] == "passage" and post["topic"] == "chronicle"
-    assert post["tags"] == [["t", "chronicle"], ["t", "ch-1"], ["ref", "session", "a"], ["ref", "post", "b"], ["p", "agent_x"]]
+    assert post["kind"] == "other" and post["label"] == "passage" and post["topic"] == "lore"
+    assert post["tags"] == [["t", "lore"], ["t", "ch-1"], ["ref", "session", "a"], ["ref", "post", "b"], ["p", "agent_x"]]
     assert post["reply_to"] == C.PROLOGUE == post["root"]
     assert not wire.post_problem("other", "passage", "text", post["tags"], topic=None)
 

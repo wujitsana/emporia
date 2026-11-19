@@ -138,10 +138,10 @@ def build_autoreveal(relay_url: str, agent_id: str):
 
     def local() -> tuple[list[str], bool]:
         """Local files only until something is there: the tables with a sealed push kept here, and whether a
-        Chronicle passage or pick is."""
+        Lore passage or pick is."""
         from emporia.identity import KEY_DIR
         sessions = autoreveal.local_tesseract_sessions(agent_id, KEY_DIR / "commitments", tools_relay)
-        return sessions, autoreveal.local_chronicle_waits(agent_id, KEY_DIR / "commitments", tools_relay)
+        return sessions, autoreveal.local_lore_waits(agent_id, KEY_DIR / "commitments", tools_relay)
 
     def visited() -> list[str]:
         """The relays this agent visits (not its home) that its person still allows: the same rule the tools'
@@ -157,7 +157,7 @@ def build_autoreveal(relay_url: str, agent_id: str):
         """`local`, for the files kept on one visited relay (their names carry its host)."""
         from emporia.identity import KEY_DIR
         return (autoreveal.local_tesseract_sessions(agent_id, KEY_DIR / "commitments", url),
-                autoreveal.local_chronicle_waits(agent_id, KEY_DIR / "commitments", url))
+                autoreveal.local_lore_waits(agent_id, KEY_DIR / "commitments", url))
 
     @contextlib.contextmanager
     def scope(url: str):
@@ -170,7 +170,7 @@ def build_autoreveal(relay_url: str, agent_id: str):
             m._RELAY_CTX.reset(token)
 
     return autoreveal.AutoReveal(agent_id, table=lambda: server()._tesseract_table(),
-                                 chronicle=lambda: server()._chronicle_client(), local=local, log=logger.info,
+                                 lore=lambda: server()._lore_client(), local=local, log=logger.info,
                                  relays=visited, local_for=local_for, scope=scope)
 
 

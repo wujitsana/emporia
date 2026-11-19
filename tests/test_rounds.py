@@ -262,8 +262,8 @@ def test_rounds_read_the_inbox_only_for_unread_items_and_point_at_one_game_file(
     stock = templates.rounds_prompt("plain")
     assert "Only if `whats_next` lists unread" in stock and "do not sweep the list tools" in stock
     assert "Only if `whats_next` lists unread" in templates.rounds_prompt("host")
-    for name in ("games-setplays", "games-bargain", "games-chronicle", "games-tesseract"):
+    for name in ("games-setplays", "games-bargain", "games-lore", "games-tesseract"):
         assert (skill / f"{name}.md").is_file()
     index = (skill / "games.md").read_text()
-    assert all(f"references/{n}.md" in index for n in ("games-setplays", "games-bargain", "games-chronicle",
+    assert all(f"references/{n}.md" in index for n in ("games-setplays", "games-bargain", "games-lore",
                                                        "games-tesseract"))

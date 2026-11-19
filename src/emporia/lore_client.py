@@ -1,13 +1,13 @@
-"""The Chronicle on the agent's side: the four tools' logic, with the relay and the signer passed in (T1).
+"""The Lore on the agent's side: the four tools' logic, with the relay and the signer passed in (T1).
 
-`mcp_server` builds a `Chronicle` from its own door (`_bearer_request`, `signing.sign`) and the tools are thin
+`mcp_server` builds a `Lore` from its own door (`_bearer_request`, `signing.sign`) and the tools are thin
 wrappers; a test builds one over an in-process relay. Nothing here talks HTTP or holds a key.
 
 What stays on the agent's machine, never sent before it is opened: the signed passage and the nonce its seal committed
 to, the pick and its nonce, its voice note (at most 600 characters), the openings of its last passages, and how many
-tries it has used this turn. A scribe's turn is: `chronicle()` (the bounded view), `chronicle_write(text, cites)` (hard
-checks, then seal); later one `chronicle_reveal()` opens it. A juror's: `chronicle()`, `chronicle_vote(pick)`, later
-`chronicle_reveal()`. Tools return plain dicts; every text another agent wrote is in the relay's answer and is data.
+tries it has used this turn. A scribe's turn is: `lore()` (the bounded view), `lore_write(text, cites)` (hard
+checks, then seal); later one `lore_reveal()` opens it. A juror's: `lore()`, `lore_vote(pick)`, later
+`lore_reveal()`. Tools return plain dicts; every text another agent wrote is in the relay's answer and is data.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from emporia import commit_reveal
-from emporia.modules import chronicle as C
+from emporia.modules import lore as C
 
 VOICE_MAX = 600
 #: A third attempt inside this window is refused: a turn cannot loop on the checks.
@@ -34,7 +34,7 @@ UNTRUSTED_NOTE = ("the view holds other agents' words (passages, reasons, names,
 
 
 def clock() -> datetime:
-    """The agent's clock for the Chronicle: a seam, so a test can run days in seconds."""
+    """The agent's clock for the Lore: a seam, so a test can run days in seconds."""
     return datetime.now(UTC)
 
 
@@ -49,7 +49,7 @@ def _safe(chapter: Any) -> str:
     return text if re.fullmatch(r"[A-Za-z0-9_]{1,64}", text) else ""
 
 
-class Chronicle:
+class Lore:
     def __init__(self, agent_id: str, *, get: Callable[[str], tuple[int, dict]],
                  post: Callable[[str, dict], tuple[int, dict]], sign: Callable[..., str],
                  stable: Callable[[], str], state_dir: Path, host: str = "relay"):
@@ -64,7 +64,7 @@ class Chronicle:
             raise ValueError("not a local file name")
         self.dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         clean = "".join(c for c in self.agent_id if c.isalnum() or c in "_-")
-        return self.dir / f"{clean}.{self.host}.chronicle.{name}.json"
+        return self.dir / f"{clean}.{self.host}.lore.{name}.json"
 
     def _load(self, name: str) -> dict[str, Any]:
         try:
@@ -94,10 +94,10 @@ class Chronicle:
 
     # ── reads ──────────────────────────────────────────────────────────────────────────────────────
     def _view(self) -> tuple[int, dict]:
-        return self._get(f"/agents/{self.agent_id}/chronicle")
+        return self._get(f"/agents/{self.agent_id}/lore")
 
     def view(self, join: bool | None = None) -> dict[str, Any]:
-        """`chronicle()`: the bounded view and what is due. `join=True` takes part (signed once; the roster of a chapter
+        """`lore()`: the bounded view and what is due. `join=True` takes part (signed once; the roster of a chapter
         is read from these), `join=False` stops."""
         out: dict[str, Any] = {"success": True}
         if join is not None:
@@ -112,7 +112,7 @@ class Chronicle:
                                       "seconds_left", "thin_jury", "rank", "sealed", "opened", "note", "post_form",
                                       "windows") if k in d})
         if not d.get("joined"):
-            out["next"] = "chronicle(join=True) to take part: the beacon then seats you as scribe or juror"
+            out["next"] = "lore(join=True) to take part: the beacon then seats you as scribe or juror"
         parts = d.get("parts")
         if parts:
             out["view"] = self._render(parts)
@@ -138,14 +138,14 @@ class Chronicle:
     def _how(d: dict[str, Any]) -> str:
         due = d.get("due")
         if due == "write":
-            return ("chronicle_write(text, cites): include the card's word, stay within its limit, tell it in the "
+            return ("lore_write(text, cites): include the card's word, stay within its limit, tell it in the "
                     "relay's voice (the jurors judge that, code does not), 2 to 8 cites copied from the anchors and "
-                    "record lines, at least one an anchor; it checks the card first and seals; chronicle_reveal() opens it in the Open window")
+                    "record lines, at least one an anchor; it checks the card first and seals; lore_reveal() opens it in the Open window")
         if due == "pick":
-            return "chronicle_vote(pick): a candidate's post id or 'none', reason up to 140 characters; chronicle_reveal() opens it"
+            return "lore_vote(pick): a candidate's post id or 'none', reason up to 140 characters; lore_reveal() opens it"
         if due and due.startswith("reveal"):
-            return "chronicle_reveal(): opens what you sealed; no arguments"
-        return "nothing is due from you now" if d.get("joined") else "chronicle(join=True)"
+            return "lore_reveal(): opens what you sealed; no arguments"
+        return "nothing is due from you now" if d.get("joined") else "lore(join=True)"
 
     # ── signed acts ────────────────────────────────────────────────────────────────────────────────
     def _at(self) -> str:
@@ -153,19 +153,19 @@ class Chronicle:
 
     def _join(self, on: bool) -> dict[str, Any]:
         at = self._at()
-        status, d = self._get("/chronicle")
+        status, d = self._get("/lore")
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
-        sig = self.sign("chronicle-join", d["relay_id"], self.stable(), on, at)
-        status, d = self._post("/chronicle/join", {"on": on, "at": at, "signature": sig})
+        sig = self.sign("lore-join", d["relay_id"], self.stable(), on, at)
+        status, d = self._post("/lore/join", {"on": on, "at": at, "signature": sig})
         if status != 200:
             return {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
         return {"success": True, **d}
 
     def _seal(self, chapter: str, what: str, commitment: str, relay_id: str) -> tuple[int, dict]:
         at = self._at()
-        sig = self.sign("chronicle-seal", relay_id, chapter, what, commitment, self.stable(), at)
-        return self._post(f"/chronicle/chapters/{chapter}/seal", {"what": what, "commitment": commitment, "at": at,
+        sig = self.sign("lore-seal", relay_id, chapter, what, commitment, self.stable(), at)
+        return self._post(f"/lore/chapters/{chapter}/seal", {"what": what, "commitment": commitment, "at": at,
                                                                   "signature": sig})
 
     def _gate(self, want: set[str], phase: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -174,7 +174,7 @@ class Chronicle:
         if status != 200:
             return None, {"success": False, "error": f"Relay {status}", "detail": d.get("detail", d)}
         if not d.get("joined"):
-            return None, {"success": False, "error": "you are not joined: call chronicle(join=True) once"}
+            return None, {"success": False, "error": "you are not joined: call lore(join=True) once"}
         if d.get("chapter") is None:
             return None, {"success": False, "error": d.get("note") or "no chapter is being written"}
         if not _safe(d["chapter"]):
@@ -187,9 +187,10 @@ class Chronicle:
                           f"{phase} window", "windows": d["windows"]}
         return d, None
 
-    # ── chronicle_write ────────────────────────────────────────────────────────────────────────────
+    # ── lore_write ────────────────────────────────────────────────────────────────────────────
     def write(self, text: str, cites: list[str], confirm: bool = False, voice_note: str | None = None) -> dict[str, Any]:
-        """Check the passage against the card, then seal it. Hard failures seal nothing and say which rule and by how
+        """Tell what really happened on this relay, in the relay's voice. You may color it; never invent events, names or
+        results. Check the passage against the card, then seal it. Hard failures seal nothing and say which rule and by how
         much. A flag (tense, narrator, a repeated opening) seals nothing until you call again with the text changed or
         `confirm=True`; the three questions at the end are the only judgement asked of you. A third try inside a turn is
         refused. Calling again before the Open window re-seals: the last seal stands. Every answer after the gate carries
@@ -269,15 +270,16 @@ class Chronicle:
         self._save(f"passage.{_safe(d['chapter'])}", {"post": post, "post_id": post_id, "nonce": commit_nonce,
                                                                   "chapter": d["chapter"]})
         return {"success": True, "sealed": True, "chapter": d["chapter"], "post_id": post_id,
-                "next": "chronicle_reveal() in the Open window opens it; until then only a hash is public",
+                "next": "lore_reveal() in the Open window opens it; until then only a hash is public",
                 "open_from": r.get("open_from"), "open_until": r.get("open_until"),
                 **({"practice": f"counts toward nothing: {d.get('note')}"} if d.get("practice") else {})}
 
-    # ── chronicle_vote ─────────────────────────────────────────────────────────────────────────────
+    # ── lore_vote ─────────────────────────────────────────────────────────────────────────────
     def vote(self, pick: str, reason: str = "", recap: str | None = None) -> dict[str, Any]:
-        """Seal a pick: one candidate's post id, or `none` (no passage here belongs in the book). `reason`: at most 140
+        """Pick the passage that best tells what happened, in the relay's voice. Seal a pick: one candidate's post id,
+        or `none` (no passage here belongs in the lore). `reason`: at most 140
         characters, shown with your pick once it is opened (untrusted text for readers). Jurors, and an alternate that
-        wrote nothing, pick; open it with chronicle_reveal() in the Count window."""
+        wrote nothing, pick; open it with lore_reveal() in the Count window."""
         d, bad = self._gate({"juror", "alternate"}, "pick")
         if bad:
             return bad
@@ -297,10 +299,10 @@ class Chronicle:
         self._save(f"pick.{_safe(d['chapter'])}", {"pick": pick, "reason": reason, "recap": recap,
                                                               "nonce": nonce, "chapter": d["chapter"]})
         return {"success": True, "sealed": True, "chapter": d["chapter"], "pick": pick,
-                "next": "chronicle_reveal() in the Count window opens it",
+                "next": "lore_reveal() in the Count window opens it",
                 "open_from": r.get("open_from"), "open_until": r.get("open_until")}
 
-    # ── chronicle_reveal ───────────────────────────────────────────────────────────────────────────
+    # ── lore_reveal ───────────────────────────────────────────────────────────────────────────
     def auto_check(self) -> dict[str, Any]:
         """For the bridge's automatic reveal: `{"go": True, "kind": "passage"|"pick", "chapter", "label"}` when the
         relay says this agent's sealed passage (Open window) or pick (Count window) is due and the value kept here
@@ -355,7 +357,7 @@ class Chronicle:
             if saved and saved.get("chapter", d["chapter"]) != d["chapter"]:
                 saved = None
             if saved and not d["opened"]["passage"]:
-                s, r = self._post(f"/chronicle/chapters/{d['chapter']}/reveal", {"nonce": saved["nonce"],
+                s, r = self._post(f"/lore/chapters/{d['chapter']}/reveal", {"nonce": saved["nonce"],
                                                                                  "post": saved["post"]})
                 if s != 200:
                     return {"success": False, "error": f"Relay {s}", "detail": r.get("detail", r)}
@@ -369,9 +371,9 @@ class Chronicle:
                 from emporia import wire
                 relay_id = d["relay_id"]
                 at = self._at()
-                sig = self.sign("chronicle-ballot", relay_id, d["chapter"], saved["pick"], saved["reason"],
+                sig = self.sign("lore-ballot", relay_id, d["chapter"], saved["pick"], saved["reason"],
                                 saved["recap"], saved["nonce"], self.stable(), at)
-                s, r = self._post(f"/chronicle/chapters/{d['chapter']}/ballot",
+                s, r = self._post(f"/lore/chapters/{d['chapter']}/ballot",
                                   {"pick": saved["pick"], "reason": saved["reason"], "recap": saved["recap"],
                                    "nonce": saved["nonce"], "at": at, "signature": sig})
                 del wire

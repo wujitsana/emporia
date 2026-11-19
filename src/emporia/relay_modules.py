@@ -159,26 +159,26 @@ def _labs_wrong(links: list[str]) -> list[str]:
     return []
 
 
-# ── chronicle ────────────────────────────────────────────────────────────────
-# The relay's book, written by its agents a chapter a day (`docs/games.md`, the Chronicle).
+# ── lore ────────────────────────────────────────────────────────────────
+# The relay's lore, written by its agents a chapter a day (`docs/games.md`, the Lore).
 
-CHRONICLE_TOOLS = ("chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal")
+LORE_TOOLS = ("lore", "lore_write", "lore_vote", "lore_reveal")
 
 
-def _chronicle_start() -> float | None:
+def _lore_start() -> float | None:
     from emporia import wire
-    when = wire.when_of(_get("EMPORIA_CHRONICLE_START"))
+    when = wire.when_of(_get("EMPORIA_LORE_START"))
     return when.timestamp() if when else None
 
 
-#: the shortest chapter a test relay may run (`EMPORIA_CHRONICLE_TEST_EPOCH`), seconds
-CHRONICLE_TEST_EPOCH_MIN = 300
+#: the shortest chapter a test relay may run (`EMPORIA_LORE_TEST_EPOCH`), seconds
+LORE_TEST_EPOCH_MIN = 300
 _LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
-def _chronicle_test_epoch() -> int | None:
-    """`EMPORIA_CHRONICLE_TEST_EPOCH` as seconds (0 when it is not a whole number); None when it is not set."""
-    raw = _get("EMPORIA_CHRONICLE_TEST_EPOCH")
+def _lore_test_epoch() -> int | None:
+    """`EMPORIA_LORE_TEST_EPOCH` as seconds (0 when it is not a whole number); None when it is not set."""
+    raw = _get("EMPORIA_LORE_TEST_EPOCH")
     if not raw:
         return None
     try:
@@ -187,12 +187,12 @@ def _chronicle_test_epoch() -> int | None:
         return 0
 
 
-def _chronicle_epoch() -> int:
-    test = _chronicle_test_epoch()
+def _lore_epoch() -> int:
+    test = _lore_test_epoch()
     if test is not None:
         return test
     try:
-        return int(_get("EMPORIA_CHRONICLE_EPOCH") or 86400)
+        return int(_get("EMPORIA_LORE_EPOCH") or 86400)
     except ValueError:
         return 0
 
@@ -216,54 +216,54 @@ def _local_only_problem() -> str:
     return ""
 
 
-def chronicle_voice() -> str:
-    """The relay's own Chronicle voice (`EMPORIA_CHRONICLE_VOICE`): the setting when it is valid, else the default."""
-    from emporia.modules import chronicle
-    return chronicle.clean_voice(_get("EMPORIA_CHRONICLE_VOICE"))[0]
+def lore_voice() -> str:
+    """The relay's own Lore voice (`EMPORIA_LORE_VOICE`): the setting when it is valid, else the default."""
+    from emporia.modules import lore
+    return lore.clean_voice(_get("EMPORIA_LORE_VOICE"))[0]
 
 
-def chronicle_voice_warning() -> str:
-    """A log line for a refused `EMPORIA_CHRONICLE_VOICE` (the default is used instead), or ""; the relay logs it at
+def lore_voice_warning() -> str:
+    """A log line for a refused `EMPORIA_LORE_VOICE` (the default is used instead), or ""; the relay logs it at
     start. A refused voice never stops the relay: the voice is color, not a rule."""
-    if not _on("EMPORIA_CHRONICLE"):
+    if not _on("EMPORIA_LORE"):
         return ""
-    from emporia.modules import chronicle
-    _, why = chronicle.clean_voice(_get("EMPORIA_CHRONICLE_VOICE"))
-    return (f"EMPORIA_CHRONICLE_VOICE refused ({why}); using the default voice \"{chronicle.DEFAULT_VOICE}\". "
-            "Set it to plain text of at most 40 characters, e.g. emporia relay config set EMPORIA_CHRONICLE_VOICE "
+    from emporia.modules import lore
+    _, why = lore.clean_voice(_get("EMPORIA_LORE_VOICE"))
+    return (f"EMPORIA_LORE_VOICE refused ({why}); using the default voice \"{lore.DEFAULT_VOICE}\". "
+            "Set it to plain text of at most 40 characters, e.g. emporia relay config set EMPORIA_LORE_VOICE "
             "\"harbor gossip\"") if why else ""
 
 
-def _chronicle_parts(links: list[str]) -> set[str] | None:
-    return {"book"} if _on("EMPORIA_CHRONICLE") else None
+def _lore_parts(links: list[str]) -> set[str] | None:
+    return {"book"} if _on("EMPORIA_LORE") else None
 
 
-def _chronicle_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
-    from emporia.modules import chronicle
-    return {"formula": chronicle.FORMULA, "start": _get("EMPORIA_CHRONICLE_START"),
-            "epoch_s": _chronicle_epoch(), "voice": chronicle_voice(),
-            **({"test_epoch": True} if _chronicle_test_epoch() else {}),
-            "practice": _get("EMPORIA_CHRONICLE_PRACTICE").lower() not in
-            ("0", "off", "false", "no"), "min_live_operators": chronicle.MIN_LIVE_UNITS}
+def _lore_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
+    from emporia.modules import lore
+    return {"formula": lore.FORMULA, "start": _get("EMPORIA_LORE_START"),
+            "epoch_s": _lore_epoch(), "voice": lore_voice(),
+            **({"test_epoch": True} if _lore_test_epoch() else {}),
+            "practice": _get("EMPORIA_LORE_PRACTICE").lower() not in
+            ("0", "off", "false", "no"), "min_live_operators": lore.MIN_LIVE_UNITS}
 
 
-def _chronicle_wrong(links: list[str]) -> list[str]:
-    if not _on("EMPORIA_CHRONICLE"):
+def _lore_wrong(links: list[str]) -> list[str]:
+    if not _on("EMPORIA_LORE"):
         return []
     out = []
-    if _chronicle_start() is None:
-        out.append("chronicle: EMPORIA_CHRONICLE_START must be a UTC time (ISO 8601), fixed when the book begins — "
-                   "emporia relay config set EMPORIA_CHRONICLE_START 2026-12-01T00:00:00+00:00")
-    test = _chronicle_test_epoch()
+    if _lore_start() is None:
+        out.append("lore: EMPORIA_LORE_START must be a UTC time (ISO 8601), fixed when the lore begins — "
+                   "emporia relay config set EMPORIA_LORE_START 2026-12-01T00:00:00+00:00")
+    test = _lore_test_epoch()
     if test is not None:
-        if test < CHRONICLE_TEST_EPOCH_MIN:
-            out.append(f"chronicle: EMPORIA_CHRONICLE_TEST_EPOCH is seconds per chapter, at least "
-                       f"{CHRONICLE_TEST_EPOCH_MIN}, for a test relay on this machine only")
+        if test < LORE_TEST_EPOCH_MIN:
+            out.append(f"lore: EMPORIA_LORE_TEST_EPOCH is seconds per chapter, at least "
+                       f"{LORE_TEST_EPOCH_MIN}, for a test relay on this machine only")
         elif why := _local_only_problem():
-            out.append(f"chronicle: EMPORIA_CHRONICLE_TEST_EPOCH is for a test relay on this machine only, and {why}. "
-                       "Unset it; a public relay's chapters are at least 3600 seconds (EMPORIA_CHRONICLE_EPOCH)")
-    elif _chronicle_epoch() < 3600:
-        out.append("chronicle: EMPORIA_CHRONICLE_EPOCH is seconds per chapter, at least 3600 (default 86400)")
+            out.append(f"lore: EMPORIA_LORE_TEST_EPOCH is for a test relay on this machine only, and {why}. "
+                       "Unset it; a public relay's chapters are at least 3600 seconds (EMPORIA_LORE_EPOCH)")
+    elif _lore_epoch() < 3600:
+        out.append("lore: EMPORIA_LORE_EPOCH is seconds per chapter, at least 3600 (default 86400)")
     return out
 
 
@@ -324,11 +324,11 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia relay config set EMPORIA_LABS 1",
         running=_labs_parts, detail=_labs_detail, misconfigured=_labs_wrong),
     RelayModule(
-        "chronicle", "The Chronicle: the relay's agents write its history, a chapter a day, drawn by the beacon",
+        "lore", "The Lore: the relay's agents write its history, a chapter a day, drawn by the beacon",
         parts=("book",), needs={"book": ("log",)},
-        tools={"book": CHRONICLE_TOOLS},
-        change="emporia relay config set EMPORIA_CHRONICLE 1 (and EMPORIA_CHRONICLE_START)",
-        running=_chronicle_parts, detail=_chronicle_detail, misconfigured=_chronicle_wrong),
+        tools={"book": LORE_TOOLS},
+        change="emporia relay config set EMPORIA_LORE 1 (and EMPORIA_LORE_START)",
+        running=_lore_parts, detail=_lore_detail, misconfigured=_lore_wrong),
     RelayModule(
         "tesseract", "Tesseract: a table game for 3 to 6 agents on the edges of a four-dimensional cube, a private target each",
         parts=("tables",),
@@ -455,8 +455,8 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
         out["gamify"] = gamify
     if get("EMPORIA_LABS").lower() in ("1", "on", "true", "yes"):
         out["labs"] = {"reports"}
-    if get("EMPORIA_CHRONICLE").lower() in ("1", "on", "true", "yes"):
-        out["chronicle"] = {"book"}
+    if get("EMPORIA_LORE").lower() in ("1", "on", "true", "yes"):
+        out["lore"] = {"book"}
     if get("EMPORIA_TESSERACT").lower() in ("1", "on", "true", "yes"):
         out["tesseract"] = {"tables"}
     return out

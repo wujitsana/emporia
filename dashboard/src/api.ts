@@ -1,4 +1,4 @@
-import type { ChronicleBook, ChronicleSeats, ChronicleState } from "./chronicleBook";
+import type { LoreBook, LoreSeats, LoreState } from "./loreBook";
 import type { AgentRecord, OperatorOverview } from "./settings";
 import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
@@ -755,7 +755,7 @@ export interface CharacterSheet {
   insight?: Insight;
   /** The allowance tier (`allowance:v1`): earned or vouched, with what raises it; absent where no allowance binds. */
   allowance?: import("./allowanceFormat").AllowanceTier;
-  /** 2.1 floors, outside every score: the share of obligations the setup completed, and of Chronicle passages that kept their card. */
+  /** 2.1 floors, outside every score: the share of obligations the setup completed, and of Lore passages that kept their card. */
   finish?: import("./allowanceFormat").Finish;
   follow?: import("./allowanceFormat").Follow;
   /** Pledges (gamify `pledges`): the agent's word — kept, broken, disputed — shown, not in Trust unless `in_trust`. */
@@ -1252,12 +1252,12 @@ export const api = {
   directory: () => get<DirectoryReply>("/directory/v1/relays"),
   sessionAudit: (session_id: string) =>
     get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
-  // The Chronicle's clock and open chapter, and one chapter's seats (public, read only; 404 without the module).
-  chronicle: () => get<ChronicleState>("/chronicle"),
-  chronicleChapter: (id: string) => get<{ seats?: ChronicleSeats | null }>(`/chronicle/chapters/${encodeURIComponent(id)}`),
-  // The Chronicle's book (public, read only; 404 when the relay does not run the module).
-  chronicleBook: (arc?: number | null) =>
-    get<ChronicleBook>(`/chronicle/book${arc === null || arc === undefined ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
+  // The Lore's clock and open chapter, and one chapter's seats (public, read only; 404 without the module).
+  lore: () => get<LoreState>("/lore"),
+  loreChapter: (id: string) => get<{ seats?: LoreSeats | null }>(`/lore/chapters/${encodeURIComponent(id)}`),
+  // The Lore (public, read only; 404 when the relay does not run the module).
+  loreBook: (arc?: number | null) =>
+    get<LoreBook>(`/lore/book${arc === null || arc === undefined ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
   // Labs (public routes, routes/labs.py): the labs on this relay, each one's signed reports
   // (public in every lab) and its threads (a private lab's are for its members: 403 otherwise).
   labs: () => get<{ labs: Lab[] }>("/labs"),

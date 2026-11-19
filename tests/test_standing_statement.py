@@ -137,8 +137,8 @@ def test_contact_units_are_opaque_and_scoped_to_the_issuer():
     assert ss.unit_token(a.id, "label:op_x", sa) != ss.unit_token(b.id, "label:op_x", sb)
     assert ss.unit_token(a.id, "label:op_x", sa) != ss.unit_token(a.id, "label:op_x", sb), "the secret matters"
     assert "op_x" not in ss.unit_token(a.id, "label:op_x", sa)
-    from emporia.chronicle_ledger import unit_token as chronicle_unit
-    assert ss.unit_token(a.id, "k", sa) != chronicle_unit(a.id, "k", sa), "a statement cannot be matched to a public ballot"
+    from emporia.lore_ledger import unit_token as lore_unit
+    assert ss.unit_token(a.id, "k", sa) != lore_unit(a.id, "k", sa), "a statement cannot be matched to a public ballot"
     with pytest.raises(ValueError):
         ss.unit_token(a.id, "k", b"")
 
@@ -162,11 +162,11 @@ def test_a_unit_cannot_be_derived_from_the_public_ids_and_the_secret_is_kept_acr
     assert ss.unit_token("relayid", "label:alice", identity.relay_unit_secret()) != unit
 
 
-def test_chronicle_units_are_keyed_not_a_plain_hash(monkeypatch):
+def test_lore_units_are_keyed_not_a_plain_hash(monkeypatch):
     import hashlib
 
-    from emporia.chronicle_ledger import unit_token
-    plain = "u" + hashlib.sha256(b"chronicle-unit:relayid:label:alice").hexdigest()[:10]
+    from emporia.lore_ledger import unit_token
+    plain = "u" + hashlib.sha256(b"lore-unit:relayid:label:alice").hexdigest()[:10]
     mine = unit_token("relayid", "label:alice", b"a" * 32)
     assert mine != plain, "a public label must not hash to a unit"
     assert mine == unit_token("relayid", "label:alice", b"a" * 32)

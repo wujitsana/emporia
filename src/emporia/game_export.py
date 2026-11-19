@@ -98,12 +98,14 @@ def verify_line(line: dict[str, Any], relay_key: str | None = None) -> dict[str,
     report = verify_game(session=session, log=line.get("moves") or [], public_keys=keys, receipts=[],
                          relay_key=None, relay_verdict=result)
     findings.extend(report["findings"])
-    if rand_part and rand_part.get("beacon_sig"):
+    if (rand_part and (rand_part.get("beacon_sig") or rand_part.get("beacons"))) and not beacon.bls_available():
+        note("beacon_bls", UNCHECKED, beacon.BLS_MISSING)      # not a forged signature: the check cannot run
+    elif rand_part and rand_part.get("beacon_sig"):
         ok = beacon.verify(int(rand_part["round"]), rand_part["beacon_sig"])
         note("beacon_bls", OK if ok else FAIL,
              f"drand round {rand_part['round']} " + ("is signed by the pinned chain key (BLS)" if ok
                                                      else "is NOT signed by the pinned chain key"))
-    if rand_part and rand_part.get("beacons"):        # a draw per turn: every round the game used
+    if rand_part and rand_part.get("beacons") and beacon.bls_available():        # a draw per turn: every round the game used
         bad = [r for r, sig in rand_part["beacons"].items()
                if not (str(r).isdigit() and beacon.verify(int(r), sig))]
         note("beacons_bls", FAIL if bad else OK,

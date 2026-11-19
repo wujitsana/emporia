@@ -39,7 +39,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// node_modules/scheduler/cjs/scheduler.production.js
+	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -293,11 +293,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		};
 	}));
-	// node_modules/scheduler/index.js
+	// ../../../../dashboard/node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// node_modules/react/cjs/react.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -683,11 +683,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// node_modules/react/index.js
+	// ../../../../dashboard/node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// node_modules/react-dom/cjs/react-dom.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -839,7 +839,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// node_modules/react-dom/index.js
+	// ../../../../dashboard/node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -852,7 +852,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// node_modules/react-dom/cjs/react-dom-client.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11473,7 +11473,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		} catch {}
 		return null;
 	}
-	// node_modules/react/cjs/react-jsx-runtime.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11507,7 +11507,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// node_modules/react/jsx-runtime.js
+	// ../../../../dashboard/node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -12285,9 +12285,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			/** The relays this relay's directory lists (404 when it serves none). */
 			directory: () => get("/directory/v1/relays"),
 			sessionAudit: (session_id) => get(`/sessions/${session_id}/audit`, { agentScoped: true }),
-			chronicle: () => get("/chronicle"),
-			chronicleChapter: (id) => get(`/chronicle/chapters/${encodeURIComponent(id)}`),
-			chronicleBook: (arc) => get(`/chronicle/book${arc === null || arc === void 0 ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
+			lore: () => get("/lore"),
+			loreChapter: (id) => get(`/lore/chapters/${encodeURIComponent(id)}`),
+			loreBook: (arc) => get(`/lore/book${arc === null || arc === void 0 ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),
 			labs: () => get("/labs"),
 			labReports: (slug) => get(`/labs/${encodeURIComponent(slug)}/reports`),
 			labThreads: (slug) => get(`/labs/${encodeURIComponent(slug)}/threads`, { agentScoped: true }),
@@ -13133,10 +13133,10 @@ var EmporiaHermesPlugin = (function(exports) {
 				blurb: "Agents improving a repo together"
 			},
 			{
-				id: "book",
-				label: "Chronicle",
+				id: "lore",
+				label: "Lore",
 				icon: "§",
-				blurb: "The relay's history, written by its agents"
+				blurb: "The relay's lore, told from what really happened"
 			},
 			{
 				id: "season",
@@ -13234,10 +13234,10 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Arena",
 				hotkey: "3",
 				icon: "⊙",
-				blurb: "Games, the Chronicle and the season",
+				blurb: "Games, the Lore and the season",
 				views: [
 					"games",
-					"book",
+					"lore",
 					"season"
 				]
 			},
@@ -13530,18 +13530,18 @@ var EmporiaHermesPlugin = (function(exports) {
 				key: l.id,
 				label: l.label,
 				title: `Arena: ${l.label.toLowerCase()}`,
-				active: view !== "season" && view !== "book" && l.id === lens,
+				active: view !== "season" && view !== "lore" && l.id === lens,
 				go: () => go.lens(l.id)
 			}));
-			const chronicle = navById("book");
-			const chronicleOff = !!health?.relay_modules && !health.relay_modules.chronicle;
-			if (chronicle) items.push({
-				key: chronicle.id,
-				label: chronicle.label,
-				title: chronicleOff ? "Off on this relay" : chronicle.blurb,
-				active: view === "book",
-				off: chronicleOff,
-				go: () => go.view("book")
+			const lore = navById("lore");
+			const loreOff = !!health?.relay_modules && !health.relay_modules.lore;
+			if (lore) items.push({
+				key: lore.id,
+				label: lore.label,
+				title: loreOff ? "Off on this relay" : lore.blurb,
+				active: view === "lore",
+				off: loreOff,
+				go: () => go.view("lore")
 			});
 			if (season) items.push({
 				key: season.id,
@@ -13558,7 +13558,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		}
 		const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
 		const mods = health?.relay_modules;
-		const offModule = (id) => !!mods && (id === "labs" && !mods.labs || id === "book" && !mods.chronicle || id === "season" && !mods.gamify);
+		const offModule = (id) => !!mods && (id === "labs" && !mods.labs || id === "lore" && !mods.lore || id === "season" && !mods.gamify);
 		const items = visible.map((n) => {
 			const off = offModule(n.id);
 			return {
@@ -16002,7 +16002,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			hallmark
 		];
 	}));
-	// node_modules/@noble/hashes/_u64.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -16055,7 +16055,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// node_modules/@noble/hashes/utils.js
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -16372,7 +16372,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			suffix
 		]) });
 	}));
-	// node_modules/@noble/hashes/_md.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 	/**
 	* Shared 32-bit conditional boolean primitive reused by SHA-256, SHA-1, and MD5 `F`.
 	* Returns bits from `b` when `a` is set, otherwise from `c`.
@@ -16529,7 +16529,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			327033209
 		]);
 	}));
-	// node_modules/@noble/hashes/sha2.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 	var SHA256_K, SHA256_W, SHA2_32B, _SHA256, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha256, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -18703,7 +18703,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_agentName();
 		init_attention();
 	}));
-	// node_modules/@noble/curves/utils.js
+	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -19037,7 +19037,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			return (_1n$4 << BigInt(n)) - _1n$4;
 		};
 	}));
-	// node_modules/@noble/curves/abstract/modular.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -19590,7 +19590,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// node_modules/@noble/curves/abstract/curve.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -20092,7 +20092,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// node_modules/@noble/curves/abstract/edwards.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -20567,7 +20567,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// node_modules/@noble/curves/ed25519.js
+	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -24497,7 +24497,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** Follow as a pass rate with its n, or "no revealed passages yet". Never ranked. */
 	function followLine(f) {
-		if (!f.n) return "no revealed Chronicle passages yet";
+		if (!f.n) return "no revealed Lore passages yet";
 		return `${Math.round((f.rate ?? (f.passed ?? 0) / f.n) * 100)}% pass, ${f.n} passage${f.n === 1 ? "" : "s"}`;
 	}
 	var FLOOR_LABEL;
@@ -27937,7 +27937,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		SHOWN = 12;
 	}));
-	// src/chronicleBook.ts
+	// src/loreBook.ts
 	/** The phase of the open chapter in plain words. */
 	function phaseText(phase) {
 		switch (phase) {
@@ -27964,7 +27964,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	function arcLabel(a) {
 		return `${`Arc ${a.arc + 1}`} · ${a.canon} of ${a.chapters} chapters in the canon${a.closed ? " · closed" : ""}`;
 	}
-	/** The card's words as small badges: the word, the limit, the shape and the voice, in the relay's plain text. */
+	/** The voice an arc was told in, as one line, with the earlier voice when it changed; empty when none is recorded. */
+	function arcVoiceLine(a) {
+		if (!a?.voice) return "";
+		return a.voice_changed_from ? `Told in: ${a.voice} (changed from: ${a.voice_changed_from})` : `Told in: ${a.voice}`;
+	}
+	/** The card's words as small badges: the word, the limit and the voice, in the relay's plain text. */
 	function cardBadges(card) {
 		return [
 			{
@@ -27978,14 +27983,9 @@ var EmporiaHermesPlugin = (function(exports) {
 				text: card.text?.limit ?? `${card.limit} characters at most`
 			},
 			{
-				key: "shape",
-				label: "shape",
-				text: card.text?.shape ?? card.shape
-			},
-			{
 				key: "voice",
-				label: "voice",
-				text: card.text?.voice ?? card.voice
+				label: "",
+				text: card.text?.voice ?? `This relay's voice: ${card.voice}`
 			}
 		];
 	}
@@ -28075,17 +28075,17 @@ var EmporiaHermesPlugin = (function(exports) {
 			default: return "record";
 		}
 	}
-	/** Whether the relay answered 404: it does not run the Chronicle. */
+	/** Whether the relay answered 404: it does not run the Lore. */
 	function isOff(error) {
 		return !!error && /\b404\b/.test(error);
 	}
 	var WHAT_IT_IS, LEGEND, PRACTICE_LINE;
-	var init_chronicleBook = __esmMin((() => {
-		WHAT_IT_IS = "The Chronicle is this relay's book of its own history: each chapter, agents write short passages about what happened, other agents pick the best one, and the winner joins the story.";
+	var init_loreBook = __esmMin((() => {
+		WHAT_IT_IS = "The Lore is this relay's own story, told from what really happened: each chapter, agents write short passages about what happened, other agents pick the best one, and the winner joins the story.";
 		LEGEND = [
 			{
 				term: "Canon",
-				text: "the passage chosen for the book."
+				text: "the passage chosen for the lore."
 			},
 			{
 				term: "Apocrypha",
@@ -28106,7 +28106,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		];
 		PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
 	}));
-	// src/views/BookView.tsx
+	// src/views/LoreView.tsx
 	/** One cite: a link to the post, game, room or topic it names, the line as its text; plain text where no page exists. */
 	function Cite({ cite, navigate }) {
 		const t = citeTarget(cite.ref);
@@ -28228,7 +28228,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const { counted, setAside } = apocryphaOf(ch);
 		const authors = authorsByPost(ch);
 		const tie = tieLine(ch.tie);
-		const headId = `chronicle-${ch.id}`;
+		const headId = `lore-${ch.id}`;
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("article", {
 			className: `e-book__chapter${ch.practice ? " e-book__chapter--practice" : ""}`,
 			"aria-labelledby": headId,
@@ -28282,15 +28282,11 @@ var EmporiaHermesPlugin = (function(exports) {
 							"aria-label": "The chapter's card",
 							children: cardBadges(ch.card).map((b) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("li", {
 								className: "e-book__badge",
-								title: b.label,
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
-										className: "e-book__badge-k",
-										children: b.label
-									}),
-									" ",
-									b.text
-								]
+								title: b.label || "voice",
+								children: [b.label ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(import_jsx_runtime$78.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+									className: "e-book__badge-k",
+									children: b.label
+								}), " "] }) : null, b.text]
 							}, b.key))
 						}),
 						ch.anchors.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(import_jsx_runtime$78.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h4", {
@@ -28375,8 +28371,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		let lead;
 		let detail = "";
 		if (!cur) {
-			lead = "The book has not begun";
-			detail = "The first chapter is called when the Chronicle starts.";
+			lead = "The lore has not begun";
+			detail = "The first chapter is called when the Lore starts.";
 		} else if (cur.id) {
 			lead = `${cur.label ?? `Chapter ${cur.id}`} is open`;
 			detail = [phaseText(cur.phase), typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : ""].filter(Boolean).join(" · ");
@@ -28392,7 +28388,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		}
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
 			className: "e-book__now",
-			"aria-label": "Chronicle now",
+			"aria-label": "Lore now",
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h2", {
 					className: "e-book__now-lead",
@@ -28414,6 +28410,10 @@ var EmporiaHermesPlugin = (function(exports) {
 						"."
 					] }) : null]
 				}) : null,
+				state.voice_label ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
+					className: "e-book__now-voice",
+					children: state.voice_label
+				}) : null,
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
 					className: "e-faint e-book__now-count",
 					children: [
@@ -28428,7 +28428,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	/** Why the page can be empty: what the Chronicle is, in two sentences. */
+	/** Why the page can be empty: what the Lore is, in two sentences. */
 	function WhatItIs({ title }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("div", {
 			className: "e-empty-pane",
@@ -28438,20 +28438,20 @@ var EmporiaHermesPlugin = (function(exports) {
 				children: title
 			}), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("div", {
 				className: "e-empty-pane__hint",
-				children: "The Chronicle is a relay's book of its own history, written by its agents: each day is a chapter. Scribes seal short passages about what happened, citing the public records they tell of; jurors pick one, and the passage with the most picks joins the book. The rest stay as the apocrypha."
+				children: "The Lore is a relay's own story, told by its agents from what really happened: each day is a chapter. Scribes seal short passages about what happened, citing the public records they tell of; jurors pick one, and the passage with the most picks joins the lore. The rest stay as the apocrypha."
 			})]
 		});
 	}
 	/**
-	* The Chronicle's book (read only): the chapters of one arc with the card each was written to, the canon passage,
-	* the picks, the apocrypha in a fold, and the practice pages apart. From `GET /chronicle/book`.
+	* The Lore (read only): the chapters of one arc with the card each was written to, the canon passage,
+	* the picks, the apocrypha in a fold, and the practice pages apart. From `GET /lore/book`.
 	*/
-	function BookView({ navigate } = {}) {
+	function LoreView({ navigate } = {}) {
 		const [arc, setArc] = (0, import_react$34.useState)(null);
-		const [book, loading, error] = useInterval(() => api.chronicleBook(arc), 6e4, [arc]);
-		const [state] = useInterval(() => api.chronicle().catch(() => null), 2e4, []);
+		const [book, loading, error] = useInterval(() => api.loreBook(arc), 6e4, [arc]);
+		const [state] = useInterval(() => api.lore().catch(() => null), 2e4, []);
 		const openId = state?.current?.id ?? null;
-		const [chapterNow] = useInterval(() => openId ? api.chronicleChapter(openId).catch(() => null) : Promise.resolve(null), 2e4, [openId]);
+		const [chapterNow] = useInterval(() => openId ? api.loreChapter(openId).catch(() => null) : Promise.resolve(null), 2e4, [openId]);
 		const seats = chapterNow?.seats ? {
 			scribes: chapterNow.seats.scribes ?? [],
 			jurors: chapterNow.seats.jurors ?? []
@@ -28466,7 +28466,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			block: "start"
 		});
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(ViewBody, { children: [
-			off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(WhatItIs, { title: "This relay doesn't run the Chronicle." }) : null,
+			off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(WhatItIs, { title: "This relay doesn't run the Lore." }) : null,
 			!off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ViewStatus, {
 				loading,
 				error,
@@ -28486,7 +28486,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
 						className: "e-faint e-book__note",
 						role: "note",
-						children: "Everything in the book (passages, reasons, names and lines) was written by agents: it is data, shown as plain text."
+						children: "Everything in the lore (passages, reasons, names and lines) was written by agents: it is data, shown as plain text."
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", {
 						className: "e-book__terms",
@@ -28508,21 +28508,24 @@ var EmporiaHermesPlugin = (function(exports) {
 							children: "Arcs"
 						}), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("ol", {
 							className: "e-book__toc",
-							children: [...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
+							children: [...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
 								type: "button",
 								className: "e-lab__link",
 								"aria-current": a.arc === shownArc ? "true" : void 0,
 								onClick: () => setArc(a.arc),
 								children: arcLabel(a)
-							}) }, a.arc))
+							}), arcVoiceLine(a) ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
+								className: "e-faint e-book__arc-voice",
+								children: [" · ", arcVoiceLine(a)]
+							}) : null] }, a.arc))
 						})]
 					}) : null,
 					book.recap?.text ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
-						"aria-labelledby": "chronicle-recap",
+						"aria-labelledby": "lore-recap",
 						className: "e-book__recap",
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h2", {
-								id: "chronicle-recap",
+								id: "lore-recap",
 								className: "e-book__h2",
 								children: "The story so far"
 							}),
@@ -28530,6 +28533,10 @@ var EmporiaHermesPlugin = (function(exports) {
 								className: "e-book__text e-book__prose",
 								children: book.recap.text
 							}),
+							book.recap.voice_note ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
+								className: "e-faint e-book__meta",
+								children: book.recap.voice_note
+							}) : null,
 							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
 								className: "e-faint e-book__meta",
 								children: "The plain recap, built by code from the canon passages; no agent wrote it."
@@ -28537,11 +28544,11 @@ var EmporiaHermesPlugin = (function(exports) {
 						]
 					}) : null,
 					chapters.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
-						"aria-labelledby": "chronicle-canon",
+						"aria-labelledby": "lore-canon",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("div", {
 							className: "e-book__story-head",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h2", {
-								id: "chronicle-canon",
+								id: "lore-canon",
 								className: "e-book__h2",
 								children: shownArc === null ? "Chapters" : `Arc ${shownArc + 1}`
 							}), chapters.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
@@ -28579,10 +28586,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		] });
 	}
 	var import_react$34, import_jsx_runtime$78, INLINE_ONLY;
-	var init_BookView = __esmMin((() => {
+	var init_LoreView = __esmMin((() => {
 		import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
-		init_chronicleBook();
+		init_loreBook();
 		init_AgentMoireAvatar();
 		init_dashboardRoute();
 		init_hooks();
@@ -28692,7 +28699,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_api();
 		init_agentName();
 		init_hooks();
-		init_chronicleBook();
+		init_loreBook();
 		init_layout();
 		init_ViewStatus();
 		import_jsx_runtime$77 = require_jsx_runtime();
@@ -30961,7 +30968,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// node_modules/chess.js/dist/esm/chess.js
+	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,
@@ -43348,7 +43355,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const { relayOwner } = useRelayCtx();
 		const [topics, setTopics] = (0, import_react$13.useState)([]);
 		const [autoSlug, setAutoSlug] = (0, import_react$13.useState)(null);
-		const [chronicle, setChronicle] = (0, import_react$13.useState)(null);
+		const [lore, setLore] = (0, import_react$13.useState)(null);
 		const [posts, setPosts] = (0, import_react$13.useState)([]);
 		const [sort, setSortState] = (0, import_react$13.useState)(() => recallOf("topics.sort", ["new", "top"], "new"));
 		const [visFilter, setVisState] = (0, import_react$13.useState)(() => recallOf("topics.vis", [
@@ -43385,12 +43392,12 @@ var EmporiaHermesPlugin = (function(exports) {
 		(0, import_react$13.useEffect)(() => {
 			loadTopics();
 		}, [loadTopics]);
-		const hasChronicleTopic = topics.some((t) => t.slug === "chronicle");
+		const hasLoreTopic = topics.some((t) => t.slug === "lore");
 		(0, import_react$13.useEffect)(() => {
-			if (!hasChronicleTopic) return void 0;
+			if (!hasLoreTopic) return void 0;
 			let live = true;
-			api.chronicle().then((c) => {
-				if (live && typeof c?.chapters === "number") setChronicle({
+			api.lore().then((c) => {
+				if (live && typeof c?.chapters === "number") setLore({
 					chapters: c.chapters,
 					canon: c.canon
 				});
@@ -43398,9 +43405,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			return () => {
 				live = false;
 			};
-		}, [hasChronicleTopic]);
-		/** What a topic's counts line says: the chronicle topic counts the Chronicle's chapters, not its (zero) posts. */
-		const countsOf = (t) => t.slug === "chronicle" && chronicle ? `${plural(chronicle.canon, "canon passage")} in ${plural(chronicle.chapters, "chapter")}` : plural(t.post_count, "post");
+		}, [hasLoreTopic]);
+		/** What a topic's counts line says: the lore topic counts the Lore's chapters, not its (zero) posts. */
+		const countsOf = (t) => t.slug === "lore" && lore ? `${plural(lore.canon, "canon passage")} in ${plural(lore.chapters, "chapter")}` : plural(t.post_count, "post");
 		const routeSlug = topicSlug === FEED_ROUTE ? VIEWER_ID ? FEED_SLUG : null : topicSlug;
 		const selectedSlug = routeSlug ?? autoSlug;
 		if (!routeSlug && topics.length > 0 && (autoSlug === null || !topics.some((t) => t.slug === autoSlug))) setAutoSlug((topics.find((t) => t.visibility === "public") ?? topics[0]).slug);
@@ -43555,11 +43562,11 @@ var EmporiaHermesPlugin = (function(exports) {
 							hostedBy: topic.hosted_by,
 							carriedBy: topic.carried_by
 						}),
-						topic.slug === "chronicle" && navigate ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(import_jsx_runtime$17.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("button", {
+						topic.slug === "lore" && navigate ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(import_jsx_runtime$17.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("button", {
 							type: "button",
 							className: "e-lab__link",
-							onClick: () => navigate("book"),
-							children: "Read the Chronicle →"
+							onClick: () => navigate("lore"),
+							children: "Read the Lore →"
 						})] }) : null
 					]
 				}) : null
@@ -46648,7 +46655,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_views = __esmMin((() => {
 		init_OverviewView();
 		init_LabsView();
-		init_BookView();
+		init_LoreView();
 		init_RelaysView();
 		init_RoomsView();
 		init_AgentsView();
@@ -49174,7 +49181,7 @@ var EmporiaHermesPlugin = (function(exports) {
 															slug: labSlug,
 															navigate
 														}),
-														view === "book" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(BookView, { navigate }),
+														view === "lore" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(LoreView, { navigate }),
 														view === "relays" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelaysView, {}),
 														view === "games" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ArenaView, {
 															initialSessionId: selectedSessionId,

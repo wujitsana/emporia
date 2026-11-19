@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Chronicle T0 report (offline, seeded; not part of the test run).
+"""Lore T0 report (offline, seeded; not part of the test run).
 
-Runs the ten pass criteria of the games plan, section 9 (T0), against the pure core `emporia.modules.chronicle`
+Runs the ten pass criteria of the games plan, section 9 (T0), against the pure core `emporia.modules.lore`
 with scripted writers and voters (not models), and prints a markdown table.
 
-    python scripts/sim_chronicle.py [--criteria 1,2,3,...] [--seed 7] [--seasons 150] [--json out.json]
+    python scripts/sim_lore.py [--criteria 1,2,3,...] [--seed 7] [--seasons 150] [--json out.json]
 
 Criteria 1 to 9 are computed here (9 with the 40+ hand-written fixture passages in `FIXTURES`). Criterion 10 is
-a set of named tests in `tests/test_chronicle.py`; this script only lists them.
+a set of named tests in `tests/test_lore.py`; this script only lists them.
 
 Voting-rule simulation (3 to 7): a season is 60 chapters; an operator has a persistent skill (ops 0 and 1, the
 actors, have none), a passage's quality is skill + N(0,1), a juror perceives quality + N(0,0.8). Seats, the
@@ -28,7 +28,7 @@ import time
 from collections import Counter
 
 from emporia import rand, rand_game
-from emporia.modules import chronicle as C
+from emporia.modules import lore as C
 from emporia.progression import Who, _weight
 
 DAY = 86_400
@@ -59,7 +59,7 @@ _LANT = "lantern"
 
 
 def _card(word: str = _LANT, limit: int = 400) -> C.Card:
-    return C.Card(word, limit, "a plain chronicle of the relay")
+    return C.Card(word, limit, "a plain telling of the relay")
 
 
 #: (name, card, text, cites, the hard rules that must fail: [] means it must pass). Hand-written.
@@ -93,7 +93,7 @@ def run_fixtures() -> dict:
 # ---------------------------------------------------------------- criterion 1: verdict from the records alone
 
 def _truth_seats(units: list[str], scope: str, sig: bytes, mode: str) -> tuple[list, list, list]:
-    """Independent of `chronicle.seat`: the plan's rule written out again."""
+    """Independent of `lore.seat`: the plan's rule written out again."""
     order = sorted(units, key=lambda u: (rand.rand(scope, "seat:" + u, sig), u))
     m = len(order)
     J = max(1, m // 2) if mode == "practice" else m // 2
@@ -170,7 +170,7 @@ def _act(scope, sigs, agent):
 
 
 def _play_and_truth(rng, idx, numbering, mode, roster, window, sigs, call_ts, rec):
-    scope = f"chronicle:r:{numbering['n'] if mode == 'live' else 'pp-' + str(numbering['n'])}"
+    scope = f"lore:r:{numbering['n'] if mode == 'live' else 'pp-' + str(numbering['n'])}"
     w = C.windows(call_ts, DAY)
     by_agent = {m.agent_id: m for m in roster}
     if mode == "live":
@@ -306,7 +306,7 @@ def crit2(draws: int = 10_000, n: int = 8, seed: int = 3) -> dict:
     scribe = Counter()
     both = 0
     for d in range(draws):
-        s = C.seat(units, f"chronicle:r:{d}", fake_sig(seed, d))
+        s = C.seat(units, f"lore:r:{d}", fake_sig(seed, d))
         if set(s.jurors) & set(s.scribes) or set(s.jurors) & set(s.alternates) or set(s.scribes) & set(s.alternates):
             both += 1
         scribe.update(s.scribes)
@@ -332,7 +332,7 @@ def _season(n: int, attack: str, new_w: float, seed: int, sidx: int, chapters: i
         crng = random.Random(f"{seed}:{sidx}:{ch}")
         q = [skill[i] + crng.gauss(0, 1) for i in range(n)]
         noise = [[crng.gauss(0, SIG) for _ in range(n)] for _ in range(n + 2)]       # voter index (labels n, n+1) x candidate
-        scope = f"chronicle:sim:{sidx}:{ch}"
+        scope = f"lore:sim:{sidx}:{ch}"
         s = C.seat(units, scope, fake_sig(seed, sidx, ch))
         S = len(s.scribes)
         order = [u for u in (*s.scribes, *s.alternates) if u.startswith("u")]          # labels write nothing
@@ -406,7 +406,7 @@ def voting(seed: int = 5, seasons: int = 150, sizes=(6, 8, 12, 20)) -> dict:
 
 def crit8() -> dict:
     card = C.Card("parchment", 600, "a sports broadcast")
-    style = {"v": 3, "narrator": "third person; a chronicler who was not there", "tense": "past",
+    style = {"v": 3, "narrator": "third person; a storyteller who was not there", "tense": "past",
              "register": "plain, dry, fond of the relay", "names": {f"id{i}": f"the Keeper of Gate {i}" for i in range(24)},
              "motifs": [f"the motif number {i} of the book" for i in range(6)], "never": ["address the reader"] * 4, "adopted_in": 14}
     sent = "The lantern stood at the gate and the agents argued over the ledger until dawn. "

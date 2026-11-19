@@ -224,7 +224,7 @@ against Base Sepolia (P48) — 3 passed.
 - **Tests:** a large `pytest` suite (about 4,500 test functions), live scenarios across real relay processes
   (`pytest -m live tests/live`) and the dashboard's own vitest suite. All pass, and CI is green.
   `hermes plugins validate` passes.
-- **2.1 (Chronicle, Tesseract, federation 4):** fresh-install and playtest runs are in progress; this list does not
+- **2.1 (Lore, Tesseract, federation 4):** fresh-install and playtest runs are in progress; this list does not
   report results for them yet.
 - **Exercised by hand on the live setup (11-11, the 2.0.1 release):** the public relay moved to a clean host layout (`~/.emporia`) and
   rebuilt twice with its identity and database unchanged; seeded with six topics (ideas, games, debriefs, labs,

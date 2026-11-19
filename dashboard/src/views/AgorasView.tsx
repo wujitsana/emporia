@@ -63,9 +63,9 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
   const { relayOwner } = useRelayCtx();
   const [topics, setTopics] = useState<AgoraTopic[]>([]);
   const [autoSlug, setAutoSlug] = useState<string | null>(null);
-  // The chronicle topic holds passages as replies under a prologue, so its own post count reads 0: the Chronicle's
-  // own counts stand in for it (and link to the Chronicle page). Only read when the topic is listed.
-  const [chronicle, setChronicle] = useState<{ chapters: number; canon: number } | null>(null);
+  // The lore topic holds passages as replies under a prologue, so its own post count reads 0: the Lore's
+  // own counts stand in for it (and link to the Lore page). Only read when the topic is listed.
+  const [lore, setLore] = useState<{ chapters: number; canon: number } | null>(null);
   const [posts, setPosts] = useState<AgoraPost[]>([]);
   const [sort, setSortState] = useState<"new" | "top">(() => recallOf("topics.sort", ["new", "top"] as const, "new"));
   const [visFilter, setVisState] = useState<"" | "public" | "private" | "restricted">(
@@ -102,16 +102,16 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
     loadTopics();
   }, [loadTopics]);
 
-  const hasChronicleTopic = topics.some((t) => t.slug === "chronicle");
+  const hasLoreTopic = topics.some((t) => t.slug === "lore");
   useEffect(() => {
-    if (!hasChronicleTopic) return undefined;
+    if (!hasLoreTopic) return undefined;
     let live = true;
-    api.chronicle().then((c) => { if (live && typeof c?.chapters === "number") setChronicle({ chapters: c.chapters, canon: c.canon }); }).catch(() => undefined);
+    api.lore().then((c) => { if (live && typeof c?.chapters === "number") setLore({ chapters: c.chapters, canon: c.canon }); }).catch(() => undefined);
     return () => { live = false; };
-  }, [hasChronicleTopic]);
-  /** What a topic's counts line says: the chronicle topic counts the Chronicle's chapters, not its (zero) posts. */
-  const countsOf = (t: AgoraTopic) => (t.slug === "chronicle" && chronicle
-    ? `${plural(chronicle.canon, "canon passage")} in ${plural(chronicle.chapters, "chapter")}`
+  }, [hasLoreTopic]);
+  /** What a topic's counts line says: the lore topic counts the Lore's chapters, not its (zero) posts. */
+  const countsOf = (t: AgoraTopic) => (t.slug === "lore" && lore
+    ? `${plural(lore.canon, "canon passage")} in ${plural(lore.chapters, "chapter")}`
     : plural(t.post_count, "post"));
 
   // The route names the topic; with none, the first public one (or the first) is shown.
@@ -221,8 +221,8 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
           {topic.encrypted ? " · sealed" : ""}{" "}
           <GateBadge gate={topic.gate_type} fee={topic.entry_fee_cents} />{" "}
           <SharingLine shared={topic.shared} hostedBy={topic.hosted_by} carriedBy={topic.carried_by} />
-          {topic.slug === "chronicle" && navigate ? (
-            <> <button type="button" className="e-lab__link" onClick={() => navigate("book")}>Read the Chronicle →</button></>
+          {topic.slug === "lore" && navigate ? (
+            <> <button type="button" className="e-lab__link" onClick={() => navigate("lore")}>Read the Lore →</button></>
           ) : null}
         </p>
       ) : null}

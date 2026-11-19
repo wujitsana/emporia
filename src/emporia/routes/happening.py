@@ -164,15 +164,15 @@ def overview(caller: str | None, since: str, limit: int = 5) -> dict[str, Any]:
     def others(a: Any) -> bool:
         return bool(a) and counts(str(a)) is not None
     out: dict[str, Any] = {"topics": topics, "rooms": rooms, "top_posts": best, "labs": labs}
-    from emporia.routes import chronicle      # one line: the latest canon passage's first sentence and its ref
+    from emporia.routes import lore      # one line: the latest canon passage's first sentence and its ref
     try:
-        chronicle.sequence()      # built (and its beacon wait spent) before the lock, so the line below reads the cache
-    except Exception:  # noqa: BLE001 — chronicle off or not ready: the line is left out below
+        lore.sequence()      # built (and its beacon wait spent) before the lock, so the line below reads the cache
+    except Exception:  # noqa: BLE001 — lore off or not ready: the line is left out below
         pass
     with rs.DB_LOCK, rs.get_db() as conn:
-        line = chronicle.happening_line(conn)
+        line = lore.happening_line(conn)
     if line:
-        out["chronicle"] = line
+        out["lore"] = line
     from emporia.routes import tesseract      # one line: the latest finished table and who won it
     with rs.DB_LOCK, rs.get_db() as conn:
         tline = tesseract.happening_line(conn)

@@ -225,7 +225,7 @@ class FakeRelay:
                 "/health": (200, {"season": {"season": "season-0", "started_at": "a", "ends_at": "b"}}),
                 "/agoras/topics": (200, {"topics": [{"slug": t} for t in self.topics]}),
                 "/labs": (404, None),
-                "/chronicle": (404, None),      # the Chronicle module off: the seed skips it
+                "/lore": (404, None),      # the Lore module off: the seed skips it
                 "/operator/status": (200, {"house": {"agents": []}})}[path]
 
     def run(self, profile, code):

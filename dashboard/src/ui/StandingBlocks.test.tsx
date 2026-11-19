@@ -21,7 +21,7 @@ describe("the Finish and Follow block", () => {
   it("hides the Finish rate below 8 obligations and says how many so far", () => {
     render(<FinishFollowBlock finish={hidden} follow={{ n: 0 }} />);
     expect(screen.getByText("3 obligations so far (shown from 8)")).toBeTruthy();
-    expect(screen.getByText("no revealed Chronicle passages yet")).toBeTruthy();
+    expect(screen.getByText("no revealed Lore passages yet")).toBeTruthy();
   });
 
   it("shows Finish with the bridge split and what was missed, and Follow as a pass rate with n", () => {

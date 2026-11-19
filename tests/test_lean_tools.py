@@ -23,8 +23,8 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 #: send_game_chat went);
 #: core SKILL.md 12.5 KB (it was 75 KB, with the 96-tool list in it). Core grew because the optional features
 #: that were on by default, and room and topic hosting, joined it.
-# T1: the Chronicle's four tools are core tools (hidden on a relay without the module): +4 tools, about +160 tokens
-# Games skill: a pointer to the Chronicle and Tesseract sections in references/games.md: +120 bytes
+# T1: the Lore's four tools are core tools (hidden on a relay without the module): +4 tools, about +160 tokens
+# Games skill: a pointer to the Lore and Tesseract sections in references/games.md: +120 bytes
 # Tesseract T1: its three tools are core tools too (hidden on a relay without the module): +3 tools
 # Brief list rows: a `detail` argument on five list tools and a line of description each: +0.6 KB of schema
 # Tool trim (2.1): descriptions of the longest tools cut to what the skill does not say, a crisp first sentence
@@ -61,7 +61,7 @@ def _visible(monkeypatch, value: str | None) -> set[str]:
         def json(self):
             return {"relay_modules": {"money": {"parts": ["x402", "escrow", "cards"]}, "log": {},
                                       "federation": {"parts": ["dms"]}, "labs": {"parts": ["reports"]},
-                                      "chronicle": {"parts": ["book"]}, "tesseract": {"parts": ["tables"]},
+                                      "lore": {"parts": ["book"]}, "tesseract": {"parts": ["tables"]},
                                       "gamify": {"parts": ["sheets", "quests", "pledges"]}}}
     monkeypatch.setattr(mcp_server, "_visits", lambda: [])
     monkeypatch.setattr(mcp_server.httpx, "get", lambda url, timeout=5: Answer())
@@ -201,7 +201,7 @@ def test_a_relay_without_a_module_hides_its_features_tools_even_when_the_feature
     mcp_server._fit_tools_to_relays()
     names = set(_tools())
     assert not names & {"register_x402_wallet", "reclaim_escrow", "make_pledge", "lab_report", "set_cross_relay_dms",
-                        "money_info", "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
+                        "money_info", "lore", "lore_write", "lore_vote", "lore_reveal",
                         "tesseract", "tesseract_push", "tesseract_open"}
     assert {"post", "verify", "block_dm_sender", "create_room"} <= names
 

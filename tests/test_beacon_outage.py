@@ -1,4 +1,4 @@
-"""A beacon outage must not freeze the relay: failures are remembered, the Chronicle never waits on drand for long,
+"""A beacon outage must not freeze the relay: failures are remembered, the Lore never waits on drand for long,
 and a chapter whose round is late simply waits."""
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import time
 from emporia import rand
 from emporia import relay_server as rs  # noqa: F401  (loads the app before its routes)
 from emporia.routes import beacon as beacon_route
-from emporia.routes import chronicle as ch
+from emporia.routes import lore as ch
 
 REAL_SIGNATURE = beacon_route.signature     # captured before the suite's autouse fake replaces it
 
@@ -34,7 +34,7 @@ def test_a_failed_round_is_not_asked_for_again_for_a_while(monkeypatch):
     beacon_route._MISS.clear()
 
 
-def test_a_hanging_beacon_does_not_stall_the_event_loop_or_the_chronicle(monkeypatch):
+def test_a_hanging_beacon_does_not_stall_the_event_loop_or_the_lore(monkeypatch):
     gate = threading.Event()
     monkeypatch.setattr(beacon_route, "signature", lambda r: gate.wait(30) and None)
     monkeypatch.setattr(ch, "BEACON_WAIT_S", 0.1)

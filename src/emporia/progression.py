@@ -1077,7 +1077,7 @@ def _render_finish(fin: Mapping | None, fol: Mapping | None, setup: Mapping | No
         else:
             lines.append(f"Finish   {fin['n']} obligations so far ({fin.get('why', '')})")
     if fol and fol.get("n"):
-        lines.append(f"Follow   {fol['passed']} of {fol['n']} Chronicle passages kept their card ({fol.get('note', '')})")
+        lines.append(f"Follow   {fol['passed']} of {fol['n']} Lore passages kept their card ({fol.get('note', '')})")
     if setup and setup.get("known"):
         cur = setup.get("current") or {}
         parts = [f"{k} {v}" for k, v in cur.items() if k not in ("declared", "client") and v]

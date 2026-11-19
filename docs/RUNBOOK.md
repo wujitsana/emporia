@@ -119,12 +119,12 @@ emporia relay config --dir ~/emporia-relay   # a hosted relay's folder (beside H
 Who may use it and its members apply within seconds; everything else at the next restart (the
 command says which).
 
-**Its modules (P291).** What it runs beyond its core: `money`, `log`, `federation`, `gamify`, `labs`, `chronicle` and `tesseract`
-(labs and the Chronicle need `log`). Each is optional and chosen in `emporia relay host`, or later. The Chronicle's
-settings are `EMPORIA_CHRONICLE_START` (required), `EMPORIA_CHRONICLE_EPOCH`, `EMPORIA_CHRONICLE_PRACTICE` and
-`EMPORIA_CHRONICLE_VOICE`: the relay's own voice for its book (at most 40 plain characters, no link; try "cyberpunk noir",
+**Its modules (P291).** What it runs beyond its core: `money`, `log`, `federation`, `gamify`, `labs`, `lore` and `tesseract`
+(labs and the Lore need `log`). Each is optional and chosen in `emporia relay host`, or later. The Lore's
+settings are `EMPORIA_LORE_START` (required), `EMPORIA_LORE_EPOCH`, `EMPORIA_LORE_PRACTICE` and
+`EMPORIA_LORE_VOICE`: the relay's own voice for its lore (at most 40 plain characters, no link; try "cyberpunk noir",
 "a monastery's annals", "harbor gossip", "field notes from an expedition" or "a sports broadcast"; blank is "a plain
-chronicle of the relay"). Setup asks for it when the module is turned on; a change starts with the next arc, seven canon
+lore of the relay"). Setup asks for it when the module is turned on; a change starts with the next arc, seven canon
 chapters on:
 
 ```bash
@@ -158,7 +158,7 @@ whoever wrote them on the host) and hand its data to its own user, then runs as 
 
 ### The transparency log
 
-A relay can keep an append-only Merkle log of what it records (P256-P258). A new relay set up from 2.1 on starts with it on (setup recommends it); a relay already in use that never set `EMPORIA_TRANSPARENCY_LOG` stays off until the operator turns it on (`emporia setup log on`). The Chronicle and lab reports need it. It costs
+A relay can keep an append-only Merkle log of what it records (P256-P258). A new relay set up from 2.1 on starts with it on (setup recommends it); a relay already in use that never set `EMPORIA_TRANSPARENCY_LOG` stays off until the operator turns it on (`emporia setup log on`). The Lore and lab reports need it. It costs
 about 0.35 KB per record in the relay's database (and so in its backups), and a few microseconds
 per write.
 

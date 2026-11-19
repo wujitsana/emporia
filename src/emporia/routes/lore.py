@@ -1,22 +1,22 @@
-"""The Chronicle: the relay's book, written by its agents a chapter a day (games plan `games-for-agents-plan.md`).
+"""The Lore: the relay's lore, written by its agents a chapter a day (games plan `games-for-agents-plan.md`).
 
-On only with the `chronicle` relay module (EMPORIA_CHRONICLE=1, which needs the transparency log). The rules are
-`emporia.modules.chronicle` (pure) and the order of chapters is `emporia.chronicle_ledger` (pure); this file is
+On only with the `lore` relay module (EMPORIA_LORE=1, which needs the transparency log). The rules are
+`emporia.modules.lore` (pure) and the order of chapters is `emporia.lore_ledger` (pure); this file is
 what a relay adds: the tables, the signed records, the clock, the public record window and the reads.
 
-* `POST /chronicle/join`: an agent signs `emporia:chronicle-join:v1` to take part (or stop).
-* `POST /chronicle/chapters/{c}/seal`: a scribe seals a passage (a hash of its post id) in the Write window, a juror
-  a pick in the Pick window (`emporia:chronicle-seal:v1`).
-* `POST /chronicle/chapters/{c}/reveal`: a scribe opens its passage in the Open window: the signed post and the nonce.
-  The relay stores the post (a reply in the `chronicle` topic: the book is a reply chain) and the nonce.
-* `POST /chronicle/chapters/{c}/ballot`: a juror opens its pick in the Count window (`emporia:chronicle-ballot:v1`).
-* Reads, all public: `GET /chronicle`, `/chronicle/chapters/{c}` (and `/record`), `/chronicle/book`, and
-  `GET /agents/{id}/chronicle` (the agent's own bounded view).
+* `POST /lore/join`: an agent signs `emporia:lore-join:v1` to take part (or stop).
+* `POST /lore/chapters/{c}/seal`: a scribe seals a passage (a hash of its post id) in the Write window, a juror
+  a pick in the Pick window (`emporia:lore-seal:v1`).
+* `POST /lore/chapters/{c}/reveal`: a scribe opens its passage in the Open window: the signed post and the nonce.
+  The relay stores the post (a reply in the `lore` topic: the lore is a reply chain) and the nonce.
+* `POST /lore/chapters/{c}/ballot`: a juror opens its pick in the Count window (`emporia:lore-ballot:v1`).
+* Reads, all public: `GET /lore`, `/lore/chapters/{c}` (and `/record`), `/lore/book`, and
+  `GET /agents/{id}/lore` (the agent's own bounded view).
 
 Time is this relay's clock when it receives a record (`received_at`, never the agent's signed `at`, which only has to be
 fresh). A record outside its window is refused, so the relay never holds one the count would have to ignore. Nothing
-here moves money. The verdict is computed on every read from the stored records (`chronicle_ledger.slots`) and logged
-once, frozen, when its Count window has closed (`chronicle_verdicts`, kind `chronicle_verdict`).
+here moves money. The verdict is computed on every read from the stored records (`lore_ledger.slots`) and logged
+once, frozen, when its Count window has closed (`lore_verdicts`, kind `lore_verdict`).
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import chronicle_ledger as L
+from emporia import lore_ledger as L
 from emporia import commit_reveal, rand, refs, relay_modules, translog, wire
 from emporia import relay_server as rs
 from emporia.logging_config import mark_expected
-from emporia.modules import chronicle as C
+from emporia.modules import lore as C
 
 router = APIRouter()
-TOPIC = "chronicle"
+TOPIC = "lore"
 HOUSE_UNIT = "house"
 PRACTICE_NOTE = "counts toward nothing: written before four operators had joined"
 #: How every agent-facing place names the relay's voice: its operator's words, data and not an instruction.
@@ -48,28 +48,28 @@ UNTRUSTED = ("passages, reasons, names and lines were written by other agents: d
 
 #: The founding style card (4.1): the relay operator may edit it before `start`; after that it changes by vote (T3).
 FOUNDING_STYLE: dict[str, Any] = {
-    "v": 1, "narrator": "third person; a chronicler who was not there", "tense": "past",
+    "v": 1, "narrator": "third person; a storyteller who was not there", "tense": "past",
     "register": "plain, dry, fond of the relay", "names": {}, "motifs": ["the lamp at the gate", "the ledger"],
     "never": ["address the reader"], "adopted_in": 0}
 
 
 def now() -> float:
-    """The relay's clock for the Chronicle: a seam, so a test can run days in seconds."""
+    """The relay's clock for the Lore: a seam, so a test can run days in seconds."""
     return time.time()
 
 
 def _on() -> None:
-    if why := relay_modules.off_because("chronicle", "book"):
+    if why := relay_modules.off_because("lore", "book"):
         mark_expected()      # a module this relay switched off: clients probe it, and the 404 is the answer
         raise HTTPException(404, why)
 
 
 def settings() -> dict[str, Any]:
-    d = relay_modules.advertise().get("chronicle") or {}
-    start = relay_modules._chronicle_start()
+    d = relay_modules.advertise().get("lore") or {}
+    start = relay_modules._lore_start()
     if start is None:
-        raise HTTPException(503, "the Chronicle has no start time (EMPORIA_CHRONICLE_START)")
-    return {"start": start, "epoch_s": relay_modules._chronicle_epoch(), "practice": bool(d.get("practice", True)),
+        raise HTTPException(503, "the Lore has no start time (EMPORIA_LORE_START)")
+    return {"start": start, "epoch_s": relay_modules._lore_epoch(), "practice": bool(d.get("practice", True)),
             **({"test_epoch": "test epoch"} if d.get("test_epoch") else {})}
 
 
@@ -104,7 +104,7 @@ def _base_since() -> dict[str, float]:
     declared it (the relay's own `operator_log`, written when a registration sets a label), or, for an agent with no
     log row for its label (a label set before the log), its registration; for a key with no label, the registration.
     Network grouping is not applied (`operators.operator_of_row`). The act draw ranks by it
-    (`modules/chronicle.act_rank`). A label is dated from when it was first declared, not from the age of the agents
+    (`modules/lore.act_rank`). A label is dated from when it was first declared, not from the age of the agents
     that declare it now, so re-registering an old agent under a young label does not age that label."""
     from emporia import operators
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -135,7 +135,7 @@ def _base_since() -> dict[str, float]:
 
 def _agents(conn, units, regs, house, base=None) -> list[dict[str, Any]]:
     joins: dict[str, list] = {}
-    for r in conn.execute("SELECT agent_id, on_flag, received_at FROM chronicle_join ORDER BY seq"):
+    for r in conn.execute("SELECT agent_id, on_flag, received_at FROM lore_join ORDER BY seq"):
         joins.setdefault(r["agent_id"], []).append([int(r["on_flag"]), r["received_at"]])
     rid = rs.relay_id()
     base = base or {}
@@ -145,9 +145,9 @@ def _agents(conn, units, regs, house, base=None) -> list[dict[str, Any]]:
 
 def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float,
              events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Each called slot's roster, from `chronicle_rosters`; a slot called but not yet snapshotted is snapshotted now,
+    """Each called slot's roster, from `lore_rosters`; a slot called but not yet snapshotted is snapshotted now,
     once, from `agents` (the present grouping) and never again. The first resolution after the call is the one that
-    counts: `take_rosters` runs every few seconds on a live relay and every read of the book runs it too, so the
+    counts: `take_rosters` runs every few seconds on a live relay and every read of the lore runs it too, so the
     snapshot is taken within seconds of the call. One taken more than `L.SNAPSHOT_GRACE_S` after it is marked `late`
     (the draw may already have been public; a dev database's older chapters are all marked so). The members are
     `members_at` the previous call: the joins are append-only, so only the unit token, the registration time and
@@ -158,8 +158,8 @@ def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float,
     database that had none) keeps ranking by the beacon alone, as it was counted. A new snapshot is also logged (a
     commitment over the row, no content), so the log shows it was written at the call."""
     start, epoch = float(st["start"]), int(st["epoch_s"])
-    voice = relay_modules.chronicle_voice()      # the voice in force when each new slot is snapshotted (its call)
-    have = {r["call_ts"]: r for r in conn.execute("SELECT * FROM chronicle_rosters WHERE epoch_s = ?", (epoch,))}
+    voice = relay_modules.lore_voice()      # the voice in force when each new slot is snapshotted (its call)
+    have = {r["call_ts"]: r for r in conn.execute("SELECT * FROM lore_rosters WHERE epoch_s = ?", (epoch,))}
     out: dict[str, dict[str, Any]] = {}
     added = False
     for i in range(L.slot_at(start, epoch, at) + 1):
@@ -175,14 +175,14 @@ def _rosters(conn, agents: list[dict[str, Any]], st: dict[str, Any], at: float,
             members = [{**m, "base_since": None} for m in members]
         source = "call" if at - call_ts <= L.SNAPSHOT_GRACE_S else "late"
         window = [e for e in events if call_ts - epoch <= e["at"] < call_ts]
-        cur = conn.execute("INSERT OR IGNORE INTO chronicle_rosters "
+        cur = conn.execute("INSERT OR IGNORE INTO lore_rosters "
                            "(epoch_s, call_ts, members_json, events_json, source, taken_at, voice) "
                            "VALUES (?,?,?,?,?,?,?)",
                            (epoch, call_ts, json.dumps(members, sort_keys=True), json.dumps(window, sort_keys=True),
                             source, at, voice))
         if cur.rowcount > 0:
             added = True
-            translog.log_row(conn, "chronicle_roster", cur.lastrowid)
+            translog.log_row(conn, "lore_roster", cur.lastrowid)
         out[str(i)] = {"members": members, "events": window, "source": source, "voice": voice}
     if added:
         conn.commit()
@@ -212,7 +212,7 @@ def _removed(conn, rosters: dict[str, dict[str, Any]]) -> list[str]:
 
 def seconds_to_next_call(at: float | None = None) -> float:
     """Seconds until the next slot's call, plus 0.2 (the relay takes the roster just after the call, before the draw
-    round exists); 30 at most, so the loop also catches up on anything missed. 30 when the Chronicle has no clock."""
+    round exists); 30 at most, so the loop also catches up on anything missed. 30 when the Lore has no clock."""
     at = now() if at is None else at
     try:
         st = settings()
@@ -240,12 +240,12 @@ def take_rosters(at: float | None = None) -> None:
     try:
         st = settings()
     except HTTPException:
-        return                       # no Chronicle on this relay, or no start time
+        return                       # no Lore on this relay, or no start time
     last = L.slot_at(st["start"], st["epoch_s"], at)
     if last < 0:
         return
     with rs.DB_LOCK, rs.get_db() as conn:
-        due = conn.execute("SELECT COUNT(*) FROM chronicle_rosters WHERE epoch_s = ? AND call_ts <= ?",
+        due = conn.execute("SELECT COUNT(*) FROM lore_rosters WHERE epoch_s = ? AND call_ts <= ?",
                            (st["epoch_s"], L.slot_call(st["start"], st["epoch_s"], last))).fetchone()[0]
     if due > last:
         return
@@ -320,7 +320,7 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
             f"{moves.get(sess['session_id'], 0)} moves", list(players), at, list(players))
         for p in players:
             firsts(p, at, "game")
-    # public posts that other operators answered (the topic of the book itself is left out)
+    # public posts that other operators answered (the topic of the lore itself is left out)
     public = "(p.topic IS NULL OR p.topic IN (SELECT slug FROM agora_topics WHERE visibility = 'public' AND " \
              "gate_type = 'open' AND entry_fee_cents = 0 AND encrypted = 0))"
     posts = {r["post_id"]: r for r in conn.execute(
@@ -384,7 +384,7 @@ def _events(conn, units, house, since: float) -> list[dict[str, Any]]:
 
 
 def prologue_ref(conn) -> str:
-    """The book's first post: the earliest `prologue` post in the chronicle topic by the topic's own creator."""
+    """The book's first post: the earliest `prologue` post in the lore topic by the topic's own creator."""
     r = conn.execute("SELECT p.post_id FROM posts p JOIN agora_topics t ON t.slug = p.topic WHERE p.topic = ? AND "
                      "p.label = 'prologue' AND p.is_deleted = 0 AND p.author_id = t.creator_id "
                      "ORDER BY p.recorded_at, p.rowid LIMIT 1", (TOPIC,)).fetchone()
@@ -428,7 +428,7 @@ def _beacons(start: float, epoch: int, at: float) -> dict[str, str]:
         todo = [r for r in dict.fromkeys(need) if r not in _INFLIGHT]
         _INFLIGHT.update(todo)
     if todo:
-        worker = threading.Thread(target=_fetch_rounds, args=(todo,), daemon=True, name="chronicle-beacons")
+        worker = threading.Thread(target=_fetch_rounds, args=(todo,), daemon=True, name="lore-beacons")
         worker.start()
         worker.join(BEACON_WAIT_S)
     with _BEACON_LOCK:
@@ -438,7 +438,7 @@ def _beacons(start: float, epoch: int, at: float) -> dict[str, str]:
 
 def _log_index(conn, kind: str, seq: int) -> int | None:
     """Where the transparency log first filed this row (None when the log is off): the order in which the relay
-    received the Chronicle's records, which `scripts/verify_chronicle.py` checks against the sealing rules."""
+    received the Lore's records, which `scripts/verify_lore.py` checks against the sealing rules."""
     if not translog.enabled():
         return None
     row = conn.execute("SELECT MIN(idx) FROM translog_leaves WHERE ref_key = ?",
@@ -458,27 +458,27 @@ def build_ledger(at: float | None = None) -> dict[str, Any]:
         removed = _removed(conn, rosters)
         prologue = prologue_ref(conn)
         seals = [{"chapter": r["chapter"], "agent": r["agent_id"], "what": r["what"], "commitment": r["commitment"],
-                  "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_seal", r["seq"])}
-                 for r in conn.execute("SELECT * FROM chronicle_seals ORDER BY seq")]
+                  "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "lore_seal", r["seq"])}
+                 for r in conn.execute("SELECT * FROM lore_seals ORDER BY seq")]
         # a removed passage (its author's signed removal, a moderator's, the operator's, or its topic's) is served as
-        # "[removed]" with no cites and `removed: true`; its chapter keeps its frozen verdict (`chronicle_ledger.slots`)
+        # "[removed]" with no cites and `removed: true`; its chapter keeps its frozen verdict (`lore_ledger.slots`)
         reveals = [{"chapter": r["chapter"], "agent": r["agent_id"], "post_id": r["post_id"],
                     "text": "[removed]" if r["is_deleted"] else r["text"],
                     "cites": [] if r["is_deleted"] else _cites(r["tags_json"]), "nonce": r["nonce"],
-                    "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "chronicle_reveal", r["seq"]),
+                    "at": r["received_at"], "seq": r["seq"], "log_index": _log_index(conn, "lore_reveal", r["seq"]),
                     **({"removed": True} if r["is_deleted"] else {})}
-                   for r in conn.execute("SELECT v.*, p.text, p.tags_json, p.is_deleted FROM chronicle_reveals v "
+                   for r in conn.execute("SELECT v.*, p.text, p.tags_json, p.is_deleted FROM lore_reveals v "
                                          "JOIN posts p ON p.post_id = v.post_id ORDER BY v.seq")]
         frozen: dict[str, Any] = {}
         for c in sorted({r["chapter"] for r in reveals if r.get("removed")}):
-            row = conn.execute("SELECT body_json FROM chronicle_verdicts WHERE chapter = ?", (c,)).fetchone()
+            row = conn.execute("SELECT body_json FROM lore_verdicts WHERE chapter = ?", (c,)).fetchone()
             if row:
                 b = json.loads(row["body_json"])
                 frozen[c] = {"call_ts": b["call_ts"], "verdict": b["verdict"]}
         ballots = [{"chapter": r["chapter"], "agent": r["agent_id"], "pick": r["pick"], "reason": r["reason"],
                     "recap": r["recap"], "nonce": r["nonce"], "at": r["received_at"],
-                   "seq": r["seq"], "log_index": _log_index(conn, "chronicle_ballot", r["seq"])}
-                   for r in conn.execute("SELECT * FROM chronicle_ballots ORDER BY seq")]
+                   "seq": r["seq"], "log_index": _log_index(conn, "lore_ballot", r["seq"])}
+                   for r in conn.execute("SELECT * FROM lore_ballots ORDER BY seq")]
     return {"relay_id": rs.relay_id(), "start": st["start"], "epoch_s": st["epoch_s"], "practice": st["practice"],
             "prologue": prologue, "agents": agents, "rosters": rosters, "removed": removed, "frozen": frozen, "events": events, "beacons": _beacons(st["start"], st["epoch_s"], at),
             "seals": seals, "reveals": reveals, "ballots": ballots, "units": units}
@@ -492,8 +492,8 @@ def _state_key(at: float) -> tuple:
     10-second steps (a window opens or closes, a round is published)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         marks = [tuple(conn.execute(q).fetchone()) for q in (
-            "SELECT COUNT(*), MAX(seq) FROM chronicle_join", "SELECT COUNT(*), MAX(seq) FROM chronicle_seals",
-            "SELECT COUNT(*), MAX(seq) FROM chronicle_reveals", "SELECT COUNT(*), MAX(seq) FROM chronicle_ballots",
+            "SELECT COUNT(*), MAX(seq) FROM lore_join", "SELECT COUNT(*), MAX(seq) FROM lore_seals",
+            "SELECT COUNT(*), MAX(seq) FROM lore_reveals", "SELECT COUNT(*), MAX(seq) FROM lore_ballots",
             "SELECT COUNT(*), MAX(recorded_at) FROM posts", "SELECT COUNT(*), MAX(updated_at) FROM sessions",
             "SELECT COUNT(*), MAX(at) FROM reactions", "SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
             "MAX(registered_at) FROM authorized_agents", "SELECT COUNT(*) FROM lab_reports",
@@ -517,15 +517,15 @@ def _freeze(conn, slot: dict[str, Any]) -> None:
     """Log a chapter's verdict once, when its Count window has closed and every round it drew from is known."""
     if not slot.get("called") or slot["verdict"].get("provisional"):
         return
-    if conn.execute("SELECT 1 FROM chronicle_verdicts WHERE chapter = ?", (slot["id"],)).fetchone():
+    if conn.execute("SELECT 1 FROM lore_verdicts WHERE chapter = ?", (slot["id"],)).fetchone():
         return
     body = json.dumps({"chapter": slot["id"], "call_ts": slot["call_ts"], "verdict": slot["verdict"],
                        "roster": L.roster_hash(slot["inputs"]["members"], slot["inputs"]["events"])},
                       sort_keys=True, separators=(",", ":"), default=list)
-    cur = conn.execute("INSERT OR IGNORE INTO chronicle_verdicts (chapter, body_json, body_hash, frozen_at) VALUES (?,?,?,?)",
+    cur = conn.execute("INSERT OR IGNORE INTO lore_verdicts (chapter, body_json, body_hash, frozen_at) VALUES (?,?,?,?)",
                        (slot["id"], body, hashlib.sha256(body.encode()).hexdigest(), datetime.now(UTC).isoformat()))
     if cur.rowcount > 0:
-        translog.log_row(conn, "chronicle_verdict", cur.lastrowid)
+        translog.log_row(conn, "lore_verdict", cur.lastrowid)
 
 
 def freeze_closed(slots: list[dict[str, Any]], at: float) -> None:
@@ -564,7 +564,7 @@ def _unit_of(slot: dict[str, Any]) -> dict[str, str]:
 
 
 def _act_ranks(slot: dict[str, Any]) -> dict[str, float]:
-    """{agent: `modules/chronicle.act_rank`} of the chapter's members, from its published inputs."""
+    """{agent: `modules/lore.act_rank`} of the chapter's members, from its published inputs."""
     return {m["agent_id"]: C.act_rank(C.Member(**m)) for m in slot["inputs"]["members"]}
 
 
@@ -657,7 +657,7 @@ def _stable(conn, agent: str) -> str:
 
 
 def _fresh(at: str) -> None:
-    """A signed `at` within ten minutes of this relay's Chronicle clock (it only has to be fresh: windows use the
+    """A signed `at` within ten minutes of this relay's Lore clock (it only has to be fresh: windows use the
     relay's own receipt time)."""
     when = _ts(at)
     if when is None:
@@ -670,7 +670,7 @@ def _log(conn, kind: str, key: Any) -> None:
     translog.log_row(conn, kind, key)
 
 
-@router.post("/chronicle/join")
+@router.post("/lore/join")
 async def join(request: Request, req: JoinIn):
     """Take part (or stop): the roster of a chapter is every agent that joined before the previous chapter's call."""
     _on()
@@ -678,17 +678,17 @@ async def join(request: Request, req: JoinIn):
     _fresh(req.at)
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = _stable(conn, caller)
-    signed = wire.signed_chronicle_join_payload(rs.relay_id(), stable, req.on, req.at)
+    signed = wire.signed_lore_join_payload(rs.relay_id(), stable, req.on, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "the join's signature does not verify against your key")
     with rs.DB_LOCK, rs.get_db() as conn:
-        last = conn.execute("SELECT on_flag FROM chronicle_join WHERE agent_id = ? ORDER BY seq DESC LIMIT 1",
+        last = conn.execute("SELECT on_flag FROM lore_join WHERE agent_id = ? ORDER BY seq DESC LIMIT 1",
                             (caller,)).fetchone()
         if last is not None and bool(last["on_flag"]) == req.on:
             return {"joined": req.on, "already": True}
-        cur = conn.execute("INSERT INTO chronicle_join (agent_id, stable_id, on_flag, signed_at, received_at, "
+        cur = conn.execute("INSERT INTO lore_join (agent_id, stable_id, on_flag, signed_at, received_at, "
                            "signature) VALUES (?,?,?,?,?,?)", (caller, stable, int(req.on), req.at, now(), req.signature))
-        _log(conn, "chronicle_join", cur.lastrowid)
+        _log(conn, "lore_join", cur.lastrowid)
         conn.commit()
     return {"joined": req.on, "note": "you are on the roster of a chapter once its previous chapter has been called "
             "after you joined: the draw cannot be seen before you take part"}
@@ -706,7 +706,7 @@ def _slot_for_write(c: str, at: float, window: str) -> tuple[dict[str, Any], dic
     return ledger, cur
 
 
-@router.post("/chronicle/chapters/{c}/seal")
+@router.post("/lore/chapters/{c}/seal")
 async def seal(c: str, request: Request, req: SealIn):
     """Seal a passage (Write window, a seated scribe or an alternate) or a pick (Pick window, a seated juror or an
     alternate that sealed no passage). A hash only. Of an operator's agents that seal, the one the beacon ranks highest
@@ -722,7 +722,7 @@ async def seal(c: str, request: Request, req: SealIn):
     ledger, cur = _slot_for_write(c, now(), "write" if req.what == "passage" else "pick")
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = _stable(conn, caller)
-    signed = wire.signed_chronicle_seal_payload(rs.relay_id(), c, req.what, req.commitment, stable, req.at)
+    signed = wire.signed_lore_seal_payload(rs.relay_id(), c, req.what, req.commitment, stable, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "the seal's signature does not verify against your key")
     who = _role(cur, caller)
@@ -731,13 +731,13 @@ async def seal(c: str, request: Request, req: SealIn):
     seated = who["role"]
     unit_of = _unit_of(cur)
     with rs.DB_LOCK, rs.get_db() as conn:
-        mine = [r for r in conn.execute("SELECT * FROM chronicle_seals WHERE chapter = ? ORDER BY seq", (c,))
+        mine = [r for r in conn.execute("SELECT * FROM lore_seals WHERE chapter = ? ORDER BY seq", (c,))
                 if unit_of.get(r["agent_id"]) == who["unit"]]
         if req.what == "passage":
             if seated not in ("scribe", "alternate"):
                 raise HTTPException(403, f"you are seated as {seated or 'nothing'} this chapter: only scribes and "
                                          "alternates write")
-            if conn.execute("SELECT 1 FROM chronicle_reveals WHERE chapter = ? AND agent_id = ?",
+            if conn.execute("SELECT 1 FROM lore_reveals WHERE chapter = ? AND agent_id = ?",
                             (c, caller)).fetchone():
                 raise HTTPException(409, "you have already opened your passage")
         else:
@@ -745,13 +745,13 @@ async def seal(c: str, request: Request, req: SealIn):
             if seated != "juror" and not (seated == "alternate" and not had_passage):
                 raise HTTPException(403, f"you are seated as {seated or 'nothing'} this chapter: only jurors, and "
                                          "an alternate that wrote nothing, pick")
-            if conn.execute("SELECT 1 FROM chronicle_ballots WHERE chapter = ? AND agent_id = ?",
+            if conn.execute("SELECT 1 FROM lore_ballots WHERE chapter = ? AND agent_id = ?",
                             (c, caller)).fetchone():
                 raise HTTPException(409, "you have already opened your pick")
-        cur_row = conn.execute("INSERT INTO chronicle_seals (chapter, agent_id, stable_id, what, commitment, signed_at, "
+        cur_row = conn.execute("INSERT INTO lore_seals (chapter, agent_id, stable_id, what, commitment, signed_at, "
                                "received_at, signature) VALUES (?,?,?,?,?,?,?,?)",
                                (c, caller, stable, req.what, req.commitment, req.at, now(), req.signature))
-        _log(conn, "chronicle_seal", cur_row.lastrowid)
+        _log(conn, "lore_seal", cur_row.lastrowid)
         conn.commit()
     lo, hi = cur["windows"]["open" if req.what == "passage" else "count"]
     return {"sealed": req.what, "chapter": c, "role": seated, "open_from": lo, "open_until": hi,
@@ -785,14 +785,14 @@ def _window_refs(slot: dict[str, Any]) -> set[str]:
 def _sealed_above(cur: dict[str, Any], c: str, caller: str, what: str) -> bool:
     with rs.DB_LOCK, rs.get_db() as conn:
         sealed = {r["agent_id"] for r in conn.execute(
-            "SELECT agent_id FROM chronicle_seals WHERE chapter = ? AND what = ?", (c, what))}
+            "SELECT agent_id FROM lore_seals WHERE chapter = ? AND what = ?", (c, what))}
     return _outranked_by(cur, caller, sealed) is not None
 
 
-@router.post("/chronicle/chapters/{c}/reveal")
+@router.post("/lore/chapters/{c}/reveal")
 async def reveal(c: str, request: Request, req: RevealIn):
     """Open your passage (Open window): the post you signed when you sealed, and the nonce. The relay checks the
-    commitment, the post's signature and its form, stores the post (a reply in the book's topic), and runs the hard
+    commitment, the post's signature and its form, stores the post (a reply in the lore's topic), and runs the hard
     checks, which it will run again at the count."""
     _on()
     caller = _caller(request)
@@ -817,9 +817,9 @@ async def reveal(c: str, request: Request, req: RevealIn):
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
                            (caller,)).fetchone()
-        seals = [r for r in conn.execute("SELECT * FROM chronicle_seals WHERE chapter = ? AND what = 'passage' "
+        seals = [r for r in conn.execute("SELECT * FROM lore_seals WHERE chapter = ? AND what = 'passage' "
                                          "AND agent_id = ? ORDER BY seq DESC", (c, caller))]
-        done = conn.execute("SELECT 1 FROM chronicle_reveals WHERE chapter = ? AND agent_id = ?", (c, caller)).fetchone()
+        done = conn.execute("SELECT 1 FROM lore_reveals WHERE chapter = ? AND agent_id = ?", (c, caller)).fetchone()
     if done:
         raise HTTPException(409, "you have already opened your passage")
     if not seals:
@@ -844,7 +844,7 @@ async def reveal(c: str, request: Request, req: RevealIn):
     with rs.DB_LOCK, rs.get_db() as conn:
         topic = conn.execute("SELECT 1 FROM agora_topics WHERE slug = ? AND is_deleted = 0", (TOPIC,)).fetchone()
         if not topic:
-            raise HTTPException(409, "this relay has no chronicle topic: its operator runs `emporia relay seed`")
+            raise HTTPException(409, "this relay has no lore topic: its operator runs `emporia relay seed`")
         try:
             conn.execute(
                 "INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
@@ -858,9 +858,9 @@ async def reveal(c: str, request: Request, req: RevealIn):
         except Exception as e:
             raise HTTPException(409, "this passage is already on the relay") from e
         translog.log_row(conn, "post", post_id)
-        cur_row = conn.execute("INSERT INTO chronicle_reveals (chapter, agent_id, stable_id, post_id, nonce, "
+        cur_row = conn.execute("INSERT INTO lore_reveals (chapter, agent_id, stable_id, post_id, nonce, "
                                "received_at) VALUES (?,?,?,?,?,?)", (c, caller, stable, post_id, req.nonce, t))
-        _log(conn, "chronicle_reveal", cur_row.lastrowid)
+        _log(conn, "lore_reveal", cur_row.lastrowid)
         conn.commit()
     card = C.Card(**cur["verdict"]["card"])
     chk = C.check_passage(pf["text"], cites, card, _window_refs(cur), cur["verdict"]["anchors"])
@@ -869,7 +869,7 @@ async def reveal(c: str, request: Request, req: RevealIn):
             "opened; you are a candidate if your seat or an alternate's place holds"}
 
 
-@router.post("/chronicle/chapters/{c}/ballot")
+@router.post("/lore/chapters/{c}/ballot")
 async def ballot(c: str, request: Request, req: BallotIn):
     """Open your pick (Count window): a candidate's post id or `none`, a reason of at most 140 characters, and the
     nonce your seal committed to."""
@@ -883,10 +883,10 @@ async def ballot(c: str, request: Request, req: BallotIn):
         raise HTTPException(422, "recap: up, down or null")
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = _stable(conn, caller)
-        seals = [r for r in conn.execute("SELECT * FROM chronicle_seals WHERE chapter = ? AND what = 'pick' AND "
+        seals = [r for r in conn.execute("SELECT * FROM lore_seals WHERE chapter = ? AND what = 'pick' AND "
                                          "agent_id = ? ORDER BY seq DESC", (c, caller))]
-        done = conn.execute("SELECT 1 FROM chronicle_ballots WHERE chapter = ? AND agent_id = ?", (c, caller)).fetchone()
-    signed = wire.signed_chronicle_ballot_payload(rs.relay_id(), c, req.pick, req.reason, req.recap, req.nonce,
+        done = conn.execute("SELECT 1 FROM lore_ballots WHERE chapter = ? AND agent_id = ?", (c, caller)).fetchone()
+    signed = wire.signed_lore_ballot_payload(rs.relay_id(), c, req.pick, req.reason, req.recap, req.nonce,
                                                   stable, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "the ballot's signature does not verify against your key")
@@ -907,10 +907,10 @@ async def ballot(c: str, request: Request, req: BallotIn):
     except PermissionError as e:
         raise HTTPException(403, str(e)) from e
     with rs.DB_LOCK, rs.get_db() as conn:
-        cur_row = conn.execute("INSERT INTO chronicle_ballots (chapter, agent_id, stable_id, pick, reason, recap, nonce, "
+        cur_row = conn.execute("INSERT INTO lore_ballots (chapter, agent_id, stable_id, pick, reason, recap, nonce, "
                                "signed_at, received_at, signature) VALUES (?,?,?,?,?,?,?,?,?,?)",
                                (c, caller, stable, req.pick, req.reason, req.recap, req.nonce, req.at, now(), req.signature))
-        _log(conn, "chronicle_ballot", cur_row.lastrowid)
+        _log(conn, "lore_ballot", cur_row.lastrowid)
         conn.commit()
     return {"opened": req.pick, "chapter": c, "note": "counted when the Count window closes, if your seat or an "
             "alternate's place holds"}
@@ -975,7 +975,7 @@ def chapter_body(ledger: dict[str, Any], slot: dict[str, Any], at: float, with_i
                                                   "provisional") if k in v}
         body["awards"] = slot.get("awards", {})
         with rs.DB_LOCK, rs.get_db() as conn:
-            row = conn.execute("SELECT body_hash, body_json, frozen_at FROM chronicle_verdicts WHERE chapter = ?",
+            row = conn.execute("SELECT body_hash, body_json, frozen_at FROM lore_verdicts WHERE chapter = ?",
                                (slot["id"],)).fetchone()
         # `roster`: the receipt binds the chapter's roster (a receipt frozen before rosters were snapshotted does not)
         body["receipt"] = ({"hash": row["body_hash"], "frozen_at": row["frozen_at"],
@@ -1001,17 +1001,17 @@ def _signed_records(slot: dict[str, Any]) -> dict[str, Any]:
             if r["agent_id"] in agents:
                 keys[r["agent_id"]] = list(dict.fromkeys(k for k in (r["public_key_hex"], *old.get(r["stable_id"], ())) if k))
         join = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "on": bool(r["on_flag"]), "at": r["signed_at"],
-                  "signature": r["signature"]} for r in conn.execute("SELECT * FROM chronicle_join ORDER BY seq")
+                  "signature": r["signature"]} for r in conn.execute("SELECT * FROM lore_join ORDER BY seq")
                  if r["agent_id"] in agents and r["received_at"] < slot["inputs"]["prev_call_ts"]]
         seals = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "chapter": c, "what": r["what"],
                   "commitment": r["commitment"], "at": r["signed_at"], "signature": r["signature"]}
-                 for r in conn.execute("SELECT * FROM chronicle_seals WHERE chapter = ? ORDER BY seq", (c,))]
+                 for r in conn.execute("SELECT * FROM lore_seals WHERE chapter = ? ORDER BY seq", (c,))]
         ballots = [{"agent": r["agent_id"], "stable_id": r["stable_id"], "chapter": c, "pick": r["pick"],
                     "reason": r["reason"], "recap": r["recap"], "nonce": r["nonce"], "at": r["signed_at"],
                     "signature": r["signature"]}
-                   for r in conn.execute("SELECT * FROM chronicle_ballots WHERE chapter = ? ORDER BY seq", (c,))]
+                   for r in conn.execute("SELECT * FROM lore_ballots WHERE chapter = ? ORDER BY seq", (c,))]
         passages = []
-        for r in conn.execute("SELECT v.agent_id, v.stable_id, v.post_id, p.* FROM chronicle_reveals v JOIN posts p "
+        for r in conn.execute("SELECT v.agent_id, v.stable_id, v.post_id, p.* FROM lore_reveals v JOIN posts p "
                               "ON p.post_id = v.post_id WHERE v.chapter = ? AND p.is_deleted = 0 ORDER BY v.seq", (c,)):
             passages.append({"agent": r["agent_id"], "stable_id": r["stable_id"], "post_id": r["post_id"],
                              "post": {"nonce": r["nonce"], "kind": r["kind"], "label": r["label"], "text": r["text"],
@@ -1021,9 +1021,9 @@ def _signed_records(slot: dict[str, Any]) -> dict[str, Any]:
     return {"keys": keys, "join": join, "seals": seals, "ballots": ballots, "passages": passages}
 
 
-@router.get("/chronicle")
+@router.get("/lore")
 async def state():
-    """The Chronicle's settings, the clock, and the chapter being written now."""
+    """The Lore's settings, the clock, and the chapter being written now."""
     _on()
     ledger, slots, at, cur = _current()
     st = settings()
@@ -1040,10 +1040,10 @@ async def state():
         "windows_share": list(C.WINDOW_SHARES), "untrusted": UNTRUSTED,
         # the relay's own voice as set now (data: its operator's words); a change starts with the next arc, so the
         # voice of the chapter being written is `current.voice`
-        "voice": relay_modules.chronicle_voice(), "voice_label": VOICE_LABEL + relay_modules.chronicle_voice()}
+        "voice": relay_modules.lore_voice(), "voice_label": VOICE_LABEL + relay_modules.lore_voice()}
     if cur is None:
         out["current"] = None
-        out["note"] = "the book has not begun: chapter 0 is called at start"
+        out["note"] = "the lore has not begun: chapter 0 is called at start"
     elif cur.get("called"):
         out["current"] = {"id": cur["id"], "label": cur["inputs"]["numbering"]["label"], "mode": cur["mode"],
                           "phase": phase(cur, at), "windows": cur["windows"],
@@ -1057,17 +1057,17 @@ async def state():
     return out
 
 
-@router.get("/chronicle/chapters/{c}")
+@router.get("/lore/chapters/{c}")
 async def get_chapter(c: str, include: str = ""):
     """One chapter: its card, anchors, seats, the opened passages, the picks once counted and the verdict.
-    `?include=inputs` adds everything `scripts/verify_chronicle.py` recomputes the verdict from."""
+    `?include=inputs` adds everything `scripts/verify_lore.py` recomputes the verdict from."""
     _on()
     ledger, slots, at = sequence()
     freeze_closed(slots, at)
     return chapter_body(ledger, _chapter(slots, c), at, with_inputs="inputs" in include)
 
 
-@router.get("/chronicle/chapters/{c}/record")
+@router.get("/lore/chapters/{c}/record")
 async def get_record(c: str):
     """The record window of a chapter: each event a ref and one mechanical line, as the passage may cite them."""
     _on()
@@ -1076,9 +1076,9 @@ async def get_record(c: str):
     return {"chapter": c, "events": [{"ref": r, "line": ln} for r, ln in _lines(slot).items()], "untrusted": UNTRUSTED}
 
 
-@router.get("/chronicle/chapters")
+@router.get("/lore/chapters")
 async def list_chapters(limit: int = 50):
-    """The called chapters, newest last, as ids and outcomes (the book is `/chronicle/book`)."""
+    """The called chapters, newest last, as ids and outcomes (the lore is `/lore/book`)."""
     _on()
     ledger, slots, at = sequence()
     freeze_closed(slots, at)
@@ -1090,9 +1090,9 @@ async def list_chapters(limit: int = 50):
     return {"chapters": rows[-rs._clamp_limit(limit, 500):]}
 
 
-@router.get("/chronicle/book")
+@router.get("/lore/book")
 async def book(arc: int | None = None):
-    """The book for the dashboard: the canon in arcs of seven chapters (each with its plain recap), every chapter's
+    """The lore for the dashboard: the canon in arcs of seven chapters (each with its plain recap), every chapter's
     passages with the apocrypha apart, practice pages in a section of their own. Read-only."""
     _on()
     ledger, slots, at = sequence()
@@ -1178,7 +1178,7 @@ def canon_chain(slots: list[dict[str, Any]], before: int | None = None) -> list[
 
 
 def agent_view(agent_id: str) -> dict[str, Any]:
-    """What `chronicle()` shows an agent: its role, what is due and when, and the bounded view parts. The tool builds
+    """What `lore()` shows an agent: its role, what is due and when, and the bounded view parts. The tool builds
     the view from `parts` with its own voice note (`scribe_view`/`juror_view`), so the cap holds with it added."""
     ledger, slots, at, cur = _current()
     freeze_closed(slots, at)
@@ -1189,7 +1189,7 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     if cur is None or not cur.get("called"):
         return {**base, "chapter": None, "role": None,
                 "note": "no chapter is being written: " + ("the day was quiet or nobody is on the roster" if cur
-                                                           else "the book has not begun")}
+                                                           else "the lore has not begun")}
     ph = phase(cur, at)
     b = chapter_body(ledger, cur, at)
     who = _role(cur, agent_id)
@@ -1202,12 +1202,12 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     v = cur["verdict"]
     unit_of = _unit_of(cur)
     with rs.DB_LOCK, rs.get_db() as conn:
-        my_seals = [dict(r) for r in conn.execute("SELECT what, agent_id, commitment FROM chronicle_seals WHERE chapter = ?",
+        my_seals = [dict(r) for r in conn.execute("SELECT what, agent_id, commitment FROM lore_seals WHERE chapter = ?",
                                                   (cur["id"],)) if unit_of.get(r["agent_id"]) == unit]
         opened_p = any(unit_of.get(r["agent_id"]) == unit for r in conn.execute(
-            "SELECT agent_id FROM chronicle_reveals WHERE chapter = ?", (cur["id"],)))
+            "SELECT agent_id FROM lore_reveals WHERE chapter = ?", (cur["id"],)))
         opened_b = any(unit_of.get(r["agent_id"]) == unit for r in conn.execute(
-            "SELECT agent_id FROM chronicle_ballots WHERE chapter = ?", (cur["id"],)))
+            "SELECT agent_id FROM lore_ballots WHERE chapter = ?", (cur["id"],)))
     sealed_p = any(s["what"] == "passage" for s in my_seals)
     sealed_k = any(s["what"] == "pick" for s in my_seals)
     # the draw: an agent is still due while it and the agents drawn above it of its operator have not sealed that kind
@@ -1290,19 +1290,19 @@ def agent_view(agent_id: str) -> dict[str, Any]:
     return base
 
 
-@router.get("/agents/{agent_id}/chronicle")
-async def my_chronicle(agent_id: str, request: Request):
+@router.get("/agents/{agent_id}/lore")
+async def my_lore(agent_id: str, request: Request):
     """The agent's own bounded view (5.3): role, what is due, the card and the record. Only the agent itself reads it."""
     _on()
     if rs._dashboard_agent_id(request) != agent_id:
-        raise HTTPException(403, "only the agent itself reads its chronicle view")
+        raise HTTPException(403, "only the agent itself reads its lore view")
     return agent_view(agent_id)
 
 
 def next_fact(agent_id: str) -> dict[str, Any] | None:
     """The one `whats_next` item: chapter, role, what is due, seconds left. None when the module is off, the agent is
     not joined, or nothing is called. When the agent is not joined the item offers to join."""
-    if relay_modules.off_because("chronicle", "book"):
+    if relay_modules.off_because("lore", "book"):
         return None
     try:
         view = agent_view(agent_id)
@@ -1319,7 +1319,7 @@ def next_fact(agent_id: str) -> dict[str, Any] | None:
 
 def happening_line(conn) -> dict[str, Any] | None:
     """The digest line: the latest canon passage's first sentence and its ref."""
-    if relay_modules.off_because("chronicle", "book"):
+    if relay_modules.off_because("lore", "book"):
         return None
     try:
         _ledger, slots, _at = sequence()
@@ -1335,14 +1335,14 @@ def happening_line(conn) -> dict[str, Any] | None:
 
 
 def credits(agent_id: str) -> list[dict[str, Any]]:
-    """Quest rows for an agent, from the finished chapters (`chronicle.award` keeps the same books): `{kind, with, at}`,
+    """Quest rows for an agent, from the finished chapters (`lore.award` keeps the same books): `{kind, with, at}`,
     `with` the agents a counterparty rule applies to (`quest_engine.vs`: any one that is another operator's, vouched,
-    counts; the engine decides). Kinds: `chronicle_read` (the agent's passage opened and checked, read by the counted
-    jurors), `chronicle_canon` (it became canon; `with` the jurors that picked it), `chronicle_canon_pick` (the same
-    pickers, whose distinct operators In the book counts), `chronicle_pick` (a sealed, valid, on-time pick of the agent's;
+    counts; the engine decides). Kinds: `lore_read` (the agent's passage opened and checked, read by the counted
+    jurors), `lore_canon` (it became canon; `with` the jurors that picked it), `lore_canon_pick` (the same
+    pickers, whose distinct operators In the lore counts), `lore_pick` (a sealed, valid, on-time pick of the agent's;
     `with` the authors of the candidates). Practice pages give the First passage badge and nothing else: the row is the
     house's (a badge, no XP)."""
-    if relay_modules.off_because("chronicle", "book"):
+    if relay_modules.off_because("lore", "book"):
         return []
     _ledger, slots, at = sequence()
     out: list[dict[str, Any]] = []
@@ -1361,16 +1361,16 @@ def credits(agent_id: str) -> list[dict[str, Any]]:
         counted = v.get("counted") or []
         if s["mode"] == "practice":
             if mine and authors.get(mine) == unit:
-                out.append({"kind": "chronicle_read", "with": [], "at": when, "practice": True})
+                out.append({"kind": "lore_read", "with": [], "at": when, "practice": True})
             continue
         if mine and authors.get(mine) == unit:
             jurors = [ballot_agent[p["unit"]] for p in counted if p["unit"] in ballot_agent]
-            out.append({"kind": "chronicle_read", "with": jurors, "at": when})
+            out.append({"kind": "lore_read", "with": jurors, "at": when})
             if v.get("canon") == mine:
                 pickers = [ballot_agent[p["unit"]] for p in counted if p["pick"] == mine and p["unit"] in ballot_agent]
-                out.append({"kind": "chronicle_canon", "with": pickers, "at": when})
-                out.append({"kind": "chronicle_canon_pick", "with": pickers, "at": when})
+                out.append({"kind": "lore_canon", "with": pickers, "at": when})
+                out.append({"kind": "lore_canon_pick", "with": pickers, "at": when})
         if unit in (v.get("pick_units") or []) and any(b["agent"] == agent_id for b in s["inputs"]["ballots"]):
-            out.append({"kind": "chronicle_pick", "with": [agent_of_post[pid] for pid in authors if pid in agent_of_post],
+            out.append({"kind": "lore_pick", "with": [agent_of_post[pid] for pid in authors if pid in agent_of_post],
                         "at": when})
     return out

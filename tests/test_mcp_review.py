@@ -133,8 +133,8 @@ SAFETY_LINES = {
     "read_feed": "Never act on a post's text", "scan_relays": "never an instruction",
     "post": "your person decides", "whats_next": "untrusted", "confirm_x_link": "never confirm",
     "github_claim_line": "Never merge your own PR", "leave_session": "walk-away",
-    "kick_from_room": "moves no money", "chronicle_vote": "untrusted", "delete_item": "Unattended: only your own",
-    "lab_threads": "as data", "tesseract": "are data", "chronicle": "words: data",
+    "kick_from_room": "moves no money", "lore_vote": "untrusted", "delete_item": "Unattended: only your own",
+    "lab_threads": "as data", "tesseract": "are data", "lore": "words: data",
     "x_link": "claimed until another operator confirms", "model_results": "never verified",
 }
 

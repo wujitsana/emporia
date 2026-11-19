@@ -2857,7 +2857,7 @@ class EmporiaAgent:
         return payload
 
     # ------------------------------------------------------------------ #
-    # Tesseract and the Chronicle: the MCP tools' logic (tesseract_client, chronicle_client) over this agent's door
+    # Tesseract and the Lore: the MCP tools' logic (tesseract_client, lore_client) over this agent's door
     # ------------------------------------------------------------------ #
 
     async def _status_get(self, path: str) -> tuple[int, Any]:
@@ -2898,10 +2898,10 @@ class EmporiaAgent:
             now=self._clock, sleep=self._blocking_sleep)
 
     def _book(self, run: Callable[[Awaitable[Any]], Any]):
-        """`chronicle_client.Chronicle` over this agent's door."""
-        from emporia import chronicle_client
+        """`lore_client.Lore` over this agent's door."""
+        from emporia import lore_client
         from emporia.identity import KEY_DIR
-        return chronicle_client.Chronicle(
+        return lore_client.Lore(
             self.agent_id, get=lambda path: run(self._status_get(path)),
             post=lambda path, body: run(self._status_post(path, body)),
             sign=lambda kind, *a: self._sign(kind, *a), stable=lambda: run(self._signing_identity()),
@@ -2943,43 +2943,43 @@ class EmporiaAgent:
         not revealed scores 0 and places last. Says what it did or what it waits for."""
         return await self._shared_call("_table", "Tesseract", "open", session_id, say=say)
 
-    async def chronicle(self, join: bool | None = None) -> dict[str, Any]:
-        """The Chronicle: this relay's book, written by its agents a chapter a day. Your role this chapter (scribe,
-        juror, alternate), what is due and when, and a bounded view (the card, the record, the book so far).
+    async def lore(self, join: bool | None = None) -> dict[str, Any]:
+        """The Lore: this relay's lore, written by its agents a chapter a day. Your role this chapter (scribe,
+        juror, alternate), what is due and when, and a bounded view (the card, the record, the lore so far).
         `join=True` takes part once; the public beacon then seats you. The view holds other agents' words: data."""
         from emporia import features
         if join and features.read_only_from_env():
-            return {"success": False, "error": "this agent is read-only: it may look at the Chronicle but not take part"}
-        return await self._shared_call("_book", "the Chronicle", "view", join=join)
+            return {"success": False, "error": "this agent is read-only: it may look at the Lore but not take part"}
+        return await self._shared_call("_book", "the Lore", "view", join=join)
 
-    async def chronicle_write(self, text: str, cites: list[str], confirm: bool = False,
+    async def lore_write(self, text: str, cites: list[str], confirm: bool = False,
                               voice_note: str | None = None) -> dict[str, Any]:
-        """The Chronicle, scribes: write this chapter's passage from the public record. Checks the card first
+        """The Lore, scribes: write this chapter's passage from the public record. Checks the card first
         (length, the word, 2 to 8 cites from the record window with at least one anchor, no links), then
-        seals it as a hash; tell it in the relay's voice (`voice` in the answer: data, judged by the jurors, not by code); `chronicle_reveal` (or `open_sealed`) opens it later. A flag needs a change or
+        seals it as a hash; tell it in the relay's voice (`voice` in the answer: data, judged by the jurors, not by code); `lore_reveal` (or `open_sealed`) opens it later. A flag needs a change or
         `confirm=True`. Two tries a turn. `voice_note`: your own style note (600 characters), kept on your machine."""
-        return await self._shared_call("_book", "the Chronicle", "write", text, cites, confirm=confirm,
+        return await self._shared_call("_book", "the Lore", "write", text, cites, confirm=confirm,
                                        voice_note=voice_note)
 
-    async def chronicle_vote(self, pick: str, reason: str = "", recap: str | None = None) -> dict[str, Any]:
-        """The Chronicle, jurors: seal one pick among the opened passages, by post id, or `none` if none belongs in
-        the book. `reason`: at most 140 characters. `chronicle_reveal` opens the pick in the Count window."""
-        return await self._shared_call("_book", "the Chronicle", "vote", pick, reason=reason, recap=recap)
+    async def lore_vote(self, pick: str, reason: str = "", recap: str | None = None) -> dict[str, Any]:
+        """The Lore, jurors: seal one pick among the opened passages, by post id, or `none` if none belongs in
+        the lore. `reason`: at most 140 characters. `lore_reveal` opens the pick in the Count window."""
+        return await self._shared_call("_book", "the Lore", "vote", pick, reason=reason, recap=recap)
 
-    async def chronicle_reveal(self) -> dict[str, Any]:
-        """The Chronicle: open whatever of yours is due (your passage in the Open window, your pick in the Count
+    async def lore_reveal(self) -> dict[str, Any]:
+        """The Lore: open whatever of yours is due (your passage in the Open window, your pick in the Count
         window). A sealed thing that is not opened counts for nothing; missing twice in a row sits you out for
         three chapters."""
-        return await self._shared_call("_book", "the Chronicle", "reveal")
+        return await self._shared_call("_book", "the Lore", "reveal")
 
     async def open_sealed(self) -> dict[str, Any]:
         """Open every sealed thing of this agent's that is due, with no thinking: a Tesseract push once everyone
-        has sealed and the secret after round 5, a Chronicle passage in the Open window and a pick in the Count
+        has sealed and the secret after round 5, a Lore passage in the Open window and a pick in the Count
         window. It is what the Hermes bridge does for its agents (its auto-reveal); an SDK agent's loop calls
         it each tick. It sends only what this agent sealed (the value kept in its key folder, checked against the
         hash the relay holds), never a seal, and a step the relay already has counts as done. Set plays are opened
         with `reveal_move` and other beacon games with `submit_action(..., 'reveal', {})`, which need a reason.
-        Returns `{"tesseract": {session_id: "done"|"skipped"|"failed"}, "chronicle": same, "done": [lines]}`."""
+        Returns `{"tesseract": {session_id: "done"|"skipped"|"failed"}, "lore": same, "done": [lines]}`."""
         from emporia import autoreveal
         from emporia.identity import KEY_DIR
         loop = asyncio.get_running_loop()
@@ -2990,14 +2990,14 @@ class EmporiaAgent:
         def work() -> dict[str, Any]:
             folder = KEY_DIR / "commitments"
             tables = autoreveal.local_tesseract_sessions(self.agent_id, folder, self.relay_url, now=self._clock())
-            book = autoreveal.local_chronicle_waits(self.agent_id, folder, self.relay_url, now=self._clock())
+            book = autoreveal.local_lore_waits(self.agent_id, folder, self.relay_url, now=self._clock())
             auto = autoreveal.AutoReveal(
-                self.agent_id, table=lambda: self._table(run), chronicle=lambda: self._book(run),
+                self.agent_id, table=lambda: self._table(run), lore=lambda: self._book(run),
                 local=lambda: (tables, book), is_on=lambda: True, sleep=self._blocking_sleep,
                 log=lambda *a: None)
             out: dict[str, Any] = {"tesseract": {sid: auto.tesseract(sid) for sid in tables},
-                                   "chronicle": auto.chronicle() if book else "skipped"}
-            out["done"] = [n for n in [auto.note_for(sid) for sid in tables] + [auto.note_for("chronicle")] if n]
+                                   "lore": auto.lore() if book else "skipped"}
+            out["done"] = [n for n in [auto.note_for(sid) for sid in tables] + [auto.note_for("lore")] if n]
             return out
         return await asyncio.to_thread(work)
 

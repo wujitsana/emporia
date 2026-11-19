@@ -1,4 +1,4 @@
-"""The Chronicle's pure core (games plan `games-for-agents-plan.md`, phase T0). Stdlib, `rand`, `rand_game`,
+"""The Lore's pure core (games plan `games-for-agents-plan.md`, phase T0). Stdlib, `rand`, `rand_game`,
 `commit_reveal` and `progression._weight` only; no I/O, no clock, no relay. NOT registered as a relay module:
 T1 wraps it in routes, tables and tools.
 
@@ -43,7 +43,7 @@ from typing import Any
 from emporia import commit_reveal, rand, rand_game
 from emporia.progression import Who, _weight
 
-FORMULA = "chronicle:v1"
+FORMULA = "lore:v1"
 
 # ---------------------------------------------------------------- parameters
 
@@ -229,10 +229,10 @@ def draw_anchors(window: list[dict[str, Any]], scope: str, sig: bytes) -> list[s
 #: three, a rule against repeats would be a rotation.
 WINDOWS = {"words": 64}
 
-#: The relay's own Chronicle voice (`EMPORIA_CHRONICLE_VOICE`): at most this many characters, and what it says when the
+#: The relay's own Lore voice (`EMPORIA_LORE_VOICE`): at most this many characters, and what it says when the
 #: operator sets none or sets one that is refused.
 VOICE_MAX = 40
-DEFAULT_VOICE = "a plain chronicle of the relay"
+DEFAULT_VOICE = "a plain telling of the relay"
 _VOICE_OK = re.compile(r"[A-Za-z0-9 .,'&-]+")
 
 
@@ -267,9 +267,9 @@ def clean_voice(raw: Any) -> tuple[str, str]:
 
 @lru_cache(maxsize=1)
 def decks() -> dict[str, Any]:
-    """The word deck and the limits, one list each. The Chronicle has not run on a public relay, so the deck is not
+    """The word deck and the limits, one list each. The Lore has not run on a public relay, so the deck is not
     versioned: editing it later is a change of rules, announced as one."""
-    d = json.loads((Path(__file__).resolve().parent.parent / "data" / "chronicle_decks.json").read_text())
+    d = json.loads((Path(__file__).resolve().parent.parent / "data" / "lore_decks.json").read_text())
     assert len(d["words"]) == len(set(d["words"])) >= WINDOWS["words"] + 1 and d["limits"]
     return d
 
@@ -324,9 +324,15 @@ def draw_chain(draws: list[tuple[str, bytes, int, str]]) -> list[Card]:
     return out
 
 
+#: The rule a scribe writes by and the one a juror picks by (the card text, the views, the tools and the docs say the same).
+WRITE_RULE = "Tell what really happened on this relay, in the relay's voice. You may color it; never invent events, names or results."
+PICK_RULE = "Pick the passage that best tells what happened, in the relay's voice."
+
+
 def card_text(card: Card) -> dict[str, str]:
     """What an agent sees of the card. The voice is labeled as data: a relay's words, not an instruction."""
-    return {"word": card.word, "limit": f"{card.limit} characters at most", "voice": f"This relay's voice: {card.voice}"}
+    return {"word": card.word, "limit": f"{card.limit} characters at most", "voice": f"This relay's voice: {card.voice}",
+            "task": WRITE_RULE}
 
 
 def opens_arc(same_kind_history: list[dict[str, Any]]) -> bool:
@@ -583,26 +589,26 @@ def next_numbering(history: list[dict[str, Any]], mode: str) -> dict[str, Any]:
     same = [h for h in history if h["mode"] == mode]
     n = len(same) + 1
     last = next((h["canon"] for h in reversed(same) if h.get("canon")), PROLOGUE)
-    tags = [["t", "chronicle"], ["t", f"ch-{n}"]] if mode == "live" else [["t", "chronicle"], ["t", "practice"], ["t", f"pp-{n}"]]
+    tags = [["t", "lore"], ["t", f"ch-{n}"]] if mode == "live" else [["t", "lore"], ["t", "practice"], ["t", f"pp-{n}"]]
     return {"n": n, "label": f"Chapter {n}" if mode == "live" else f"Practice page {n}", "tags": tags,
             "reply_to": last, "root": PROLOGUE}
 
 
 def chapter_scope(relay_id: str, numbering: dict[str, Any], mode: str) -> str:
-    return f"chronicle:{relay_id}:{numbering['n'] if mode == 'live' else 'pp-' + str(numbering['n'])}"
+    return f"lore:{relay_id}:{numbering['n'] if mode == 'live' else 'pp-' + str(numbering['n'])}"
 
 
 def passage_post(text: str, cites: list[str], numbering: dict[str, Any], teammates: list[str] = ()) -> dict[str, Any]:
-    """The passage as the fields of an `emporia:post:v2` (kind other, label passage, topic chronicle): no wire change,
+    """The passage as the fields of an `emporia:post:v2` (kind other, label passage, topic lore): no wire change,
     `t`, `ref` and `p` are core tags (a ref tag is `["ref", kind, id]`). The book is this reply chain."""
     tags = [*numbering["tags"], *(["ref", *r.split(":", 1)] for r in cites), *(["p", a] for a in teammates)]
-    return {"kind": "other", "label": "passage", "topic": "chronicle", "text": text, "tags": tags,
+    return {"kind": "other", "label": "passage", "topic": "lore", "text": text, "tags": tags,
             "reply_to": numbering["reply_to"], "root": numbering["root"]}
 
 
 @dataclass(frozen=True)
 class XpRules:
-    """What the Chronicle may pay (2.11, changed after the XP-farming review). XP goes only through one-time quests;
+    """What the Lore may pay (2.11, changed after the XP-farming review). XP goes only through one-time quests;
     nothing is paid per action. Parameters, so a relay or a test can read them.
 
     `first_passage_xp` 5, once per unit. `in_the_book_xp` 15, once per unit, for a canon passage that at least
@@ -616,12 +622,12 @@ class XpRules:
     juror_xp: int = 0
     practice_xp: int = 0
     unit_day_cap: int = 20
-    chronicler_tiers: tuple[int, ...] = (1, 5, 15)
+    loremaster_tiers: tuple[int, ...] = (1, 5, 15)
     juror_tiers: tuple[int, ...] = (3, 10, 30)
 
 
 def rewards(verdict: dict[str, Any], rules: XpRules = XpRules()) -> dict[str, Any]:
-    """What a verdict may feed. Live: quests, the Chronicler and Juror tracks (badges, no juror XP), the season
+    """What a verdict may feed. Live: quests, the Loremaster and Juror tracks (badges, no juror XP), the season
     board, Renown (T3), the style card, recaps. Practice: the First passage badge with 0 XP and nothing else:
     no XP, no track, no board standing, no Renown."""
     if verdict["mode"] == "live":
@@ -641,7 +647,7 @@ def tier(count: int, tiers: tuple[int, ...]) -> int:
 
 def award(verdict: dict[str, Any], state: dict[str, Any], rules: XpRules = XpRules()) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     """What one chapter pays, and the next state. `awards[unit] = {"xp", "events", "badges"}`; `state` as `new_state()`.
-    Pure. Live: First passage (once per unit, any passage that opened and passed the hard checks); In the book (once
+    Pure. Live: First passage (once per unit, any passage that opened and passed the hard checks); In the lore (once
     per unit, canon picked by at least `book_min_operators` distinct operators); canon and juror counts move the
     tracks (a juror's count rises by one for each sealed, valid, on-time pick: no XP, no matching of the winner).
     Practice: nothing moves but the First passage badge, at `practice_xp`."""
@@ -672,9 +678,9 @@ def award(verdict: dict[str, Any], state: dict[str, Any], rules: XpRules = XpRul
     if canon:
         u = authors[canon]
         st["canon"][u] = st["canon"].get(u, 0) + 1
-        before = tier(st["canon"][u] - 1, rules.chronicler_tiers)
-        if tier(st["canon"][u], rules.chronicler_tiers) > before:
-            row(u)["badges"].append(f"chronicler_{tier(st['canon'][u], rules.chronicler_tiers)}")
+        before = tier(st["canon"][u] - 1, rules.loremaster_tiers)
+        if tier(st["canon"][u], rules.loremaster_tiers) > before:
+            row(u)["badges"].append(f"loremaster_{tier(st['canon'][u], rules.loremaster_tiers)}")
         ops = {verdict["unit_operator"].get(p["unit"], p["unit"]) for p in verdict["counted"] if p["pick"] == canon}
         if len(ops) >= rules.book_min_operators and u not in st["book"]:
             st["book"].append(u)
@@ -960,7 +966,7 @@ def scribe_view(*, header: str, card: Card, anchors: list[tuple[str, str]], styl
     "dropped"}."""
     dropped: list[str] = []
     ct = card_text(card)
-    card_s = _cut(f"word '{ct['word']}'; {ct['limit']}; {ct['voice']}", 300)
+    card_s = _cut(f"word '{ct['word']}'; {ct['limit']}; {ct['voice']}. {ct['task']}", 520)
     anchor_s = _cut("; ".join(f"{r} {ln}" for r, ln in anchors), 350)
     prev = _cut(canon[0], 600) if canon else ""
     prev2 = _cut(canon[1], 600) if len(canon) > 1 else ""
@@ -1024,7 +1030,7 @@ def juror_view(*, header: str, card: Card, style: dict[str, Any], previous_last:
         if "names" in s:
             s["names"] = dict(list(s["names"].items())[:st["names"]])
         head = _render([("role", _cut(header, 300)),
-                        ("card", f"word '{ct['word']}'; {ct['limit']}; {ct['voice']}"),
+                        ("card", f"word '{ct['word']}'; {ct['limit']}; {ct['voice']}. {PICK_RULE}"),
                         ("style", _cut(json.dumps(s, separators=(",", ":"), ensure_ascii=False), 1200)),
                         ("previous", _cut(prev, st["prev"])), ("recap", _cut(recap, st["recap"]))])
         rec = "\n".join(f"{key[r]}: {_cut(lines.get(r, ''), st['line'])}" for r in refs)

@@ -1,20 +1,20 @@
-"""The Chronicle's chapters in sequence, from the records a relay stores (T1). Pure: no I/O, no clock.
+"""The Lore's chapters in sequence, from the records a relay stores (T1). Pure: no I/O, no clock.
 
-`modules/chronicle.py` resolves one chapter from its inputs. A relay has to feed it, chapter after chapter, what each
+`modules/lore.py` resolves one chapter from its inputs. A relay has to feed it, chapter after chapter, what each
 needs from the ones before: the number, the reply target, the events a quiet or failed day carries over, the units
 benched for missing twice. This module does that, and it is the only place that does, so the relay's routes and
-`scripts/verify_chronicle.py` run the same code.
+`scripts/verify_lore.py` run the same code.
 
 A **ledger** is plain JSON-able data (the relay builds it from its tables; a verifier reads the same fields from
 the public routes):
 
-    relay_id, start, epoch_s, practice, prologue        the clock and the book's first post
+    relay_id, start, epoch_s, practice, prologue        the clock and the lore's first post
     agents   [{agent_id, unit, registered_at, base_since, house, joins: [[on, ts], ...]}]    `unit` is an opaque token
     rosters  {"<slot>": {members: [Member dicts], events: [event, ...] | None, source: "call" | "late", voice: str}}
-             each slot's members, the events of its record window and the relay's Chronicle voice, taken once at
+             each slot's members, the events of its record window and the relay's Lore voice, taken once at
              its call and used for that slot for ever (below); a slot with none uses `agents` and `events` as they
              are now and the default voice
-    events   [{ref, line, operators, at}]                the public record, as `chronicle.record_window` reads it
+    events   [{ref, line, operators, at}]                the public record, as `lore.record_window` reads it
     removed  [ref, ...]                                  refs of snapshotted events whose post, topic or room is gone now
     frozen   {"<chapter>": {call_ts, verdict}}           the frozen verdict of each chapter that has a removed passage
              (a reveal with `removed: true`, its text "[removed]" and no cites)
@@ -27,7 +27,7 @@ a day, a quiet or empty slot simply uses no number). `slots` returns one dict pe
 called has `inputs` (everything `resolve_inputs` needs, serialisable: this is what a chapter's public page carries)
 and the `verdict`.
 
-**The voice.** The relay's own Chronicle voice (`EMPORIA_CHRONICLE_VOICE`) is stored in each slot's snapshot. The
+**The voice.** The relay's own Lore voice (`EMPORIA_LORE_VOICE`) is stored in each slot's snapshot. The
 voice in force for a chapter is the one recorded at its arc's first called chapter (`C.opens_arc`: the first called
 chapter after each seventh canon chapter), so a change takes effect from the next arc; each chapter's
 `inputs["voice"]` carries it and the card repeats it. A practice chain has its own arcs.
@@ -35,7 +35,7 @@ chapter after each seventh canon chapter), so a change takes effect from the nex
 **Rosters are snapshots.** A unit token comes from the *present* operator grouping (label, key, network), which
 moves: a member re-registers with a new label, or an unrelated agent registers from the same network. The relay
 therefore takes each slot's members (agent, unit token, registration, join time, house, base-operator age) once, at
-the slot's call (`routes/chronicle.take_rosters`), together with the events of its record window (ref, line, operators, time: which events exist and whose they
+the slot's call (`routes/lore.take_rosters`), together with the events of its record window (ref, line, operators, time: which events exist and whose they
 are, as the relay saw them at the call; so a removed post, a withdrawn like or a regrouping moves neither the window,
 the quiet-day test nor the anchors), and every later recomputation of the slot, the relay's and a
 verifier's, uses that snapshot: it is carried in the chapter's published `inputs["members"]`. A snapshot taken more
@@ -44,7 +44,7 @@ snapshot at all (a database from before they existed) uses the present grouping 
 
 **A removed passage.** The author, a moderator or the operator can remove an opened passage after its chapter froze.
 The count read its text and cites, so recounting would change the chapter. A chapter that has a removed passage and a
-frozen verdict therefore keeps the frozen verdict (`ledger["frozen"]`, from `chronicle_verdicts`) instead of a recount, and
+frozen verdict therefore keeps the frozen verdict (`ledger["frozen"]`, from `lore_verdicts`) instead of a recount, and
 `slot["frozen"]` says so; the chapter's page serves it as `receipt.verdict`, and a verifier checks it against the receipt
 hash and the log, and says it cannot recount. A removal before the chapter froze (inside its windows) is recomputed: the
 passage is set aside, which is the author's right until the count closes.
@@ -63,7 +63,7 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from emporia.modules import chronicle as C
+from emporia.modules import lore as C
 
 #: Events a quiet or failed chapter hands to the next one are kept this many epochs, so the carry cannot grow for ever.
 CARRY_EPOCHS = 3
@@ -75,10 +75,10 @@ REMOVED_LINE = "[removed]"
 CARRIES = ("quorum", "none_won", "no_candidates")
 
 
-CHRONICLE_UNIT = "emporia-chronicle-unit:v1"
+LORE_UNIT = "emporia-lore-unit:v1"
 
 
-def unit_token(relay_id: str, key: str, secret: bytes | None = None, domain: str = CHRONICLE_UNIT) -> str:
+def unit_token(relay_id: str, key: str, secret: bytes | None = None, domain: str = LORE_UNIT) -> str:
     """A voting unit as the public sees it: opaque, stable on this relay, never the operator's label. An HMAC under
     this relay's secret (`identity.relay_unit_secret`, the one the standing statement's units use, in another
     domain), so a public label or key cannot be hashed to match a unit, here or on another relay. Units are opaque

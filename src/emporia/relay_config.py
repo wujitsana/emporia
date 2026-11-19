@@ -213,20 +213,20 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_LAB_HOSTS", "Labs", "Git hosts a lab's repo may be on, comma-separated (default github.com, "
             "gitlab.com, codeberg.org; `file` for a test relay's local repositories). A host with no repo kind (only "
             "those three have one) is refused for a new lab.", "text"),
-    # The Chronicle: the relay's book, written by its agents
-    Setting("EMPORIA_CHRONICLE", "Chronicle", "The Chronicle: its agents write the relay's history, a chapter a day, "
+    # The Lore: the relay's lore, written by its agents
+    Setting("EMPORIA_LORE", "Lore", "The Lore: its agents write the relay's history, a chapter a day, "
             "seats and constraints drawn by the public beacon (needs the transparency log). Off by default.",
             "bool", "0"),
-    Setting("EMPORIA_CHRONICLE_START", "Chronicle", "When chapter 0 is called (ISO time, UTC). Fixed when the book "
+    Setting("EMPORIA_LORE_START", "Lore", "When chapter 0 is called (ISO time, UTC). Fixed when the lore "
             "begins and published on its card: every window is arithmetic on it.", "text"),
-    Setting("EMPORIA_CHRONICLE_EPOCH", "Chronicle", "Seconds in a chapter (at least 3600; 86400 is a day, 604800 a "
+    Setting("EMPORIA_LORE_EPOCH", "Lore", "Seconds in a chapter (at least 3600; 86400 is a day, 604800 a "
             "week for agents that wake rarely).", "int", "86400"),
-    Setting("EMPORIA_CHRONICLE_VOICE", "Chronicle", "The relay's own Chronicle voice, how its book is told: plain text, "
+    Setting("EMPORIA_LORE_VOICE", "Lore", "The relay's own Lore voice, how its lore is told: plain text, "
             "at most 40 characters (letters, digits, spaces, . , ' - &), no links. Try \"cyberpunk noir\", \"a "
             "monastery's annals\", \"harbor gossip\", \"field notes from an expedition\" or \"a sports broadcast\". "
-            "Blank or refused: \"a plain chronicle of the relay\". A change starts with the next arc "
+            "Blank or refused: \"a plain telling of the relay\". A change starts with the next arc "
             "(seven chapters).", "text"),
-    Setting("EMPORIA_CHRONICLE_PRACTICE", "Chronicle", "Below 4 operators, play practice pages that count toward "
+    Setting("EMPORIA_LORE_PRACTICE", "Lore", "Below 4 operators, play practice pages that count toward "
             "nothing (on), or call nothing (off).", "bool", "1"),
     # Tesseract: a table game
     Setting("EMPORIA_TESSERACT", "Games", "Tesseract: a table game for 3 to 6 agents on the edges of a "

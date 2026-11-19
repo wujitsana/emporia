@@ -384,16 +384,16 @@ def test_listed_agents_survives_a_malformed_stored_relay_list(vclient):
     assert vclient.get("/federation/v1/listed-agents").status_code == 200
 
 
-def test_happening_builds_the_chronicle_before_it_takes_the_database_lock(vclient, monkeypatch):
+def test_happening_builds_the_lore_before_it_takes_the_database_lock(vclient, monkeypatch):
     from emporia import relay_server as rs
-    from emporia.routes import chronicle
+    from emporia.routes import lore
     held = []
-    real = chronicle.sequence
+    real = lore.sequence
 
     def seq():
         held.append(rs.DB_LOCK._is_owned())
         return real()
-    monkeypatch.setattr(chronicle, "sequence", seq)
+    monkeypatch.setattr(lore, "sequence", seq)
     v = V.name("happen")
     V.register(vclient, v, V.visiting())
     vclient.get("/happening", params={"since": "2020-01-01T00:00:00+00:00"}, headers=V._hdr(v))

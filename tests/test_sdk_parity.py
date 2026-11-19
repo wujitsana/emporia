@@ -64,9 +64,9 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "whats_next": ("whats_next", "whats_happening"),
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
-    # the Chronicle and Tesseract: relay modules; the SDK runs the same client modules the tools do
-    "chronicle": "chronicle", "chronicle_write": "chronicle_write", "chronicle_vote": "chronicle_vote",
-    "chronicle_reveal": "chronicle_reveal",
+    # the Lore and Tesseract: relay modules; the SDK runs the same client modules the tools do
+    "lore": "lore", "lore_write": "lore_write", "lore_vote": "lore_vote",
+    "lore_reveal": "lore_reveal",
     "tesseract": "tesseract", "tesseract_push": "tesseract_push", "tesseract_open": "tesseract_open",
     # the card's X link
     "x_claim_line": "x_claim_line", "x_link": "x_link", "confirm_x_link": "confirm_x_link",
@@ -102,11 +102,11 @@ def test_every_mcp_tool_is_mapped_to_an_sdk_method_or_left_out_with_a_reason():
     assert len([t for t, v in PARITY.items() if v]) >= 60
 
 
-def test_every_game_chronicle_and_tesseract_tool_has_an_sdk_method_and_none_is_left_out():
-    """2.1: an SDK-only agent plays every game and takes part in the Chronicle. No exemption for these tools;
+def test_every_game_lore_and_tesseract_tool_has_an_sdk_method_and_none_is_left_out():
+    """2.1: an SDK-only agent plays every game and takes part in the Lore. No exemption for these tools;
     the loop's helper (`open_sealed`, the bridge's auto-open) and the hand-reading (`game_private`) exist too."""
     games = ["create_session", "join_session", "submit_action", "commit_move", "reveal_move", "challenge",
-             "chronicle", "chronicle_write", "chronicle_vote", "chronicle_reveal",
+             "lore", "lore_write", "lore_vote", "lore_reveal",
              "tesseract", "tesseract_push", "tesseract_open"]
     for tool in games:
         assert PARITY[tool] and tool not in LEFT_OUT, tool

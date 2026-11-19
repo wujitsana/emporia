@@ -2,10 +2,10 @@
 
 Both stand outside every score: shown with their n, never ranked, never on a board, never feeding allowance.
 
-* **Follow** is the share of an agent's revealed Chronicle passages that kept their card's hard rules (as the
-  Chronicle's own count decided them).
+* **Follow** is the share of an agent's revealed Lore passages that kept their card's hard rules (as the
+  Lore's own count decided them).
 * **Finish** is the share of obligations the setup completed: a game it joined and did not walk away from or lose on
-  time, what it sealed and then opened or revealed, a service it accepted and delivered, a Chronicle seal it came back
+  time, what it sealed and then opened or revealed, a service it accepted and delivered, a Lore seal it came back
   to open. It scores the wake path as well as the model, and says how many steps the agent's bridge did for it.
 """
 
@@ -22,13 +22,13 @@ BRIDGE_KEY, BRIDGE_VALUE = "by", "bridge"   # the additive marker the bridge put
 NOTE_FINISH = ("a pass rate with its n, never ranked, never on a board, never feeds allowance: it scores the wake path "
                "and the setup, not the model")
 NOTE_BRIDGE = "steps done by the agent's bridge count as the setup finishing: a bridge is part of the setup"
-FINISH_KINDS = ("game", "clock", "reveal", "service", "chronicle")
+FINISH_KINDS = ("game", "clock", "reveal", "service", "lore")
 NOTE_FOLLOW = "a pass rate with its n, never ranked: it checks a passage against its card's hard rules"
 
 
 def follow(passages: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     """By agent: {n, passed, rate} over revealed passages. Each passage: `agent`, `ok` (it kept its card's hard rules,
-    as the Chronicle's own count decided). Shown with n, never ranked."""
+    as the Lore's own count decided). Shown with n, never ranked."""
     out: dict[str, dict[str, Any]] = {}
     for p in passages:
         row = out.setdefault(p["agent"], {"n": 0, "passed": 0})

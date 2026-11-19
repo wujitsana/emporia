@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Chronicle T1, end to end: six scripted agents (no model) play three chapters on a throwaway relay.
+"""Lore T1, end to end: six scripted agents (no model) play three chapters on a throwaway relay.
 
-    EMPORIA_NO_DOTENV=1 python scripts/e2e_chronicle.py [--chapters 3] [--no-bls] [--change-voice]
+    EMPORIA_NO_DOTENV=1 python scripts/e2e_lore.py [--chapters 3] [--no-bls] [--change-voice]
 
 The relay is this repo's own, in process, on a throwaway database and key folder (the test suite's pinned
 environment, `tests/conftest.py`), with the test beacon (every drand round a fixed fake signature) and a fake clock
-that runs days in seconds. The agents use the four real tools (`chronicle`, `chronicle_write`, `chronicle_vote`,
-`chronicle_reveal`, as `mcp_server` defines them) over the relay's REST routes: nothing is called around them.
+that runs days in seconds. The agents use the four real tools (`lore`, `lore_write`, `lore_vote`,
+`lore_reveal`, as `mcp_server` defines them) over the relay's REST routes: nothing is called around them.
 Posts and replies that make the day's record are signed with the fake clock's time. After each chapter the script runs
-`scripts/verify_chronicle.py` against the relay and prints whether it agrees. Nothing leaves this machine.
+`scripts/verify_lore.py` against the relay and prints whether it agrees. Nothing leaves this machine.
 
-The relay's voice (`EMPORIA_CHRONICLE_VOICE`) is set for the run; `--change-voice` plays four chapters with arcs of two
+The relay's voice (`EMPORIA_LORE_VOICE`) is set for the run; `--change-voice` plays four chapters with arcs of two
 chapters and changes the setting after the first arc, so the verifier meets a voice that changes between arcs (and
 none inside one).
 
-`World` is also what `tests/test_chronicle_relay.py` plays with.
+`World` is also what `tests/test_lore_relay.py` plays with.
 """
 
 from __future__ import annotations
@@ -59,26 +59,26 @@ class Clock:
 
 
 class World:
-    """A throwaway relay with the Chronicle on, scripted agents, and the fake clock and beacon."""
+    """A throwaway relay with the Lore on, scripted agents, and the fake clock and beacon."""
 
     def __init__(self, client, *, epoch_s: int = DAY, start: float | None = None, monkeypatch=None):
         from emporia import deletion
         from emporia import relay_server as rs
-        from emporia import chronicle_client
+        from emporia import lore_client
         from emporia.routes import beacon as beacon_route
-        from emporia.routes import chronicle as route
+        from emporia.routes import lore as route
         self.client, self.rs, self.route, self.epoch = client, rs, route, epoch_s
         real = datetime.now(UTC).timestamp()
         self.start = start if start is not None else (real // epoch_s) * epoch_s - 60 * DAY
         self.clock = Clock(self.start - 3 * 3600)
         with rs.DB_LOCK, rs.get_db() as conn:        # a throwaway book: nothing of an earlier one is on this roster
             for t in ("join", "seals", "reveals", "ballots", "verdicts", "rosters"):
-                conn.execute(f"DELETE FROM chronicle_{t}")
+                conn.execute(f"DELETE FROM lore_{t}")
             conn.commit()
         self._env: dict[str, str | None] = {}
-        for k, v in {"EMPORIA_CHRONICLE": "1", "EMPORIA_GAMIFY": "sheets,quests", "EMPORIA_TRANSPARENCY_LOG": "on",
-                     "EMPORIA_CHRONICLE_START": datetime.fromtimestamp(self.start, UTC).isoformat(),
-                     "EMPORIA_CHRONICLE_EPOCH": str(epoch_s)}.items():
+        for k, v in {"EMPORIA_LORE": "1", "EMPORIA_GAMIFY": "sheets,quests", "EMPORIA_TRANSPARENCY_LOG": "on",
+                     "EMPORIA_LORE_START": datetime.fromtimestamp(self.start, UTC).isoformat(),
+                     "EMPORIA_LORE_EPOCH": str(epoch_s)}.items():
             self._env[k] = os.environ.get(k)
             os.environ[k] = v
         self._undo: list = []
@@ -89,7 +89,7 @@ class World:
         patch(route, "now", self.clock)
         patch(route, "_BEACONS", {})
         patch(route, "_SEQ", {"key": None, "value": None})
-        patch(chronicle_client, "clock", lambda: datetime.fromtimestamp(self.clock.t, UTC))
+        patch(lore_client, "clock", lambda: datetime.fromtimestamp(self.clock.t, UTC))
         patch(beacon_route, "signature", fake_beacon_sig)
         patch(deletion, "FRESH", timedelta(days=36500))
         patch(rs.AGENT_REGISTRY, "check_rate_limit", lambda agent_id, *a: True)      # scripted agents write fast      # posts and replies are signed with the fake clock
@@ -137,9 +137,9 @@ class World:
         """The four tools as `agent` runs them, over this relay: a context manager returning a namespace."""
         return _AsAgent(self, agent)
 
-    # ── the book's topic and prologue ──────────────────────────────────────────────────────────
+    # ── the lore's topic and prologue ──────────────────────────────────────────────────────────
     def seed(self, keeper: str) -> str:
-        """The chronicle topic and the prologue, by `keeper` (the relay operator's role)."""
+        """The lore topic and the prologue, by `keeper` (the relay operator's role)."""
         from emporia import identity, wire
         self.keeper = keeper
         with self.rs.DB_LOCK, self.rs.get_db() as conn:
@@ -147,14 +147,14 @@ class World:
         if have:                      # a relay seeds once; a later throwaway book on the same database reuses it
             return have.removeprefix("post:")
         h = self.token(keeper)
-        body = {"name": "Chronicle", "description": "The relay's book.", "slug": "chronicle",
+        body = {"name": "Lore", "description": "The relay's lore.", "slug": "lore",
                 "nonce": wire.new_message_nonce()}
         body["signature"] = identity.sign(wire.signed_agora_topic_payload(
-            body["nonce"], "chronicle", "Chronicle", "The relay's book.", "public", "open", 0, [], None, False), keeper)
+            body["nonce"], "lore", "Lore", "The relay's lore.", "public", "open", 0, [], None, False), keeper)
         r = self.client.post("/agoras/topics", headers=h, json=body)
         assert r.status_code == 200, r.text
-        return self.post(keeper, "The Chronicle. This relay keeps a book of its own history.", kind="other",
-                         label="prologue", topic="chronicle", tags=[["t", "chronicle"], ["t", "prologue"]])
+        return self.post(keeper, "The Lore. This relay keeps its own lore.", kind="other",
+                         label="prologue", topic="lore", tags=[["t", "lore"], ["t", "prologue"]])
 
     def post(self, agent: str, text: str, *, kind: str = "note", label: str = "", topic: str | None = None,
              reply_to: str | None = None, tags=None) -> str:
@@ -182,7 +182,7 @@ class World:
         # This harness rewinds its clock (a chapter's windows run to the next call; the next day's record is written
         # after): a roster snapshot taken "later" than `around` would not exist yet on a real relay, so drop it.
         with self.rs.DB_LOCK, self.rs.get_db() as conn:
-            conn.execute("DELETE FROM chronicle_rosters WHERE call_ts > ?", (around,))
+            conn.execute("DELETE FROM lore_rosters WHERE call_ts > ?", (around,))
             conn.commit()
         self.route._SEQ.update(key=None, value=None)
         unit = self.epoch / 1000
@@ -221,7 +221,7 @@ class World:
 
 
 class _AsAgent:
-    """`tools.chronicle()` etc. run as one agent: the mcp_server door is pointed at the test client."""
+    """`tools.lore()` etc. run as one agent: the mcp_server door is pointed at the test client."""
 
     def __init__(self, world: World, agent: str):
         self.w, self.agent = world, agent
@@ -247,32 +247,32 @@ class _AsAgent:
         f = getattr(self.m, name)
         return getattr(f, "fn", f)
 
-    def chronicle(self, **kw):
-        return self._tool("chronicle")(**kw)
+    def lore(self, **kw):
+        return self._tool("lore")(**kw)
 
     def write(self, text, cites, **kw):
         # a scripted writer has no judgement to apply to a flag (a tense or opening heuristic that depends on the card
         # drawn): it confirms, as a model would after answering the three questions. Pass confirm=False to see flags.
         kw.setdefault("confirm", True)
-        return self._tool("chronicle_write")(text, cites, **kw)
+        return self._tool("lore_write")(text, cites, **kw)
 
     def vote(self, pick, reason="", **kw):
-        return self._tool("chronicle_vote")(pick, reason=reason, **kw)
+        return self._tool("lore_vote")(pick, reason=reason, **kw)
 
     def reveal(self):
-        return self._tool("chronicle_reveal")()
+        return self._tool("lore_reveal")()
 
 
 def scripted_passage(card: dict) -> str:
-    import sim_chronicle as sim
-    from emporia.modules import chronicle as C
+    import sim_lore as sim
+    from emporia.modules import lore as C
     return sim.valid_passage(C.Card(**{k: card[k] for k in ("word", "limit", "voice")}))
 
 
 def pick_cites(world: World, chapter: str) -> list[str]:
-    ch = world.get(f"/chronicle/chapters/{chapter}").json()
+    ch = world.get(f"/lore/chapters/{chapter}").json()
     anchors = [a["ref"] for a in ch["anchors"]]
-    others = [e["ref"] for e in world.get(f"/chronicle/chapters/{chapter}/record").json()["events"]
+    others = [e["ref"] for e in world.get(f"/lore/chapters/{chapter}/record").json()["events"]
               if e["ref"] not in anchors]
     return [anchors[0], *(others[:1] or anchors[1:2])]
 
@@ -287,11 +287,11 @@ def play_chapter(world: World, names: list[str], slot: int, *, picker=None, skip
     views = {}
     for a in names:
         with world.tools(a) as t:
-            views[a] = t.chronicle()
+            views[a] = t.lore()
     cur = next(v for v in views.values() if v.get("chapter"))
     chapter = cur["chapter"]
     did["chapter"] = chapter
-    card = world.get(f"/chronicle/chapters/{chapter}").json()["card"]
+    card = world.get(f"/lore/chapters/{chapter}").json()["card"]
     cites = pick_cites(world, chapter)
     for a in names:
         v = views[a]
@@ -310,9 +310,9 @@ def play_chapter(world: World, names: list[str], slot: int, *, picker=None, skip
     world.clock.at(call + 0.65 * E)
     for i, a in enumerate(names):
         with world.tools(a) as t:
-            v = t.chronicle()
+            v = t.lore()
             if v.get("due") == "pick":
-                cands = world.get(f"/chronicle/chapters/{chapter}").json().get("candidates") or []
+                cands = world.get(f"/lore/chapters/{chapter}").json().get("candidates") or []
                 pick = (picker(a, i, cands) if picker else (cands[(i + slot) % len(cands)] if cands else "none"))
                 r = t.vote(pick, reason=f"{a} liked it")
                 did["picked"].append((a, pick, r))
@@ -329,7 +329,7 @@ def play_chapter(world: World, names: list[str], slot: int, *, picker=None, skip
 
 
 def fixture_story(world: World, log=print) -> dict:
-    """A relay's first days, for the Book page's fixtures: three agents of one operator play two practice pages; three
+    """A relay's first days, for the Lore page's fixtures: three agents of one operator play two practice pages; three
     more operators join and the call with four operators is Chapter 1 (a thin jury); in Chapter 2 every juror
     picks none (no canon); two more operators join and Chapter 3 has a full jury. Returns the public reads."""
     w = world
@@ -343,34 +343,34 @@ def fixture_story(world: World, log=print) -> dict:
     w.clock.at(w.start - 3600)
     for n in p:
         with w.tools(n) as t:
-            t.chronicle(join=True)
+            t.lore(join=True)
     joined = list(p)
     for slot in range(1, 6):
         if slot == 2:
             w.clock.at(w.start + 1.5 * w.epoch)
             for n in q[:3]:
                 with w.tools(n) as t:
-                    t.chronicle(join=True)
+                    t.lore(join=True)
             joined += q[:3]
         if slot == 4:
             w.clock.at(w.start + 3.5 * w.epoch)
             for n in q[3:]:
                 with w.tools(n) as t:
-                    t.chronicle(join=True)
+                    t.lore(join=True)
             joined += q[3:]
         w.activity(w.start + (slot - 1) * w.epoch + 0.8 * w.epoch, joined)
         none = (lambda a, i, c: "none") if slot == 4 else None
         did = play_chapter(w, joined, slot, picker=none)
         log(f"slot {slot}: chapter {did.get('chapter')} wrote {len(did['wrote'])} picked {len(did['picked'])}")
-    return {"book": w.get("/chronicle/book").json(), "state": w.get("/chronicle").json()}
+    return {"book": w.get("/lore/book").json(), "state": w.get("/lore").json()}
 
 
 def run(chapters: int = 3, bls: bool = False, log=print, change_voice: bool = False) -> int:
     from fastapi.testclient import TestClient
 
-    from emporia.modules import chronicle as C
+    from emporia.modules import lore as C
     first, second = "harbor gossip", "a sports broadcast"
-    os.environ["EMPORIA_CHRONICLE_VOICE"] = first
+    os.environ["EMPORIA_LORE_VOICE"] = first
     arc_was = C.ARC_CHAPTERS
     if change_voice:
         C.ARC_CHAPTERS = 2          # arcs of two chapters, so a voice can change inside a short run
@@ -378,7 +378,7 @@ def run(chapters: int = 3, bls: bool = False, log=print, change_voice: bool = Fa
 
     from emporia import relay_server as rs
     from emporia.relay_server import init_db
-    import verify_chronicle as V
+    import verify_lore as V
     init_db()
     client = TestClient(rs.app, client=("127.0.0.1", 51411))
     w = World(client)
@@ -389,12 +389,12 @@ def run(chapters: int = 3, bls: bool = False, log=print, change_voice: bool = Fa
         w.seed(names[0])
         for n in names:
             with w.tools(n) as t:
-                assert t.chronicle(join=True)["success"]
+                assert t.lore(join=True)["success"]
         ok = True
         voices: dict[str, str] = {}
         for ch in range(1, chapters + 1):
             if change_voice and ch == 3:
-                os.environ["EMPORIA_CHRONICLE_VOICE"] = second      # takes effect from the next arc, which is chapter 3
+                os.environ["EMPORIA_LORE_VOICE"] = second      # takes effect from the next arc, which is chapter 3
             w.activity(w.start + (ch - 1) * DAY + 0.8 * DAY, names)
             did = play_chapter(w, names, ch)
             rep = V.verify(lambda p, _w=w: _w.get(p).json(), bls=bls)
@@ -402,7 +402,7 @@ def run(chapters: int = 3, bls: bool = False, log=print, change_voice: bool = Fa
             log(f"chapter {did['chapter']}: wrote {len(did['wrote'])}, picked {len(did['picked'])}, "
                 f"canon {c['canon']}, reason {c['reason']}; verify {'agrees' if c['ok'] else 'DISAGREES: ' + str(c['problems'])}")
             ok &= c["ok"]
-            voices[did["chapter"]] = w.get(f"/chronicle/chapters/{did['chapter']}").json()["card"]["voice"]
+            voices[did["chapter"]] = w.get(f"/lore/chapters/{did['chapter']}").json()["card"]["voice"]
         log(f"voices by chapter: {voices}")
         want = ([first] * 2 + [second] * (chapters - 2)) if change_voice else [first] * chapters
         if list(voices.values()) != want:
@@ -421,7 +421,7 @@ def main() -> int:
     ap.add_argument("--no-bls", action="store_true", help="the test beacon has no BLS signatures to check (default here)")
     ap.add_argument("--change-voice", action="store_true", help="four chapters in arcs of two; the voice changes at the arc")
     ap.add_argument("--dump-book", metavar="PATH", help="instead: play a relay's first days (practice pages, then "
-                    "chapters) and write the public reads the Book page shows to PATH as JSON")
+                    "chapters) and write the public reads the Lore page shows to PATH as JSON")
     args = ap.parse_args()
     os.environ.setdefault("EMPORIA_LOG_LEVEL", "WARNING")
     if args.dump_book:

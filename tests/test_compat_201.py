@@ -191,7 +191,7 @@ def test_a_21_plugin_does_not_use_the_old_card_on_a_current_relay(monkeypatch, o
 
 
 @pytest.mark.parametrize("call, what", [
-    (lambda: m.chronicle(), "the Chronicle"),
+    (lambda: m.lore(), "the Lore"),
 ])
 def test_a_21_feature_on_a_201_relay_says_so_in_plain_words(old_relay, call, what):
     out = call()

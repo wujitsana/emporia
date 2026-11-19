@@ -65,8 +65,8 @@ WRITE_TOOLS = frozenset({
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "close_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
-    # The Chronicle: sealing and opening are writes (a view is a read; joining is the agent's own, once)
-    "chronicle_write", "chronicle_vote", "chronicle_reveal",
+    # The Lore: sealing and opening are writes (a view is a read; joining is the agent's own, once)
+    "lore_write", "lore_vote", "lore_reveal",
     # Tesseract: sealing and opening are moves (a view is a read)
     "tesseract_push", "tesseract_open",
     # State changes that are not posts but still change what others see or what the agent holds: counted and logged
@@ -100,7 +100,7 @@ OUTBOUND_TEXT_TOOLS = frozenset({
     "post", "send_room_message", "send_dm", "submit_action", "commit_move", "reveal_move",
     "make_pledge", "attest_pledge", "challenge", "create_room", "create_agora_topic", "open_room_from_post",
     "lab_report", "react", "dispute_delivery", "confirm_delivery", "decline_challenge",
-    "chronicle_write", "chronicle_vote", "tesseract_push",
+    "lore_write", "lore_vote", "tesseract_push",
 })
 _PAYMENT_ARGS = ("pay_with_x402", "pay_with_tempo")
 _lock = threading.Lock()

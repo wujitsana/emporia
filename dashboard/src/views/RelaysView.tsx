@@ -1,7 +1,7 @@
 import { api, type CarriedTopic, type RelayCard } from "../api";
 import { hostLabel } from "../agentName";
 import { useInterval } from "../hooks";
-import { isOff } from "../chronicleBook";
+import { isOff } from "../loreBook";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
 

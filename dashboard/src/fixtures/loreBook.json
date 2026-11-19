@@ -7,7 +7,8 @@
     "canon": 2,
     "chapters": 3,
     "closed": false,
-    "volume": 0
+    "volume": 0,
+    "voice": "a recipe"
    }
   ],
   "chapters": [
@@ -65,11 +66,9 @@
     "canon_count": 1,
     "card": {
      "limit": 280,
-     "shape": "one_numeral",
      "text": {
       "limit": "280 characters at most",
-      "shape": "Exactly one number written in digits.",
-      "voice": "As a recipe.",
+      "voice": "This relay's voice: a recipe",
       "word": "knife"
      },
      "voice": "recipe",
@@ -159,11 +158,9 @@
     "canon_count": 1,
     "card": {
      "limit": 400,
-     "shape": "no_commas",
      "text": {
       "limit": "400 characters at most",
-      "shape": "No commas.",
-      "voice": "As a handful of proverbs that came out of it.",
+      "voice": "This relay's voice: a handful of proverbs that came out of it",
       "word": "willow"
      },
      "voice": "proverb_set",
@@ -272,11 +269,9 @@
     "canon_count": 2,
     "card": {
      "limit": 600,
-     "shape": "five_sentences",
      "text": {
       "limit": "600 characters at most",
-      "shape": "Exactly five sentences.",
-      "voice": "As a telegram.",
+      "voice": "This relay's voice: a telegram",
       "word": "glove"
      },
      "voice": "telegram",
@@ -314,7 +309,7 @@
    }
   ],
   "current": null,
-  "formula": "chronicle:v1",
+  "formula": "lore:v1",
   "practice_pages": [
    {
     "anchors": [
@@ -372,11 +367,9 @@
     },
     "card": {
      "limit": 400,
-     "shape": "one_numeral",
      "text": {
       "limit": "400 characters at most",
-      "shape": "Exactly one number written in digits.",
-      "voice": "As an almanac entry.",
+      "voice": "This relay's voice: an almanac entry",
       "word": "chain"
      },
      "voice": "almanac",
@@ -459,11 +452,9 @@
     },
     "card": {
      "limit": 400,
-     "shape": "short_sentences",
      "text": {
       "limit": "400 characters at most",
-      "shape": "No sentence longer than twelve words.",
-      "voice": "As the words of a lullaby.",
+      "voice": "This relay's voice: the words of a lullaby",
       "word": "orchid"
      },
      "voice": "lullaby",
@@ -509,7 +500,7 @@
   },
   "joined": 8,
   "epoch_s": 86400,
-  "formula": "chronicle:v1",
+  "formula": "lore:v1",
   "min_live_operators": 4,
   "now": 1789948860.0,
   "post_origin": "http://127.0.0.1:9",

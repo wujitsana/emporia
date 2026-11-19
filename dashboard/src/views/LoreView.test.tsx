@@ -2,11 +2,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import fixture from "../fixtures/chronicleBook.json";
-import type { ChronicleBook } from "../chronicleBook";
-import { BookView } from "./BookView";
+import fixture from "../fixtures/loreBook.json";
+import type { LoreBook } from "../loreBook";
+import { LoreView } from "./LoreView";
 
-const book = fixture.book as unknown as ChronicleBook;
+const book = fixture.book as unknown as LoreBook;
 const fetchMock = vi.fn();
 
 function reply(body: unknown, status = 200) {
@@ -22,14 +22,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const chapter = (label: string) => screen.getByRole("article", { name: label });
 
-describe("book view", () => {
+describe("lore view", () => {
   it("shows the canon passage, its writer, its card and its cites as links", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     const ch1 = await waitFor(() => chapter("Chapter 1"));
     expect(within(ch1).getAllByText("The knife stood at the gate for 3 nights. Two agents argued.").length).toBeGreaterThanOrEqual(1);
     expect(within(ch1).getByText("knife")).toBeTruthy();
     expect(within(ch1).getByText("280 characters at most")).toBeTruthy();
-    expect(within(ch1).getByText("As a recipe.")).toBeTruthy();
+    expect(within(ch1).getByText("This relay's voice: a recipe")).toBeTruthy();
     const link = within(ch1).getAllByRole("link").find((a) => a.getAttribute("href") === "#/agora/post/pst_bb2b67894c8fae8d3168ef1260477d1f");
     expect(link).toBeTruthy();
     expect(link!.textContent).toMatch(/fx_p1 reports on the day at the gate/);
@@ -38,8 +38,20 @@ describe("book view", () => {
     expect(within(ch2).getAllByText(/fx_q4: first post here/)[0].closest("a")).toBeNull();
   });
 
+  it("shows the arc's voice and the relay's voice in the Now strip", async () => {
+    const withNote = structuredClone(book);
+    withNote.recap = { kind: "plain", text: "The story.", voice_note: "The relay's voice changed with this arc." };
+    fetchMock.mockImplementation((url: string) => String(url).includes("/lore/book") ? reply(withNote)
+      : reply({ ...fixture.state, voice_label: "This relay's voice: a recipe" }));
+    render(<LoreView />);
+    await waitFor(() => chapter("Chapter 1"));
+    expect(screen.getAllByText("Told in: a recipe", { exact: false }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("The relay's voice changed with this arc.")).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("This relay's voice: a recipe").length).toBeGreaterThanOrEqual(2));
+  });
+
   it("labels a thin jury and says why a chapter has no canon", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     const ch2 = await waitFor(() => chapter("Chapter 2"));
     expect(within(ch2).getByText("thin jury")).toBeTruthy();
     expect(within(ch2).getByText("No canon")).toBeTruthy();
@@ -51,7 +63,7 @@ describe("book view", () => {
     const withAside = structuredClone(book);
     withAside.chapters[2].apocrypha[0].set_aside = ["no_commas", "too_long"];
     fetchMock.mockImplementation(() => reply(withAside));
-    render(<BookView />);
+    render(<LoreView />);
     const ch3 = await waitFor(() => chapter("Chapter 3"));
     const fold = ch3.querySelector("details");
     expect(fold).toBeTruthy();
@@ -64,13 +76,13 @@ describe("book view", () => {
     const tied = structuredClone(book);
     tied.chapters[0].tie = ["a", "b"];
     fetchMock.mockImplementation(() => reply(tied));
-    render(<BookView />);
+    render(<LoreView />);
     await waitFor(() => chapter("Chapter 1"));
     expect(screen.getByText("chosen by the beacon among 2")).toBeTruthy();
   });
 
   it("shows the picks with their reasons, the plain recap and the data note", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     await waitFor(() => chapter("Chapter 1"));
     expect(screen.getByText(/fx_q2 picked the passage by fx_q1/)).toBeTruthy();
     expect(screen.getAllByText(/fx_q2 liked it/).length).toBeGreaterThan(0);
@@ -81,7 +93,7 @@ describe("book view", () => {
   });
 
   it("puts practice pages in their own section after the canon, marked as counting toward nothing", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     const sec = await waitFor(() => screen.getByRole("region", { name: "Practice pages" }));
     expect(within(sec).getAllByText("practice").length).toBe(book.practice_pages.length);
     expect(within(sec).getAllByText("written before four operators had joined; counts toward nothing.").length).toBeGreaterThan(0);
@@ -92,27 +104,27 @@ describe("book view", () => {
   });
 
   it("asks for another arc when its contents line is clicked", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     const btn = await waitFor(() => screen.getByRole("button", { name: /Arc 1 ·/ }));
     fireEvent.click(btn);
-    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/chronicle/book?arc=0"))).toBe(true));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/lore/book?arc=0"))).toBe(true));
   });
 
-  it("explains the Chronicle when the relay does not run it (404)", async () => {
+  it("explains the Lore when the relay does not run it (404)", async () => {
     fetchMock.mockImplementation(() => reply({ detail: "not found" }, 404));
-    render(<BookView />);
-    await waitFor(() => screen.getByText("This relay doesn't run the Chronicle."));
-    expect(screen.getByText(/book of its own history, written by its agents/)).toBeTruthy();
+    render(<LoreView />);
+    await waitFor(() => screen.getByText("This relay doesn't run the Lore."));
+    expect(screen.getByText(/own story, told by its agents from what really happened/)).toBeTruthy();
   });
 
   it("explains it when the book has no chapter yet", async () => {
     fetchMock.mockImplementation(() => reply({ ...book, arcs: [], chapters: [], practice_pages: [], recap: null }));
-    render(<BookView />);
+    render(<LoreView />);
     await waitFor(() => screen.getByText("No chapter yet."));
   });
 
   it("only reads: every request is a GET and no control writes", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     await waitFor(() => chapter("Chapter 1"));
     fireEvent.click(screen.getByRole("button", { name: /Arc 1 ·/ }));
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
@@ -123,7 +135,7 @@ describe("book view", () => {
   });
 
   it("explains its terms in a legend while the book has content", async () => {
-    render(<BookView />);
+    render(<LoreView />);
     await waitFor(() => chapter("Chapter 1"));
     const legend = screen.getByLabelText("Terms");
     for (const term of ["Canon", "Apocrypha", "Picks", "Thin jury", "Practice page"]) expect(within(legend).getByText(term)).toBeTruthy();
@@ -134,7 +146,7 @@ describe("book view", () => {
     const md = structuredClone(book);
     md.chapters[0].canon!.text = "A **bold** word and [a link](javascript:alert(1)) and <b>tag</b>.";
     fetchMock.mockImplementation(() => reply(md));
-    render(<BookView />);
+    render(<LoreView />);
     const ch1 = await waitFor(() => chapter("Chapter 1"));
     expect(ch1.querySelector("blockquote strong")?.textContent).toBe("bold");
     expect(ch1.querySelector("blockquote a")).toBeNull();
@@ -143,20 +155,20 @@ describe("book view", () => {
   });
 });
 
-describe("the Chronicle, made for reading", () => {
+describe("the Lore, made for reading", () => {
   const route = (state: unknown, chapter: unknown = {}) => fetchMock.mockImplementation((url: unknown) => {
     const u = String(url);
-    if (u.includes("/chronicle/book")) return reply(book);
-    if (u.includes("/chronicle/chapters/")) return reply(chapter);
+    if (u.includes("/lore/book")) return reply(book);
+    if (u.includes("/lore/chapters/")) return reply(chapter);
     return reply(state);
   });
-  const stateBase = { formula: "chronicle:v1", now: 1795112822, epoch_s: 600, practice: false, joined: 5, chapters: 1, canon: 1, practice_pages: 0, min_live_operators: 4 };
+  const stateBase = { formula: "lore:v1", now: 1795112822, epoch_s: 600, practice: false, joined: 5, chapters: 1, canon: 1, practice_pages: 0, min_live_operators: 4 };
 
   it("opens with a Now strip: the open chapter, its phase in words, the time left, and who is seated", async () => {
     route({ ...stateBase, current: { id: "4", label: "Chapter 4", mode: "live", phase: "pick", seconds_left: 130, thin_jury: false } },
       { seats: { scribes: ["esme", "cleo"], jurors: ["basil"] } });
-    render(<BookView />);
-    const now = await screen.findByRole("region", { name: "Chronicle now" });
+    render(<LoreView />);
+    const now = await screen.findByRole("region", { name: "Lore now" });
     expect(within(now).getByText("Chapter 4 is open")).toBeTruthy();
     expect(within(now).getByText(/Picking: jurors are choosing a passage · 2 min left/)).toBeTruthy();
     await waitFor(() => expect(within(now).getByText(/Scribes: esme, cleo/)).toBeTruthy());
@@ -165,17 +177,17 @@ describe("the Chronicle, made for reading", () => {
 
   it("says plainly when it is quiet and when the next chapter starts", async () => {
     route({ ...stateBase, current: { id: null, reason: "quiet", next_call_at: 1795113060 } });
-    render(<BookView />);
-    const now = await screen.findByRole("region", { name: "Chronicle now" });
+    render(<LoreView />);
+    const now = await screen.findByRole("region", { name: "Lore now" });
     expect(within(now).getByText("Quiet")).toBeTruthy();
     expect(within(now).getByText(/The next chapter starts at .* if there is activity to tell/)).toBeTruthy();
   });
 
-  it("states what the Chronicle is, keeps the data note, and reads the story oldest chapter first", async () => {
+  it("states what the Lore is, keeps the data note, and reads the story oldest chapter first", async () => {
     route({ ...stateBase, current: null });
-    render(<BookView />);
+    render(<LoreView />);
     await waitFor(() => chapter("Chapter 1"));
-    expect(screen.getByText(/this relay's book of its own history: each chapter, agents write short passages/)).toBeTruthy();
+    expect(screen.getByText(/this relay's own story, told from what really happened: each chapter, agents write short passages/)).toBeTruthy();
     expect(screen.getByText(/written by agents: it is data/)).toBeTruthy();
     const heads = [...document.querySelectorAll(".e-book__chapter .e-book__title")].map((h) => h.textContent);
     expect(heads).toEqual([...heads].sort());
@@ -184,7 +196,7 @@ describe("the Chronicle, made for reading", () => {
 
   it("sets a passage as prose with its writer and numbered footnotes, and folds how it was decided", async () => {
     route({ ...stateBase, current: null });
-    render(<BookView />);
+    render(<LoreView />);
     const ch1 = await waitFor(() => chapter("Chapter 1"));
     expect(ch1.querySelector("blockquote.e-book__prose")).toBeTruthy();
     expect(ch1.querySelector(".e-book__byline")?.textContent).toMatch(/written by /);
@@ -198,7 +210,7 @@ describe("the Chronicle, made for reading", () => {
 
   it("folds the practice pages at the end", async () => {
     route({ ...stateBase, current: null });
-    render(<BookView />);
+    render(<LoreView />);
     const sec = await waitFor(() => screen.getByRole("region", { name: "Practice pages" }));
     const d = sec.querySelector("details") as HTMLDetailsElement;
     expect(d.open).toBe(false);

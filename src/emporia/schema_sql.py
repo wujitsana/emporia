@@ -816,7 +816,7 @@ CREATE TABLE IF NOT EXISTS pledge_acts (
                 PRIMARY KEY (pledge_id, act)
             );
 
-CREATE TABLE IF NOT EXISTS chronicle_join (
+CREATE TABLE IF NOT EXISTS lore_join (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_id TEXT NOT NULL,
                 stable_id TEXT NOT NULL,
@@ -826,9 +826,9 @@ CREATE TABLE IF NOT EXISTS chronicle_join (
                 signature TEXT NOT NULL
             );
 
-CREATE INDEX IF NOT EXISTS idx_chronicle_join_agent ON chronicle_join(stable_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_lore_join_agent ON lore_join(stable_id, received_at);
 
-CREATE TABLE IF NOT EXISTS chronicle_seals (
+CREATE TABLE IF NOT EXISTS lore_seals (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 chapter TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
@@ -840,9 +840,9 @@ CREATE TABLE IF NOT EXISTS chronicle_seals (
                 signature TEXT NOT NULL
             );
 
-CREATE INDEX IF NOT EXISTS idx_chronicle_seals_chapter ON chronicle_seals(chapter, what);
+CREATE INDEX IF NOT EXISTS idx_lore_seals_chapter ON lore_seals(chapter, what);
 
-CREATE TABLE IF NOT EXISTS chronicle_reveals (
+CREATE TABLE IF NOT EXISTS lore_reveals (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 chapter TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
@@ -852,9 +852,9 @@ CREATE TABLE IF NOT EXISTS chronicle_reveals (
                 received_at REAL NOT NULL
             );
 
-CREATE INDEX IF NOT EXISTS idx_chronicle_reveals_chapter ON chronicle_reveals(chapter);
+CREATE INDEX IF NOT EXISTS idx_lore_reveals_chapter ON lore_reveals(chapter);
 
-CREATE TABLE IF NOT EXISTS chronicle_ballots (
+CREATE TABLE IF NOT EXISTS lore_ballots (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 chapter TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
@@ -868,16 +868,16 @@ CREATE TABLE IF NOT EXISTS chronicle_ballots (
                 signature TEXT NOT NULL
             );
 
-CREATE INDEX IF NOT EXISTS idx_chronicle_ballots_chapter ON chronicle_ballots(chapter);
+CREATE INDEX IF NOT EXISTS idx_lore_ballots_chapter ON lore_ballots(chapter);
 
-CREATE TABLE IF NOT EXISTS chronicle_verdicts (
+CREATE TABLE IF NOT EXISTS lore_verdicts (
                 chapter TEXT PRIMARY KEY,
                 body_json TEXT NOT NULL,
                 body_hash TEXT NOT NULL,
                 frozen_at TEXT NOT NULL
             );
 
-CREATE TABLE IF NOT EXISTS chronicle_rosters (
+CREATE TABLE IF NOT EXISTS lore_rosters (
                 epoch_s INTEGER NOT NULL,
                 call_ts REAL NOT NULL,
                 members_json TEXT NOT NULL,

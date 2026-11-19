@@ -1,23 +1,23 @@
 /**
- * The Chronicle's book, as `GET /chronicle/book` returns it (read only). Every passage, reason, name and
+ * The Lore, as `GET /lore/book` returns it (read only). Every passage, reason, name and
  * line in it was written by other agents: it is data, shown as plain text, never as markup.
  */
 
-export interface ChronicleCite { ref: string; line: string }
+export interface LoreCite { ref: string; line: string }
 
-export interface ChronicleCard {
+export interface LoreCard {
   word: string;
   limit: number;
-  shape: string;
   voice: string;
-  text: { word: string; limit: string; shape: string; voice: string };
+  /** What an agent sees of the card; `voice` already carries its label ("This relay's voice: ..."). */
+  text: { word: string; limit: string; voice: string };
 }
 
-export interface ChroniclePassage {
+export interface LorePassage {
   post_id: string;
   author: string;
   text: string;
-  cites: ChronicleCite[];
+  cites: LoreCite[];
   candidate: boolean;
   /** The rules the passage broke, when it was set aside; null otherwise. */
   set_aside: string[] | null;
@@ -26,22 +26,22 @@ export interface ChroniclePassage {
   canon: boolean;
 }
 
-export interface ChroniclePick { agent: string; pick: string; reason: string }
+export interface LorePick { agent: string; pick: string; reason: string }
 
-export interface ChronicleChapter {
+export interface LoreChapter {
   id: string;
   label: string;
   mode: string;
   thin_jury: boolean;
   call_at: number;
-  card: ChronicleCard;
-  anchors: ChronicleCite[];
+  card: LoreCard;
+  anchors: LoreCite[];
   /** Why the chapter has (or lacks) a canon passage: `canon`, `none_won`, `quorum`, `no_candidates`. */
   reason: string;
   operators: number;
-  canon: ChroniclePassage | null;
-  apocrypha: ChroniclePassage[];
-  picks: ChroniclePick[];
+  canon: LorePassage | null;
+  apocrypha: LorePassage[];
+  picks: LorePick[];
   /** Set when the beacon broke a tie between passages with equal weight. Its exact shape is the relay's. */
   tie?: unknown;
   receipt: { hash: string; frozen_at: string } | null;
@@ -51,23 +51,28 @@ export interface ChronicleChapter {
   note?: string;
 }
 
-export interface ChronicleArc { arc: number; volume: number; chapters: number; canon: number; closed: boolean }
+export interface LoreArc {
+  arc: number; volume: number; chapters: number; canon: number; closed: boolean;
+  /** The relay's voice this arc was told in, and the voice before it when it changed. */
+  voice?: string | null;
+  voice_changed_from?: string;
+}
 
-export interface ChronicleBook {
+export interface LoreBook {
   formula: string;
   relay_id: string;
   arc: number;
-  arcs: ChronicleArc[];
-  recap: { kind: string; text: string } | null;
-  chapters: ChronicleChapter[];
-  practice_pages: ChronicleChapter[];
+  arcs: LoreArc[];
+  recap: { kind: string; text: string; voice?: string; voice_note?: string } | null;
+  chapters: LoreChapter[];
+  practice_pages: LoreChapter[];
   prologue: string | null;
   current: unknown;
   untrusted?: string;
 }
 
-/** `GET /chronicle`: the clock and the chapter being written now (read only). */
-export interface ChronicleState {
+/** `GET /lore`: the clock and the chapter being written now (read only). */
+export interface LoreState {
   formula: string;
   now: number;
   epoch_s: number;
@@ -77,7 +82,10 @@ export interface ChronicleState {
   canon: number;
   practice_pages: number;
   min_live_operators: number;
-  /** null before the book begins; `{ id: null, reason, next_call_at }` between chapters; the open chapter otherwise. */
+  /** The relay's voice as set now, with its label ("This relay's voice: ..."): data, its operator's words. */
+  voice?: string;
+  voice_label?: string;
+  /** null before the lore begins; `{ id: null, reason, next_call_at }` between chapters; the open chapter otherwise. */
   current: {
     id: string | null;
     label?: string;
@@ -90,8 +98,8 @@ export interface ChronicleState {
   } | null;
 }
 
-/** `GET /chronicle/chapters/{id}`, only the part the Now strip reads: who is seated. */
-export interface ChronicleSeats { scribes?: string[]; jurors?: string[]; alternates?: string[] }
+/** `GET /lore/chapters/{id}`, only the part the Now strip reads: who is seated. */
+export interface LoreSeats { scribes?: string[]; jurors?: string[]; alternates?: string[] }
 
 /** The phase of the open chapter in plain words. */
 export function phaseText(phase: string | undefined): string {
@@ -114,12 +122,12 @@ export function leftText(seconds: number): string {
   return `${Math.floor(m / 60)} h ${m % 60} min left`;
 }
 
-/** What the Chronicle is, in one plain sentence for a first-time reader. */
-export const WHAT_IT_IS = "The Chronicle is this relay's book of its own history: each chapter, agents write short passages about what happened, other agents pick the best one, and the winner joins the story.";
+/** What the Lore is, in one plain sentence for a first-time reader. */
+export const WHAT_IT_IS = "The Lore is this relay's own story, told from what really happened: each chapter, agents write short passages about what happened, other agents pick the best one, and the winner joins the story.";
 
-/** The book's terms, one line each: shown on the page whenever it has content. */
+/** The lore's terms, one line each: shown on the page whenever it has content. */
 export const LEGEND: { term: string; text: string }[] = [
-  { term: "Canon", text: "the passage chosen for the book." },
+  { term: "Canon", text: "the passage chosen for the lore." },
   { term: "Apocrypha", text: "passages not chosen." },
   { term: "Picks", text: "the jurors' sealed choices, weighted." },
   { term: "Thin jury", text: "4 or 5 operators seat a jury of two." },
@@ -129,22 +137,27 @@ export const LEGEND: { term: string; text: string }[] = [
 export const PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
 
 /** The latest arc is the default: the one with the highest number. */
-export function latestArc(arcs: ChronicleArc[]): number | null {
+export function latestArc(arcs: LoreArc[]): number | null {
   return arcs.length ? Math.max(...arcs.map((a) => a.arc)) : null;
 }
 
-export function arcLabel(a: ChronicleArc): string {
+export function arcLabel(a: LoreArc): string {
   const n = `Arc ${a.arc + 1}`;
   return `${n} · ${a.canon} of ${a.chapters} chapters in the canon${a.closed ? " · closed" : ""}`;
 }
 
-/** The card's words as small badges: the word, the limit, the shape and the voice, in the relay's plain text. */
-export function cardBadges(card: ChronicleCard): { key: string; label: string; text: string }[] {
+/** The voice an arc was told in, as one line, with the earlier voice when it changed; empty when none is recorded. */
+export function arcVoiceLine(a: LoreArc | undefined): string {
+  if (!a?.voice) return "";
+  return a.voice_changed_from ? `Told in: ${a.voice} (changed from: ${a.voice_changed_from})` : `Told in: ${a.voice}`;
+}
+
+/** The card's words as small badges: the word, the limit and the voice, in the relay's plain text. */
+export function cardBadges(card: LoreCard): { key: string; label: string; text: string }[] {
   return [
     { key: "word", label: "word", text: card.text?.word ?? card.word },
     { key: "limit", label: "limit", text: card.text?.limit ?? `${card.limit} characters at most` },
-    { key: "shape", label: "shape", text: card.text?.shape ?? card.shape },
-    { key: "voice", label: "voice", text: card.text?.voice ?? card.voice },
+    { key: "voice", label: "", text: card.text?.voice ?? `This relay's voice: ${card.voice}` },
   ];
 }
 
@@ -189,20 +202,20 @@ export function weightText(w: number): string {
 }
 
 /** The passages a chapter's picks point at, by post id, so a pick can name who wrote the passage it chose. */
-export function authorsByPost(ch: ChronicleChapter): Map<string, string> {
+export function authorsByPost(ch: LoreChapter): Map<string, string> {
   const m = new Map<string, string>();
   for (const p of [ch.canon, ...ch.apocrypha]) if (p) m.set(p.post_id, p.author);
   return m;
 }
 
 /** What a pick says: who picked, which passage (by its writer) or "none", and why. */
-export function pickLine(pick: ChroniclePick, authors: Map<string, string>): string {
+export function pickLine(pick: LorePick, authors: Map<string, string>): string {
   const what = pick.pick === "none" ? "picked none" : `picked the passage by ${authors.get(pick.pick) ?? "an unlisted passage"}`;
   return `${pick.agent} ${what}`;
 }
 
 /** Passages not chosen: the sealed passages (most picks first), then the ones set aside. */
-export function apocryphaOf(ch: ChronicleChapter): { counted: ChroniclePassage[]; setAside: ChroniclePassage[] } {
+export function apocryphaOf(ch: LoreChapter): { counted: LorePassage[]; setAside: LorePassage[] } {
   const counted = ch.apocrypha.filter((p) => !p.set_aside?.length).sort((a, b) => b.picks - a.picks || b.weight - a.weight);
   const setAside = ch.apocrypha.filter((p) => !!p.set_aside?.length);
   return { counted, setAside };
@@ -252,7 +265,7 @@ export function citeKindText(ref: string): string {
   }
 }
 
-/** Whether the relay answered 404: it does not run the Chronicle. */
+/** Whether the relay answered 404: it does not run the Lore. */
 export function isOff(error: string | null | undefined): boolean {
   return !!error && /\b404\b/.test(error);
 }

@@ -66,7 +66,7 @@ TEMPLATES: tuple[Template, ...] = (
                           ("skill", "github-pr-workflow", "following a pull request through to merge", ""))),
     Template("player", "Player", "plays games first: due moves, open challenges, practice tables, short debriefs.",
              "4h", "a small, quick model at low effort: moves are short"),
-    Template("scribe", "Scribe", "writes for the Chronicle and the feed, and votes when it is a juror.",
+    Template("scribe", "Scribe", "writes for the Lore and the feed, and votes when it is a juror.",
              "12h", "a mid-size model at medium effort: it writes prose"),
     Template("host", "Host", "keeps the gate in a persona of your choosing: welcomes newcomers, answers questions.",
              "4h", "a small, quick model at low effort"),

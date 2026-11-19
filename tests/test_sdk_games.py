@@ -1,7 +1,7 @@
-"""The Python SDK plays every game and the Chronicle: randomness commitments, Tesseract, the Chronicle and `open_sealed`.
+"""The Python SDK plays every game and the Lore: randomness commitments, Tesseract, the Lore and `open_sealed`.
 
 Two or three `EmporiaAgent`s (no model, no MCP) talk to an in-process relay over the ASGI transport, on the worlds the
-Tesseract and Chronicle tests use (a fake clock and the test beacon). The SDK's `_clock` is that fake clock, so a draw
+Tesseract and Lore tests use (a fake clock and the test beacon). The SDK's `_clock` is that fake clock, so a draw
 that is 30 rounds off is published a moment later."""
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import e2e_chronicle as EC
+import e2e_lore as EC
 import e2e_tesseract as ET
 from conftest import fake_beacon_sig
 
@@ -166,7 +166,7 @@ def test_a_bargain_v2_joiner_commits_and_reads_its_own_hand(tess):
     assert mine.get("values") and theirs.get("values") and mine["values"] != {}, (mine, theirs)
 
 
-# ── the Chronicle ──────────────────────────────────────────────────────────────────────────────────
+# ── the Lore ──────────────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture
 def book(monkeypatch):
@@ -176,7 +176,7 @@ def book(monkeypatch):
     world.close()
 
 
-def test_an_sdk_agent_seals_a_chronicle_passage_and_open_sealed_opens_it(book):
+def test_an_sdk_agent_seals_a_lore_passage_and_open_sealed_opens_it(book):
     w = book
     tag = uuid.uuid4().hex[:5]
     names = [w.register(f"sgc{tag}_{i}", f"opsg{tag}", age_days=60) for i in range(3)]
@@ -187,47 +187,47 @@ def test_an_sdk_agent_seals_a_chronicle_passage_and_open_sealed_opens_it(book):
         agents = {n: sdk(n, transport) for n in names}
         w.clock.at(w.start - 3600)
         for a in agents.values():
-            assert (await a.chronicle(join=True))["success"]
+            assert (await a.lore(join=True))["success"]
         w.activity(w.start + 0.8 * DAY, names)            # the day's record the passage cites
         call = w.start + DAY
         w.clock.at(call + 0.04 * DAY)
-        views = {n: await a.chronicle() for n, a in agents.items()}
+        views = {n: await a.lore() for n, a in agents.items()}
         chapter = next(v["chapter"] for v in views.values() if v.get("chapter"))
-        card = w.get(f"/chronicle/chapters/{chapter}").json()["card"]
+        card = w.get(f"/lore/chapters/{chapter}").json()["card"]
         cites = EC.pick_cites(w, chapter)
         writers = [n for n, v in views.items() if v.get("due") == "write"]
         assert writers, views
         for n in writers:
-            r = await agents[n].chronicle_write(EC.scripted_passage(card), cites, confirm=True)
+            r = await agents[n].lore_write(EC.scripted_passage(card), cites, confirm=True)
             assert r.get("success"), r
-        assert (await agents[writers[0]].open_sealed())["chronicle"] == "skipped"      # sealed, not yet in the Open window
+        assert (await agents[writers[0]].open_sealed())["lore"] == "skipped"      # sealed, not yet in the Open window
         w.clock.at(call + 0.40 * DAY)
-        first = await agents[writers[0]].chronicle_reveal()                              # by hand
+        first = await agents[writers[0]].lore_reveal()                              # by hand
         assert first.get("opened"), first
         outs = [await agents[n].open_sealed() for n in writers[1:]]                      # by the loop's helper
-        assert all(o["chronicle"] == "done" for o in outs), outs
+        assert all(o["lore"] == "done" for o in outs), outs
         assert all(o["done"] for o in outs)
         # the pick: a juror seals one and `open_sealed` opens it in the Count window
         w.clock.at(call + 0.65 * DAY)
         picks = []
         for n, a in agents.items():
-            v = await a.chronicle()
+            v = await a.lore()
             if v.get("due") == "pick":
-                cands = w.get(f"/chronicle/chapters/{chapter}").json().get("candidates") or []
-                r = await a.chronicle_vote(cands[0] if cands else "none", reason="it follows")
+                cands = w.get(f"/lore/chapters/{chapter}").json().get("candidates") or []
+                r = await a.lore_vote(cands[0] if cands else "none", reason="it follows")
                 assert r.get("success"), r
                 picks.append(n)
         w.clock.at(call + 0.90 * DAY)
         for n in picks:
             out = await agents[n].open_sealed()
-            assert out["chronicle"] == "done", out
+            assert out["lore"] == "done", out
         return writers, picks
     writers, picks = asyncio.run(scenario())
     assert writers
 
 
-def test_a_relay_without_the_chronicle_is_said_to_be_older(monkeypatch):
+def test_a_relay_without_the_lore_is_said_to_be_older(monkeypatch):
     from emporia.agent_sdk import _not_on_this_relay
-    out = _not_on_this_relay({"success": False, "error": "Relay 404", "detail": "Not Found"}, "the Chronicle")
-    assert "does not have the Chronicle" in out["error"]
+    out = _not_on_this_relay({"success": False, "error": "Relay 404", "detail": "Not Found"}, "the Lore")
+    assert "does not have the Lore" in out["error"]
     assert KEY_DIR  # the key folder the sealed files live in is the suite's throwaway one

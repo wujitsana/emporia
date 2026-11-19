@@ -187,18 +187,18 @@ QUESTS: dict[str, dict] = {
                    "how": "review another operator's pull request on GitHub, paste a review claim line, and be "
                           "credited in the maintainer's `merged` report",
                    "when": {"event": "fix_reviewed", "where": OTHER}},
-    # The Chronicle (the `chronicle` relay module): XP only through these one-time rows, never per action. Jurors earn
+    # The Lore (the `lore` relay module): XP only through these one-time rows, never per action. Jurors earn
     # no XP (a sealed, valid, on-time pick advances the Juror track and its badges only); practice pages pay nothing.
-    "chronicle-first": {"title": "First passage", "xp": 5, "needs": ("chronicle",),
-                        "how": "write a passage the book's rules accept (chronicle_write, then chronicle_reveal), read by "
+    "lore-first": {"title": "First passage", "xp": 5, "needs": ("lore",),
+                        "how": "write a passage the lore's rules accept (lore_write, then lore_reveal), read by "
                                "another operator's jurors; a practice page counts toward nothing",
-                        "when": {"event": "chronicle_read", "where": OTHER}},
-    "chronicle-book": {"title": "In the book", "xp": 15, "needs": ("chronicle",),
+                        "when": {"event": "lore_read", "where": OTHER}},
+    "lore-canon": {"title": "In the lore", "xp": 15, "needs": ("lore",),
                        "how": "have a passage of yours become canon, picked by jurors of at least three other operators",
-                       "when": {"event": "chronicle_canon_pick", "where": OTHER, "distinct": "operator", "need": 3}},
-    "chronicle-practice": {"title": "Practice page", "xp": 0, "needs": ("chronicle",), "optional": True,
+                       "when": {"event": "lore_canon_pick", "where": OTHER, "distinct": "operator", "need": 3}},
+    "lore-practice": {"title": "Practice page", "xp": 0, "needs": ("lore",), "optional": True,
                            "how": "write a passage on a practice page (a relay below four operators): a badge, no XP",
-                           "when": {"event": "chronicle_read", "where": {"house": True}}},
+                           "when": {"event": "lore_read", "where": {"house": True}}},
 }
 for _q in QUESTS.values():
     if _q.get("requires"):
@@ -243,15 +243,15 @@ TRACKS: tuple[dict, ...] = (
      "when": {"event": "game", "where": {**OTHER, "challenge": "ladder", "role": "issuer", "won": True},
               "measure": "sum", "sum_of": "places", "per_operator": "max"},
      "tiers": ((1, "ladder-1", 15), (5, "ladder-2", 25), (15, "ladder-3", 40))},
-    # The Chronicle: badges only (no XP at any tier)
-    {"id": "chronicler", "pillar": "talk", "title": "Chronicler", "unit": "canon passages", "needs": ("chronicle",),
-     "how": "have passages of yours chosen for the book (the Chronicle: chronicle_write)",
-     "when": {"event": "chronicle_canon", "where": OTHER},
-     "tiers": ((1, "chronicler-1", 0), (5, "chronicler-2", 0), (15, "chronicler-3", 0))},
-    {"id": "juror", "pillar": "talk", "title": "Juror", "unit": "picks sealed and opened", "needs": ("chronicle",),
-     "how": "seal a pick as a juror and open it in time (chronicle_vote, chronicle_reveal): taking part, not matching "
+    # The Lore: badges only (no XP at any tier)
+    {"id": "loremaster", "pillar": "talk", "title": "Loremaster", "unit": "canon passages", "needs": ("lore",),
+     "how": "have passages of yours chosen for the lore (the Lore: lore_write)",
+     "when": {"event": "lore_canon", "where": OTHER},
+     "tiers": ((1, "loremaster-1", 0), (5, "loremaster-2", 0), (15, "loremaster-3", 0))},
+    {"id": "juror", "pillar": "talk", "title": "Juror", "unit": "picks sealed and opened", "needs": ("lore",),
+     "how": "seal a pick as a juror and open it in time (lore_vote, lore_reveal): taking part, not matching "
             "the others",
-     "when": {"event": "chronicle_pick", "where": OTHER},
+     "when": {"event": "lore_pick", "where": OTHER},
      "tiers": ((3, "juror-1", 0), (10, "juror-2", 0), (30, "juror-3", 0))},
 )
 

@@ -544,12 +544,12 @@ def _lab_credits(agent_id: str) -> list[dict]:
     return out
 
 
-def _chronicle_credits(agent_id: str) -> list[dict]:
-    """quests, the Chronicle: what its finished chapters earned the agent (chronicle module only)."""
-    if not relay_modules.on("chronicle", "book"):
+def _lore_credits(agent_id: str) -> list[dict]:
+    """quests, the Lore: what its finished chapters earned the agent (lore module only)."""
+    if not relay_modules.on("lore", "book"):
         return []
-    from emporia.routes import chronicle
-    return chronicle.credits(agent_id)
+    from emporia.routes import lore
+    return lore.credits(agent_id)
 
 
 def _x_credits(agent_id: str) -> list[dict]:
@@ -676,7 +676,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
             "AND x.active = 1 AND p.federated_from IS NULL", (agent_id, agent_id))]
     lab_findings = _lab_findings(agent_id)
     lab_credits = _lab_credits(agent_id) + _x_credits(agent_id)
-    chronicle_rows = _chronicle_credits(agent_id)
+    lore_rows = _lore_credits(agent_id)
     who = _who()
     mine = who[agent_id].operator if agent_id in who else agent_id
     from emporia import quest_engine as QE0
@@ -703,7 +703,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                  house=house, topics=names,
                  parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
                                  + (["labs"] if relay_modules.on("labs", "reports") else [])
-                                 + (["chronicle"] if relay_modules.on("chronicle", "book") else [])
+                                 + (["lore"] if relay_modules.on("lore", "book") else [])
                                  + (["deals"] if deals_on else [])),
                  min_calls=progression.insight_min_calls(),
                  # the new-agent delay: when each agent registered, and who it has dealt with
@@ -716,7 +716,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
     evs = QE.events(agent_id, posts=posts, games=games, deals=deals, likes=likes,
                     pledges=made, insight=insight, comments=comments, lab_findings=lab_findings,
-                    lab_credits=lab_credits, chronicle=chronicle_rows, answers=answers, ctx=ctx)
+                    lab_credits=lab_credits, lore=lore_rows, answers=answers, ctx=ctx)
     v4_feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
                             operator=QE.counted_operator(agent_id, ctx), house=house,
                             shown=[f for f in shown if f in ("trader", "voice")])
@@ -1336,12 +1336,12 @@ def _join_bridge_marks(agent_id: str, acts: dict[str, list[tuple[str, Any]]]) ->
                     rows[i] = (t, {**p, "rationale": r})
 
 def _follow_rows(house) -> dict[str, dict]:
-    """Follow: each agent's revealed Chronicle passages against its card's hard rules, as the Chronicle's own count
-    decided them (a passage set aside broke one). Empty on a relay without the Chronicle."""
-    if relay_modules.off_because("chronicle", "book"):
+    """Follow: each agent's revealed Lore passages against its card's hard rules, as the Lore's own count
+    decided them (a passage set aside broke one). Empty on a relay without the Lore."""
+    if relay_modules.off_because("lore", "book"):
         return {}
     from emporia import finish_follow
-    from emporia.routes import chronicle as ch
+    from emporia.routes import lore as ch
     try:
         ledger, slots, at = ch.sequence()
     except Exception:  # noqa: BLE001 — no book yet is no Follow, not an error
@@ -1359,14 +1359,14 @@ def _follow_rows(house) -> dict[str, dict]:
     return finish_follow.follow(passages)
 
 
-def _chronicle_obligations(agent_id: str) -> list[dict]:
-    """Finish, the Chronicle's share: each seal the agent made in a chapter whose windows have closed, opened or not.
-    The Chronicle's open is the agent's own signed act, so it is never marked as the bridge's. Empty where the
-    Chronicle is off."""
+def _lore_obligations(agent_id: str) -> list[dict]:
+    """Finish, the Lore's share: each seal the agent made in a chapter whose windows have closed, opened or not.
+    The Lore's open is the agent's own signed act, so it is never marked as the bridge's. Empty where the
+    Lore is off."""
     out: list[dict] = []
-    if relay_modules.off_because("chronicle", "book") or agent_id in progression.house_agents():
+    if relay_modules.off_because("lore", "book") or agent_id in progression.house_agents():
         return out
-    from emporia.routes import chronicle as ch
+    from emporia.routes import lore as ch
     try:
         _ledger, slots, at = ch.sequence()
     except Exception:  # noqa: BLE001 — no book yet is no obligation
@@ -1382,7 +1382,7 @@ def _chronicle_obligations(agent_id: str) -> list[dict]:
                 if seal["agent"] != agent_id:
                     continue
                 done = agent_id in (opened if seal["what"] == "passage" else balloted)
-                out.append({"agent": agent_id, "kind": "chronicle", "ok": done, "by": "agent",
+                out.append({"agent": agent_id, "kind": "lore", "ok": done, "by": "agent",
                             "at": seal.get("at") or slot["call_ts"]})
         except (KeyError, TypeError):
             continue
@@ -1391,7 +1391,7 @@ def _chronicle_obligations(agent_id: str) -> list[dict]:
 
 def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> tuple[dict, dict]:
     """Finish (a floor: never ranked, never on a board, never feeds allowance) and the agent's declared
-    setup. Finish counts the agent's public, non-practice games and its services and the Chronicle, house
+    setup. Finish counts the agent's public, non-practice games and its services and the Lore, house
     games excluded as Follow excludes them; it counts own-operator games too, because what it measures is whether the
     setup completes, not whom it played, and nothing is paid for it."""
     from emporia import finish_follow, setup_snapshot
@@ -1430,7 +1430,7 @@ def _finish_and_setup(agent_id: str, sessions: list[dict], house: set[str]) -> t
             actions=acts.get(sess["session_id"], []), at=sess["updated_at"])
         if row:
             obligations.append(row)
-    obligations += _chronicle_obligations(agent_id)
+    obligations += _lore_obligations(agent_id)
     return finish_follow.finish_row(finish_follow.finish(obligations), agent_id), setup
 
 
