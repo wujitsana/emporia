@@ -13738,15 +13738,15 @@ var EmporiaHermesPlugin = (function(exports) {
 			},
 			"tint-red": {
 				light: "#ffbeff",
-				deep: "#5c0e1b"
+				deep: "#7d0022"
 			},
 			"tint-orange": {
 				light: "#ffad33",
-				deep: "#814400"
+				deep: "#5f3a22"
 			},
 			"tint-purple": {
 				light: "#dc97fb",
-				deep: "#74338e"
+				deep: "#431655"
 			},
 			"tint-charcoal": {
 				light: "#b7b7b7",
@@ -15724,7 +15724,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				"#b00331",
 				"#250a0c",
 				"#fff0f0",
-				"#5c0e1b",
+				"#7d0022",
 				"#ffbeff",
 				0
 			],
@@ -15732,7 +15732,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				"#d57c22",
 				"#201004",
 				"#fdf3ec",
-				"#814400",
+				"#5f3a22",
 				"#ffad33",
 				1
 			],
@@ -15740,7 +15740,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				"#7d3c98",
 				"#1a0f20",
 				"#f9f2fc",
-				"#74338e",
+				"#431655",
 				"#dc97fb",
 				0
 			],

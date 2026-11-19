@@ -18,13 +18,13 @@ Integer math and literal tables only; avatars.ts produces the same bytes (see te
 TINT = [
     ["#39ff44", "#001b00", "#ebfaea", "#006c00", "#39ff44", 1],  # green
     ["#0047ff", "#051232", "#ecf6ff", "#005e8b", "#69cdff", 0],  # blue
-    ["#b00331", "#250a0c", "#fff0f0", "#5c0e1b", "#ffbeff", 0],  # crimson
-    ["#d57c22", "#201004", "#fdf3ec", "#814400", "#ffad33", 1],  # burnt orange
-    ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0],  # purple
+    ["#b00331", "#250a0c", "#fff0f0", "#7d0022", "#ffbeff", 0],  # crimson
+    ["#d57c22", "#201004", "#fdf3ec", "#5f3a22", "#ffad33", 1],  # burnt orange
+    ["#7d3c98", "#1a0f20", "#f9f2fc", "#431655", "#dc97fb", 0],  # purple
     ["#888888", "#141414", "#ececec", "#555555", "#b7b7b7", 1],  # charcoal
 ]
 # The companions per tint, [light, deep], in the same order: the accents come from these.
-FAMILY = [["#72e072", "#006c00"], ["#69cdff", "#005e8b"], ["#ffbeff", "#5c0e1b"], ["#ffad33", "#814400"], ["#dc97fb", "#74338e"], ["#b7b7b7", "#555555"]]
+FAMILY = [["#72e072", "#006c00"], ["#69cdff", "#005e8b"], ["#ffbeff", "#7d0022"], ["#ffad33", "#5f3a22"], ["#dc97fb", "#431655"], ["#b7b7b7", "#555555"]]
 SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
 
 

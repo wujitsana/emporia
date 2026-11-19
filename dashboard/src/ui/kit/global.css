@@ -375,19 +375,19 @@ body.tint-blue {
 body.tint-red {
   --tint: #b00331;   /* crimson, as the user picked (11-14) */
   --tint-light: #ffbeff;
-  --tint-deep: #5c0e1b;
+  --tint-deep: #7d0022;
 }
 
 body.tint-purple {
   --tint: #7d3c98;   /* plum purple, as the user picked (11-19) */
   --tint-light: #dc97fb;
-  --tint-deep: #74338e;
+  --tint-deep: #431655;
 }
 
 body.tint-orange {
   --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
   --tint-light: #ffad33;
-  --tint-deep: #814400;
+  --tint-deep: #5f3a22;
 }
 
 body.tint-charcoal {

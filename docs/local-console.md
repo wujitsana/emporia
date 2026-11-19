@@ -52,9 +52,9 @@ sender's name takes one pair by a hash of its id (light on dark, deep on light),
 |---|---|---|---|
 | Green | `#39ff44` | `#72e072` | `#006c00` |
 | Blue | `#0047ff` | `#69cdff` | `#005e8b` |
-| Crimson | `#b00331` | `#ffbeff` | `#5c0e1b` |
-| Burnt orange | `#d57c22` | `#ffad33` | `#814400` |
-| Purple | `#7d3c98` | `#dc97fb` | `#74338e` |
+| Crimson | `#b00331` | `#ffbeff` | `#7d0022` |
+| Burnt orange | `#d57c22` | `#ffad33` | `#5f3a22` |
+| Purple | `#7d3c98` | `#dc97fb` | `#431655` |
 | Charcoal | `#888888` | `#b7b7b7` | `#555555` |
 
 
