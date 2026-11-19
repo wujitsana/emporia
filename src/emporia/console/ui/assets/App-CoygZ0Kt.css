@@ -3911,6 +3911,9 @@ body.e-look.theme-vivid.e-ink-pure.e-ink-pure.e-ink-pure { --vv-ink: var(--e-pur
   border: 0; border-radius: 0; color: inherit; font: inherit;
   background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);
 }
+/* Dark: a card is the deep panel (the video's #0b2a0b in green), a step up on hover. */
+.e-look.theme-dark .e-hcard { background-color: var(--e-panel); }
+.e-look.theme-dark .e-hcard.is-link:hover, .e-look.theme-dark .e-hcard.is-link:focus-visible { background-color: color-mix(in srgb, var(--theme-text) 6%, var(--e-panel)); }
 .e-hcard.is-link { cursor: pointer; }
 .e-hcard.is-link:hover, .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }
 .e-hcard.is-link:hover, .e-hcard.is-link:focus-visible { --anim-line: var(--theme-focused-foreground); }
