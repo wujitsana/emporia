@@ -66,12 +66,12 @@ async def link(a, key, signer, *, agent_id=AGENT, caip2=SEPOLIA, issued=None, si
     registry = registry or ERC8004_REGISTRIES[caip2]
     stable = await stable_of(a)
     cid = int(caip2.split(":")[1])
-    wallet = sig if sig is not None else sign(key, cid, registry, agent_id, signer, stable, issued=issued)
+    wallet = sig if sig is not None else sign(key, cid, registry, agent_id, signer, stable, issued=issued, name=a.agent_id)
     reg = f"{caip2}:{registry.lower()}"
     at = datetime.now(UTC).isoformat()
-    payload = wire.signed_erc8004_link_payload(stable, reg, str(agent_id), signer, issued, wallet, at)
+    payload = wire.signed_erc8004_link_payload(stable, reg, str(agent_id), signer, issued, wallet, at, a.agent_id)
     body = {"agent_registry": reg, "agent_id": str(agent_id), "signer": signer, "issued_at": issued,
-            "wallet_sig": wallet, "at": at, "signature": identity.sign(payload, a.agent_id)}
+            "agent_name": a.agent_id, "wallet_sig": wallet, "at": at, "signature": identity.sign(payload, a.agent_id)}
     poster = as_agent or a
     return await poster._bearer_request("post", f"http://testserver/agents/{a.agent_id}/links/erc8004", json=body)
 
@@ -179,7 +179,7 @@ def test_a_wrong_wallet_signature_is_refused(relay):
         a = agent(relay)
         await a.register()
         return await link(a, key, addr, sig=sign(keypair()[0], 84532, ERC8004_REGISTRIES[SEPOLIA], AGENT, addr,
-                                                 await stable_of(a), issued=int(time.time()) - 5))
+                                                 await stable_of(a), issued=int(time.time()) - 5, name=a.agent_id))
 
     assert run(go()).status_code in (400, 409)
 
@@ -381,9 +381,9 @@ def test_only_canonical_registries_on_known_chains(relay, what):
                else f"eip155:1:{ERC8004_REGISTRIES[SEPOLIA].lower()}")
         at = datetime.now(UTC).isoformat()
         body = {"agent_registry": reg, "agent_id": "42", "signer": addr, "issued_at": issued, "wallet_sig": "0x" + "11" * 65,
-                "at": at}
+                "agent_name": a.agent_id, "at": at}
         body["signature"] = identity.sign(wire.signed_erc8004_link_payload(stable, reg, "42", addr, issued,
-                                                                           body["wallet_sig"], at), a.agent_id)
+                                                                           body["wallet_sig"], at, a.agent_id), a.agent_id)
         return await a._bearer_request("post", f"http://testserver/agents/{a.agent_id}/links/erc8004", json=body)
 
     r = run(go())
@@ -595,3 +595,24 @@ def test_a_leading_zero_agent_id_is_refused_by_the_relay(relay):
 
     r, links = run(go())
     assert r.status_code == 400 and "canonical" in r.text and links == []
+
+
+def test_a_link_naming_another_agent_than_the_wallet_signed_is_refused(relay):
+    key, addr = keypair()
+    owned_by(relay, addr)
+
+    async def go():
+        a = agent(relay)
+        await a.register()
+        stable = await stable_of(a)
+        issued = int(time.time()) - 5
+        wallet = sign(key, 84532, ERC8004_REGISTRIES[SEPOLIA], AGENT, addr, stable, issued=issued, name="someone-else")
+        reg = f"{SEPOLIA}:{ERC8004_REGISTRIES[SEPOLIA].lower()}"
+        at = datetime.now(UTC).isoformat()
+        body = {"agent_registry": reg, "agent_id": str(AGENT), "signer": addr, "issued_at": issued,
+                "agent_name": a.agent_id, "wallet_sig": wallet, "at": at}
+        body["signature"] = identity.sign(wire.signed_erc8004_link_payload(
+            stable, reg, str(AGENT), addr, issued, wallet, at, a.agent_id), a.agent_id)
+        return await a._bearer_request("post", f"http://testserver/agents/{a.agent_id}/links/erc8004", json=body)
+
+    assert run(go()).status_code in (400, 409)

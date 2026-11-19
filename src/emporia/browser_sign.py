@@ -330,8 +330,8 @@ def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str
 <meta name="referrer" content="no-referrer"><title>Sign the link</title>
 <style nonce="{nonce}">{STYLE}</style></head><body>
 <h1>Link ERC-8004 agent #{html.escape(str(msg['agentId']))} to {html.escape(agent_name)}</h1>
-<p>Signing links ERC-8004 agent #{html.escape(str(msg['agentId']))} on {html.escape(chain_label)} to the Emporia agent
-{html.escape(agent_name)}. It moves no funds and grants no permission: nothing goes on-chain and it costs no gas.</p>
+<p><strong>&ldquo;{html.escape(str(msg['statement']))}&rdquo;</strong></p>
+<p>Your wallet shows these same words, with the date and the details below. Nothing goes on-chain and it costs no gas.</p>
 <p class="dim">Signer: <code>{html.escape(str(msg['signer']))}</code></p>
 <p class="dim">Check the wallet popup: network {html.escape(chain_label)}. This page only asks for this one signature and closes.</p>
 <p><select id="wallet" hidden aria-label="wallet"></select> <button id="sign" type="button" disabled>Sign</button></p>
@@ -350,8 +350,9 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
     """The page for sending one transaction from the person's wallet. `tx` is `{chain_id, to, data}`; `summary` is the
     plain-words account of what it does (the CLI printed it too). Nothing is sent without the wallet's own prompt."""
     data = _json_for_html({"tx": tx, "chain_label": chain_label, "add_chain": chain_params(int(tx["chain_id"]))})
-    shown = html.escape(json.dumps({"chain id": tx["chain_id"], "to (the registry)": tx["to"], "value": "0",
-                                    "data": tx["data"]}, indent=2))
+    shown = html.escape(json.dumps({"function": tx.get("function", "a contract call"), "chain id": tx["chain_id"],
+                                    "to (the registry)": tx["to"], "value": "0", "data (raw, as your wallet shows it)":
+                                    tx["data"]}, indent=2))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>Send the registration</title>

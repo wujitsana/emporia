@@ -2059,8 +2059,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("x_confirmations", c) for c in ("seq", "confirmer", "target", "handle", "post_id", "claim_sig", "seen_at",
                                        "signature", "recorded_at")),
     # The card's ERC-8004 link: named by stable id, a registry string, a decimal agent number and a wallet address.
-    *(("agent_chain_links", c) for c in ("stable_id", "agent_registry", "agent_id", "signer", "issued_at", "wallet_sig",
-                                         "at", "signature", "recorded_at", "status", "tier", "owner", "block_number",
+    *(("agent_chain_links", c) for c in ("stable_id", "agent_registry", "agent_id", "signer", "issued_at", "agent_name",
+                                         "wallet_sig", "at", "signature", "recorded_at", "status", "tier", "owner", "block_number",
                                          "block_hash", "checked_at", "attempted_at", "superseded_by")),
     *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
     # Labs v2: the idea posts a report names, credited once each (the author is read from the post).

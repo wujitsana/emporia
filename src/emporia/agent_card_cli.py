@@ -482,12 +482,15 @@ def _print_ask(name: str, out: dict[str, Any]) -> None:
     else:
         print(f"    tier:    not proven: {out.get('reason') or 'the chain does not back this signer'}")
     print(f"\n  {out['privacy']}\n")
-    print("  Sign this typed message (EIP-712) in the wallet of the signer, e.g. save it as msg.json and run\n"
-          "  `cast wallet sign --data --from-file msg.json --private-key ...` or paste it into a wallet that\n"
-          "  signs typed data. Nothing goes on-chain; it moves no funds and grants no permission:\n")
+    print(f"  What you sign: \"{out['typed_data']['message']['statement']}\"")
+    print(f"  Where: in the wallet of the signer {out['signer']}, as EIP-712 typed data (the message below). A wallet that\n"
+          "  signs typed data shows these same words; with a command line, save the message as msg.json and run\n"
+          "  `cast wallet sign --data --from-file msg.json --private-key ...`. Nothing goes on-chain; it moves no funds\n"
+          "  and grants no permission:\n")
     print(json.dumps(out["typed_data"], indent=2))
-    print(f"\n  Then record it: emporia agent link-8004 {name} --chain {_short(out['chain'])} "
-          f"--agent-id {out['agent_id']} --signer {out['signer']} --issued-at {out['issued_at']} --signature 0x...")
+    print(f"\n  Where the signature goes: paste it (0x...) after --signature in this command, which records it:\n\n"
+          f"    emporia agent link-8004 {name} --chain {_short(out['chain'])} --agent-id {out['agent_id']} "
+          f"--signer {out['signer']} --issued-at {out['issued_at']} --signature 0x...")
 
 
 WAIT_EVERY = 15.0                 # seconds between reads while --wait waits for the chain
@@ -703,11 +706,14 @@ def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any
                               "n").lower() not in ("y", "yes"):
         print("  nothing sent.")
         return 0
-    summary = (f"Sends register(agentURI) to the ERC-8004 identity registry on {built['chain_label']}, from the account "
-               f"you pick in your wallet. That account will own the new identity. Emporia sends nothing itself; "
-               f"your wallet shows the gas.")
+    summary = (f"Sends register(agentURI) to the ERC-8004 identity registry {built['registry']} on "
+               f"{built['chain_label']}, from the account you pick in your wallet. That account will own the new "
+               f"identity. Emporia sends nothing itself; your wallet shows the gas"
+               + (" (test ETH, no value)." if "testnet" in built["chain_label"] else ".")
+               + " Your wallet will show raw data for this contract: this summary is what it does.")
     try:
-        page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
+        page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"],
+                                      "function": "register(string agentURI)"},
                                      chain_label=built["chain_label"], agent_name=name, summary=summary, port=port,
                                      listen=addr).start()
     except browser_sign.BrowserSignError as e:
@@ -936,10 +942,14 @@ def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, A
     summary = (f"Sends setAgentWallet to the ERC-8004 identity registry on {built['chain_label']}, for identity "
                f"#{built['agent_id']}. Pick the account that owns the identity ({built['owner']}) in your wallet; the "
                f"registry refuses any other. It names {name}'s own wallet as where the identity is paid; ownership "
-               f"and funds do not change. The consent is valid for about {built['valid_seconds'] // 60} minutes. "
-               "Emporia sends nothing itself; your wallet shows the gas.")
+               f"and funds do not change. The call carries the registry's own consent message (a format the registry "
+               f"defines), already signed by {name}'s wallet; your wallet will not show it, only raw data. The consent "
+               f"is valid for about {built['valid_seconds'] // 60} minutes. Emporia sends nothing itself; your wallet "
+               "shows the gas" + (" (test ETH)." if "testnet" in built["chain_label"] else "."))
     try:
-        page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
+        page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"],
+                                      "function": "setAgentWallet(uint256 agentId, address newWallet, uint256 deadline, "
+                                                  "bytes signature)"},
                                      chain_label=built["chain_label"], agent_name=name, summary=summary, port=port,
                                      listen=addr, timeout=float(built["valid_seconds"])).start()   # ends with the consent
     except browser_sign.BrowserSignError as e:

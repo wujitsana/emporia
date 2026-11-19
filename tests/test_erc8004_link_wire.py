@@ -16,14 +16,14 @@ AT = "2025-10-09T08:53:20+00:00"
 
 # Vector: the canonical bytes (sorted keys, no spaces) and the base64url Ed25519 signature of a fixed key.
 VECTOR_BYTES = (
-    '{"agent_id":"42","agent_registry":"eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e",'
+    '{"agent_id":"42","agent_name":"alpha","agent_registry":"eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e",'
     '"at":"2025-10-09T08:53:20+00:00","issued_at":1760000000,"signer":"0x1111111111111111111111111111111111111111",'
     '"stable_id":"' + STABLE + '","type":"emporia:erc8004-link:v1","wallet_sig":"0x' + "22" * 65 + '"}')
-VECTOR_SIGNATURE = "s3NsAx0Kr5zJDeOByPYzq6R1Zc6TYCmzKHnyl-2Vrjw1iu44mrTJvkDYF9mAVxWOoSkHZAe09e612Pb-GLtGCA"
+VECTOR_SIGNATURE = "c8AgtggpxmfPKVVofjT0FwrLuWBy6bC8gK7Yj6jYPclcHHrZ0UgRdJP6eHaKG8Wxy--PJMFYSY2Jk-WsvPJVDw"
 
 
 def _payload(**over):
-    p = wire.signed_erc8004_link_payload(STABLE, REGISTRY, "42", SIGNER, 1760000000, WALLET_SIG, AT)
+    p = wire.signed_erc8004_link_payload(STABLE, REGISTRY, "42", SIGNER, 1760000000, WALLET_SIG, AT, "alpha")
     p.update(over)
     return p
 
@@ -55,6 +55,7 @@ def test_the_agent_id_is_a_decimal_string_never_a_number():
     {"agent_registry": "solana:abc:0x" + "0" * 40}, {"agent_registry": "eip155:84532"},
     {"signer": "0x1234"}, {"stable_id": "xyz"}, {"stable_id": "AB" * 32},
     {"issued_at": "1760000000"}, {"issued_at": True}, {"issued_at": 0}, {"issued_at": 1 << 64},
+    {"agent_name": ""}, {"agent_name": "a" * 81}, {"agent_name": "bad\nname"}, {"agent_name": 5},
     {"wallet_sig": ""}, {"wallet_sig": "0xabc"}, {"wallet_sig": "0x" + "zz" * 65},
     {"wallet_sig": "0x" + "aa" * 4097},
 ])
@@ -85,7 +86,7 @@ def test_unlinking_is_the_existing_signed_removal_naming_the_link():
 def test_a_non_canonical_agent_id_is_refused_and_cannot_be_built(bad):
     assert wire.erc8004_link_problem(_payload(agent_id=bad))
     with pytest.raises(ValueError):
-        wire.signed_erc8004_link_payload(STABLE, REGISTRY, bad, SIGNER, 1760000000, WALLET_SIG, AT)
+        wire.signed_erc8004_link_payload(STABLE, REGISTRY, bad, SIGNER, 1760000000, WALLET_SIG, AT, "alpha")
 
 
 def test_zero_and_a_plain_number_are_canonical():

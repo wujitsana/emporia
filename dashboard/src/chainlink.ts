@@ -114,8 +114,8 @@ export function localStatus(v: ChainView): string {
 function query(l: ChainLink, stable?: string, payTo?: string): string {
   const pay = payTo && /^0x[0-9a-fA-F]{40}$/.test(payTo) ? `&pay_to=${payTo}` : "";
   const base = `registry=${encodeURIComponent(l.agent_registry)}&agent=${encodeURIComponent(l.agent_id)}&signer=${encodeURIComponent(l.signer)}${pay}`;
-  if (!stable || !l.wallet_sig || !l.issued_at) return base;
-  return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&sig=${encodeURIComponent(l.wallet_sig)}`;
+  if (!stable || !l.wallet_sig || !l.issued_at || !l.agent_name) return base;
+  return `${base}&stable=${encodeURIComponent(stable)}&issued=${l.issued_at}&name=${encodeURIComponent(l.agent_name)}&sig=${encodeURIComponent(l.wallet_sig)}`;
 }
 
 /** The viewer's own read of a link, through the local console; null where there is no console (or it did not answer). */

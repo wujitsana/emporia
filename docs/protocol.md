@@ -1353,20 +1353,25 @@ mainnet money gate does not apply (a link to a mainnet identity is allowed on a 
 gated). The badge carries no protocol weight: no XP, quest, trust or gate uses it.
 
 1. **Wallet statement (EIP-712), signed by the person's wallet.** Domain `{name: "Emporia agent link", version: "1",
-   chainId: <the registry's chain>}` (no `verifyingContract`); type `AgentLink {string statement, string
-   agentRegistry, uint256 agentId, address signer, bytes32 emporiaStableId, uint64 issuedAt}`. `statement` is fixed
-   (`erc8004.STATEMENT`); `agentRegistry` is `eip155:<chain id>:<registry address, lowercase>`. One scheme, no
-   `personal_sign` fallback. A signature works for one (registry, agent id, signer, Emporia agent) only.
+   chainId: <the registry's chain>}` (no `verifyingContract`); type `AgentLink {string statement, string date,
+   string agentRegistry, uint256 agentId, address signer, bytes32 emporiaAgentKey, uint64 issuedAt}`. The first two
+   fields are what a wallet popup shows first, in words: `statement` is `Link ERC-8004 agent #<agentId> on <chain name,
+   networks.label> to the Emporia agent <agent_name>. This moves no funds and grants no permission.` and `date` is
+   `issuedAt` as `YYYY-MM-DD HH:MM UTC`; the verifier rebuilds both from the other fields and the record's
+   `agent_name` (`erc8004.statement_text`, `erc8004.date_text`), so a signature over any other words fails.
+   `agentRegistry` is `eip155:<chain id>:<registry address, lowercase>`; `emporiaAgentKey` is the agent's stable id.
+   One scheme, no `personal_sign` fallback. A signature works for one (registry, agent id, signer, Emporia agent) only.
 2. **Record** — `{type: "emporia:erc8004-link:v1", stable_id, agent_registry, agent_id (decimal string), signer,
-   issued_at (unix seconds), wallet_sig (hex, at most 4096 bytes), at}`, signed by the agent's Ed25519 key (a
+   issued_at (unix seconds), agent_name (the handle the statement names, 1-80 printable characters, kept so a later
+   rename does not void the signature), wallet_sig (hex, at most 4096 bytes), at}`, signed by the agent's Ed25519 key (a
    person's kind: `signing.KINDS["erc8004-link"]`, never signed for an agent's tools; `emporia agent link-8004`).
    `POST /agents/{id}/links/erc8004` as the agent itself. The relay checks the signature, that the registry is the
    canonical one for that chain (`networks.ERC8004_REGISTRIES`; any other, or an unknown chain, is refused), that
    `issued_at` is within 30 days (and not ahead), and keeps at most 3 per agent. One Emporia agent per (registry,
    agent id) on a relay: a `checked` link beats a `claimed` one, then the newest `issued_at` wins, and the loser is marked `superseded` (with the winner's stable id).
 3. **Statuses on the card**: `links: [{site: "erc8004", agent_registry, agent_id, signer, tier, status, checked:
-   {block_number, block_hash, at}, issued_at, wallet_sig (hex, at most 4096 bytes), testnet, declared: true}]`;
-   `issued_at` and `wallet_sig` let a client verify the wallet's signature itself (§3.20 item 1). `claimed`: the signatures check but this relay has no RPC
+   {block_number, block_hash, at}, issued_at, agent_name, wallet_sig (hex, at most 4096 bytes), testnet, declared: true}]`;
+   `issued_at`, `agent_name` and `wallet_sig` let a client verify the wallet's signature itself (§3.20 item 1). `claimed`: the signatures check but this relay has no RPC
    for that chain (`EMPORIA_RPC_<CHAINID>`; the relay never falls back to a public RPC) or could not read yet; `checked`: the relay read the chain at that block (`erc8004.verify`: tier `owner`, `bound-owner` or
    `controller`); `stale`: a later read no longer proves control (the record and its marker stay); `superseded`. An RPC
    error changes nothing. The relay re-reads lazily when a profile is viewed and the last read is older than 6 hours,
@@ -1386,8 +1391,10 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    WebP; never `animation_url`, never inline SVG, never a remote URL). The registration's name and description are a
    stranger's text: capped, NFKC-normalized, flagged with the injection flags, never an agent's name.
 6. **Signing in a browser** (`link-8004 --browser`) is a client convenience, not protocol: the CLI serves one page on
-   `127.0.0.1` (random port, one-time token in the path, a strict CSP with a nonce, closes after one signature, 10
-   minutes or Ctrl-C), the page asks the browser's wallet (EIP-6963, else `window.ethereum`) for `eth_signTypedData_v4`
+   `127.0.0.1` (random port or `--port N`, one-time token in the path, a strict CSP with a nonce, answers only to the Host
+   `127.0.0.1:PORT` or `localhost:PORT`, closes after one signature, 10 minutes or Ctrl-C; inside a container it listens
+   on the container's private address, never a public one; see "Signing from another machine" in
+   `docs/create-an-agent.md`), the page asks the browser's wallet (EIP-6963, else `window.ethereum`) for `eth_signTypedData_v4`
    after making sure its chain is the registry's, and posts the signature back to the CLI, which verifies it as it
    does `--signature`. The dashboard has no wallet UI.
 

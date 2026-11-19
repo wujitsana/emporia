@@ -18,7 +18,8 @@ from typing import Any, Protocol
 from emporia.chain_read import ChainRevert, ChainUnknown
 from emporia.networks import ERC8004_REGISTRIES
 
-STATEMENT = "Link this ERC-8004 agent to the Emporia agent below. Moves no funds, grants no permission."
+STATEMENT_TAIL = "This moves no funds and grants no permission."
+MAX_NAME = 80
 DOMAIN_NAME, DOMAIN_VERSION = "Emporia agent link", "1"
 MAGIC_1271 = bytes.fromhex("1626ba7e")
 MAX_SIG_BYTES = 4096
@@ -77,23 +78,39 @@ def registry_string(chain_id: int, registry: str) -> str:
     return f"eip155:{int(chain_id)}:{registry.lower()}"
 
 
+def statement_text(chain_id: int, agent_id: str | int, agent_name: str) -> str:
+    """What a wallet shows first, in words, built from the fields it sits beside (the verifier rebuilds it)."""
+    from emporia import networks
+    return (f"Link ERC-8004 agent #{int(agent_id)} on {networks.label(f'eip155:{int(chain_id)}')} to the Emporia "
+            f"agent {agent_name}. {STATEMENT_TAIL}")
+
+
+def date_text(issued_at: int) -> str:
+    """`issuedAt` as a person reads it: 2026-11-19 19:30 UTC."""
+    import datetime
+    return datetime.datetime.fromtimestamp(int(issued_at), datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def agent_link_typed_data(chain_id: int, registry: str, agent_id: str | int, signer: str,
-                          stable_id: str, issued_at: int) -> dict:
-    """The EIP-712 message a wallet signs. `agent_id` is a decimal string outside the ABI; `stable_id` is
-    32 bytes as hex. No `verifyingContract`: no contract of ours verifies it."""
+                          stable_id: str, issued_at: int, agent_name: str) -> dict:
+    """The EIP-712 message a wallet signs: a readable `statement` and `date` first, then the fields that matter
+    (`agentRegistry`, `agentId`, `signer`, `emporiaAgentKey`: the agent's stable id, `issuedAt`). `agent_id` is a decimal
+    string outside the ABI; `stable_id` is 32 bytes as hex. No `verifyingContract`: no contract of ours verifies it."""
     sid = stable_id[2:] if stable_id.lower().startswith("0x") else stable_id
     return {
         "types": {
             "EIP712Domain": [{"name": "name", "type": "string"}, {"name": "version", "type": "string"},
                              {"name": "chainId", "type": "uint256"}],
-            "AgentLink": [{"name": "statement", "type": "string"}, {"name": "agentRegistry", "type": "string"},
+            "AgentLink": [{"name": "statement", "type": "string"}, {"name": "date", "type": "string"},
+                          {"name": "agentRegistry", "type": "string"},
                           {"name": "agentId", "type": "uint256"}, {"name": "signer", "type": "address"},
-                          {"name": "emporiaStableId", "type": "bytes32"}, {"name": "issuedAt", "type": "uint64"}],
+                          {"name": "emporiaAgentKey", "type": "bytes32"}, {"name": "issuedAt", "type": "uint64"}],
         },
         "primaryType": "AgentLink",
         "domain": {"name": DOMAIN_NAME, "version": DOMAIN_VERSION, "chainId": int(chain_id)},
-        "message": {"statement": STATEMENT, "agentRegistry": registry_string(chain_id, registry),
-                    "agentId": int(agent_id), "signer": signer, "emporiaStableId": bytes.fromhex(sid),
+        "message": {"statement": statement_text(chain_id, agent_id, agent_name), "date": date_text(issued_at),
+                    "agentRegistry": registry_string(chain_id, registry),
+                    "agentId": int(agent_id), "signer": signer, "emporiaAgentKey": bytes.fromhex(sid),
                     "issuedAt": int(issued_at)},
     }
 
@@ -155,6 +172,9 @@ def _parse(link: dict) -> dict:
         issued = link["issued_at"]
         if isinstance(issued, bool) or not isinstance(issued, int) or not 0 <= issued < 1 << 64:
             raise ValueError("issued_at")
+        name = link["agent_name"]
+        if not isinstance(name, str) or not 0 < len(name) <= MAX_NAME or not name.isprintable():
+            raise ValueError("agent name")
         sig_hex = str(link["wallet_sig"])
         sig_hex = sig_hex[2:] if sig_hex[:2].lower() == "0x" else sig_hex
         if len(sig_hex) > 2 * MAX_SIG_BYTES:
@@ -163,7 +183,7 @@ def _parse(link: dict) -> dict:
     except (KeyError, ValueError, TypeError):
         raise _Stop("invalid", "the link is malformed") from None
     return {"chain_id": int(parts[1]), "registry": parts[2], "agent_id": int(agent_id), "signer": signer,
-            "stable_id": sid, "issued_at": issued, "sig": sig}
+            "stable_id": sid, "issued_at": issued, "sig": sig, "agent_name": name}
 
 
 def _call(read: Reader, to: str, sel: bytes, types: list[str], values: list) -> bytes:
@@ -254,7 +274,7 @@ def _is_controller(read: Reader, owner: str, agent_id: int, signer: str) -> bool
 
 
 def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
-    """Verify a link `{agent_registry, agent_id, signer, stable_id, issued_at, wallet_sig}` at the reader's
+    """Verify a link `{agent_registry, agent_id, signer, stable_id, issued_at, agent_name, wallet_sig}` at the reader's
     pinned block. Returns `{tier, status, block_number, block_hash, owner, binding?, checked_at, reason}`."""
     owner = ""
     pinned: Any = None      # the reader, once it has pinned a block: a link refused before that read nothing
@@ -268,7 +288,8 @@ def verify(link: dict, read: Reader, *, now: float | None = None) -> dict:
             raise _Stop("invalid", "the reader is on a different chain")
         if not available():
             raise _Stop("not-checked", "no signature library is installed")
-        td = agent_link_typed_data(p["chain_id"], canonical, p["agent_id"], p["signer"], p["stable_id"], p["issued_at"])
+        td = agent_link_typed_data(p["chain_id"], canonical, p["agent_id"], p["signer"], p["stable_id"], p["issued_at"],
+                                   p["agent_name"])
         read.block_number  # noqa: B018 — evaluated for its effect: a dead RPC raises here, before anything else
         pinned = read
         _signature_ok(read, p, td)
@@ -352,14 +373,14 @@ def preview(agent_id: str | int, signer: str, read: Reader, *, now: float | None
 def typed_data_json(td: dict) -> dict:
     """The typed message as a wallet or `cast` takes it: JSON only (bytes32 as hex, uint256 as decimal strings)."""
     m = dict(td["message"])
-    m["emporiaStableId"] = "0x" + bytes(m["emporiaStableId"]).hex()
+    m["emporiaAgentKey"] = "0x" + bytes(m["emporiaAgentKey"]).hex()
     m["agentId"] = str(m["agentId"])
     return {**td, "message": m}
 
 
 def typed_data_from_json(td: dict) -> dict:
     m = dict(td["message"])
-    m["emporiaStableId"] = bytes.fromhex(str(m["emporiaStableId"]).removeprefix("0x"))
+    m["emporiaAgentKey"] = bytes.fromhex(str(m["emporiaAgentKey"]).removeprefix("0x"))
     m["agentId"], m["issuedAt"] = int(m["agentId"]), int(m["issuedAt"])
     return {**td, "message": m}
 
@@ -373,7 +394,7 @@ def signature_recovers(link: dict) -> bool | None:
     try:
         p = _parse(link)
         td = agent_link_typed_data(p["chain_id"], p["registry"], p["agent_id"], p["signer"], p["stable_id"],
-                                   p["issued_at"])
+                                   p["issued_at"], p["agent_name"])
     except _Stop:
         return None
     rec = _recover(td, p["sig"])

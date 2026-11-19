@@ -108,7 +108,7 @@ def ask(chain: str, agent_id: Any, signer: str = "", *, issued_at: int | None = 
         raise LinkError("signing checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
     caip2, aid = chain_of(chain), _agent_id(agent_id)
     signer = _signer(signer)
-    _, stable_id = _me(stable)
+    me, stable_id = _me(stable)
     reader = _reader(caip2, read)
     try:
         first = erc8004.preview(aid, "", reader, now=now)
@@ -121,12 +121,12 @@ def ask(chain: str, agent_id: Any, signer: str = "", *, issued_at: int | None = 
     registry = networks.ERC8004_REGISTRIES[caip2]
     chain_id = int(caip2.split(":", 1)[1])
     issued = int(issued_at if issued_at is not None else (now if now is not None else time.time()))
-    td = erc8004.agent_link_typed_data(chain_id, registry, aid, who, stable_id, issued)
+    td = erc8004.agent_link_typed_data(chain_id, registry, aid, who, stable_id, issued, me)
     return {"chain": caip2, "chain_label": _label(caip2), "testnet": networks.is_testnet(caip2),
             "agent_registry": erc8004.registry_string(chain_id, registry), "agent_id": aid, "signer": who,
             "owner": seen["owner"], "tier": seen["tier"], "tier_wording": erc8004.TIER_WORDING.get(seen["tier"], ""),
             "binding": seen.get("binding"), "reason": seen.get("reason", ""), "block_number": seen["block_number"],
-            "block_hash": seen["block_hash"], "issued_at": issued, "typed_data": erc8004.typed_data_json(td),
+            "block_hash": seen["block_hash"], "issued_at": issued, "agent_name": me, "typed_data": erc8004.typed_data_json(td),
             "privacy": PRIVACY_NOTE}
 
 
@@ -143,8 +143,10 @@ def _person_sign(agent_id: str, *args: Any) -> str:
 
 
 def record(chain: str, agent_id: Any, signer: str, issued_at: int, signature: str, *, read: Any = None,
-           stable: str | None = None, now: float | None = None, post: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """Verify the wallet's signature here first, then sign the record as the agent and post it."""
+           stable: str | None = None, now: float | None = None, post: Callable[..., Any] | None = None,
+           agent_name: str = "") -> dict[str, Any]:
+    """Verify the wallet's signature here first, then sign the record as the agent and post it. `agent_name` is the
+    Emporia handle the signed statement names (default: this agent's current handle, which `ask` printed)."""
     if not erc8004.available():
         raise LinkError("signing checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
     caip2, aid = chain_of(chain), _agent_id(agent_id)
@@ -161,15 +163,16 @@ def record(chain: str, agent_id: Any, signer: str, issued_at: int, signature: st
         raise LinkError("that signature is dated in the future")
     registry = networks.ERC8004_REGISTRIES[caip2]
     reg = erc8004.registry_string(int(caip2.split(":", 1)[1]), registry)
+    name = agent_name or me
     link = {"agent_registry": reg, "agent_id": aid, "signer": signer, "stable_id": stable_id,
-            "issued_at": issued_at, "wallet_sig": signature}
+            "issued_at": issued_at, "agent_name": name, "wallet_sig": signature}
     got = erc8004.verify(link, _reader(caip2, read), now=now)
     if got["status"] != "proven":
         raise LinkError(f"not recorded: the check says {got['status']}: {got['reason']}")
     at = datetime.fromtimestamp(clock, UTC).isoformat()
-    sig = _person_sign(me, stable_id, reg, aid, signer, issued_at, signature, at)
+    sig = _person_sign(me, stable_id, reg, aid, signer, issued_at, signature, at, name)
     body = {"agent_registry": reg, "agent_id": aid, "signer": signer, "issued_at": issued_at,
-            "wallet_sig": signature, "at": at, "signature": sig}
+            "agent_name": name, "wallet_sig": signature, "at": at, "signature": sig}
     if post is None:
         from emporia import mcp_server as m
         r = m._bearer_request("post", f"{m._base()}/agents/{m._seg(me)}/links/erc8004", agent_id=me, json=body,
@@ -212,7 +215,7 @@ def link_own_wallet(chain: str, agent_id: Any, *, read: Any = None, signer: Any 
         raise LinkError(f"the chain does not back this wallet as controlling it ({out.get('reason') or 'not proven'}): "
                         "nothing recorded")
     return record(chain, agent_id, out["signer"], int(out["issued_at"]), out["signature"], read=read, stable=stable,
-                  now=now, post=post)
+                  now=now, post=post, agent_name=out["agent_name"])
 
 
 def unlink(chain: str, agent_id: Any, *, stable: str | None = None) -> dict[str, Any]:

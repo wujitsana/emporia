@@ -49,7 +49,8 @@ def _owned_by_eoa(chain):
 def _sign(key, addr, caip2="eip155:84532", issued=None):
     issued = issued or int(time.time()) - 5
     cid = int(caip2.split(":")[1])
-    return issued, sign(key, cid, ERC8004_REGISTRIES[caip2], AGENT, addr, STABLE, issued=issued)
+    return issued, sign(key, cid, ERC8004_REGISTRIES[caip2], AGENT, addr, STABLE, issued=issued,
+                        name=mcp_server.AGENT_ID)
 
 
 def test_without_a_signature_it_prints_owner_tier_privacy_and_the_typed_message(target, chain, capsys):
@@ -60,12 +61,15 @@ def test_without_a_signature_it_prints_owner_tier_privacy_and_the_typed_message(
     assert "block 123" in out and "--issued-at" in out
     typed = json.loads(out[out.index("{\n"): out.index("\n}\n") + 2])
     assert typed["domain"] == {"name": "Emporia agent link", "version": "1", "chainId": 84532}
-    assert typed["message"]["emporiaStableId"] == "0x" + STABLE and typed["message"]["agentId"] == str(AGENT)
+    assert typed["message"]["emporiaAgentKey"] == "0x" + STABLE and typed["message"]["agentId"] == str(AGENT)
+    assert typed["message"]["statement"] == (f"Link ERC-8004 agent #{AGENT} on Base Sepolia (testnet) to the Emporia agent "
+                                             f"{target.name}. This moves no funds and grants no permission.")
+    assert f"What you sign: \"{typed['message']['statement']}\"" in out and "--signature 0x..." in out
     # the printed message is the one a wallet signs: the same digest the verifier rebuilds
     td = erc8004.typed_data_from_json(typed)
     assert erc8004.agent_link_digest(td) == erc8004.agent_link_digest(
         erc8004.agent_link_typed_data(84532, ERC8004_REGISTRIES["eip155:84532"], AGENT, typed["message"]["signer"],
-                                      STABLE, typed["message"]["issuedAt"]))
+                                      STABLE, typed["message"]["issuedAt"], target.name))
 
 
 @pytest.mark.parametrize("who,tier", [("owner", "owner"), ("bound", "bound-owner"), ("controller", "controller"),
@@ -116,7 +120,8 @@ def test_a_good_signature_is_checked_then_signed_by_the_agent_and_posted(target,
     body = dict(sent["body"])
     agent_sig = body.pop("signature")
     payload = wire.signed_erc8004_link_payload(STABLE, f"eip155:84532:{ERC8004_REGISTRIES['eip155:84532'].lower()}",
-                                               str(AGENT), addr, issued, sig, body["at"])
+                                               str(AGENT), addr, issued, sig, body["at"], target.name)
+    assert body["agent_name"] == target.name
     assert identity.verify(payload, agent_sig, identity.get_public_key_hex(target.name))
     assert body["wallet_sig"] == sig and body["agent_id"] == str(AGENT)
 
