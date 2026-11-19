@@ -7,21 +7,18 @@
 // (the earlier line-screen "everyday" design is archived outside the repo: research/archive/avatars-line-screen)
 // Integer math and literal tables only; avatars.py produces the same bytes (see tests/fixtures/avatar_vectors.json).
 
-// ---- palette: the dashboard's colors -------------------------------------------------------------------------
-// The six tints (the dashboard's) with the tones its themes derive from them (oklch from the tint, frozen as hex):
+// ---- palette: the dashboard's six tints, with exactly the colors its themes show (themePalette.ts, badges/tokens.ts) ------
+// ink = the dark theme's page background, paper = the light theme's page background, deep = the light theme's accent,
+// bright = the dark theme's accent. avatars.test.ts holds these rows to the theme code, so they cannot drift.
 //            tint       ink        paper      deep       bright    light tint?
-const TINT: (string | number)[][] = [
-  ["#39ff44", "#001b01", "#ebfaea", "#01680c", "#6cf96c", 1], // green
-  ["#0047ff", "#051232", "#f0f5ff", "#1446c2", "#93b7fe", 0], // blue
-  ["#b00331", "#250a0c", "#fef2f2", "#a1022c", "#fe9498", 0], // crimson
-  ["#d57c22", "#121212", "#eeeeee", "#d57c22", "#d57c22", 1], // burnt orange: only itself plus neutral grounds
+export const TINT: (string | number)[][] = [
+  ["#39ff44", "#001b00", "#ebfaea", "#006c00", "#39ff44", 1], // green
+  ["#0047ff", "#051232", "#ecf6ff", "#1446c2", "#8bb6ff", 0], // blue
+  ["#b00331", "#250a0c", "#fff0f0", "#a50029", "#ff8b91", 0], // crimson
+  ["#d57c22", "#201004", "#fdf3ec", "#8c3900", "#fb9f4c", 1], // burnt orange
   ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0], // purple
-  ["#888888", "#141414", "#f5f5f5", "#555555", "#b7b7b7", 1], // charcoal: no hue, so every chat color is a guest
+  ["#888888", "#141414", "#ececec", "#555555", "#b7b7b7", 1], // charcoal
 ];
-// The ten chat sender colors, hsl(h, 65%, 58%) for h = 210 0 145 280 235 175 300 195 255 100.
-const CHAT = ["#4e94da", "#da4e4e", "#4eda88", "#ab4eda", "#4e5ada", "#4edace", "#da4eda", "#4eb7da", "#714eda", "#7dda4e"];
-// Per tint: the chat colors at least 50 degrees of hue away (the "guest"); purple (hsl hue 286) also keeps #4e5ada at 51 degrees.
-const GUEST = [[0, 1, 3, 4, 5, 6, 7, 8], [1, 2, 3, 6, 9], [0, 2, 3, 4, 5, 7, 8, 9], [0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 4, 5, 7, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
 
 export function idBytes(id: string): number[] {
   const b: number[] = [];
@@ -36,18 +33,36 @@ function close(col: (string | number)[]): string {
   return (col[4] ? '<path fill="none" stroke="' + col[3] + '" stroke-opacity=".5" stroke-width=".5" d="M.25 .25h31.5v31.5h-31.5z"/>' : "") + "</svg>";
 }
 
+// The color's luma, 2126 R + 7152 G + 722 B on the 0-255 values (integer: avatars.py does the same).
+function luma(h: string): number { return 2126 * parseInt(h.slice(1, 3), 16) + 7152 * parseInt(h.slice(3, 5), 16) + 722 * parseInt(h.slice(5, 7), 16); }
+const GUEST_GAP = 892500;   // the accent's luma must differ from the picture's ground by 35% of the full range (2,550,000)
+// The accent: a bright or paper shade of one of the OTHER five tints, never the picture's own, picked by b[2] from those whose
+// luma sits at least GUEST_GAP from the ground it is drawn against (the ink on the guest-ground mode).
+function guestColor(b: number[]): string {
+  const t = b[0] % 6, mode = b[1] % 8, f = TINT[t] as string[];
+  const ref = mode < 2 || mode === 5 ? f[1] : mode < 4 ? f[2] : mode === 4 ? f[0] : mode === 6 ? f[3] : f[4];
+  const cands: string[] = [];
+  for (let u = 0; u < 6; u++) if (u !== t) cands.push((TINT[u] as string[])[4], (TINT[u] as string[])[2]);
+  let ok = cands.filter((c) => Math.abs(luma(c) - luma(ref)) >= GUEST_GAP);
+  if (!ok.length) {
+    let best = cands[0];
+    for (const c of cands) if (Math.abs(luma(c) - luma(ref)) > Math.abs(luma(best) - luma(ref))) best = c;
+    ok = [best];
+  }
+  return ok[b[2] % ok.length];
+}
 // -> [ground, lead, second, third, outline?]; eight ground-and-lead modes.
 export function palette(b: number[]): (string | number)[] {
-  const t = b[0] % 6, f = TINT[t] as string[], guest = CHAT[GUEST[t][b[2] % GUEST[t].length]];
-  const mode = b[1] % 8, one = f[3] === f[4];              // one: the burnt orange has no deep or bright tone
+  const t = b[0] % 6, f = TINT[t] as string[], guest = guestColor(b);
+  const mode = b[1] % 8;
   if (mode === 0) return [f[1], f[4], guest, f[2]];        // dark ground, tint leads
   if (mode === 1) return [f[1], guest, f[4], f[2]];        // dark ground, guest leads
   if (mode === 2) return [f[2], f[3], guest, f[1], 1];     // paper ground, tint leads (1 = outline it)
   if (mode === 3) return [f[2], f[1], f[3], guest, 1];     // paper ground, ink leads
   if (mode === 4) return f[5] ? [f[0], f[1], f[2], guest] : [f[0], f[2], f[1], guest]; // tint ground
   if (mode === 5) return [guest, f[1], f[2], f[4]];        // guest ground, ink leads
-  if (mode === 6) return one ? [f[1], f[2], f[0], guest] : [f[3], f[4], guest, f[1]];  // deep ground, bright leads
-  return one ? [f[2], f[1], f[0], guest, 1] : [f[4], f[3], guest, f[1]];               // bright ground, deep leads
+  if (mode === 6) return [f[3], f[4], guest, f[1]];        // deep ground, bright leads
+  return [f[4], f[3], guest, f[1]];                        // bright ground, deep leads
 }
 
 // ---- Rooms: a room seen from above, the far wall off-center, the four walls lit in a pattern -----------------

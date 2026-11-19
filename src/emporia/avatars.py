@@ -10,18 +10,18 @@ copied or flattened. Hallmark: v2's 24 plates and all 135 marks.
 Integer math and literal tables only; avatars.ts produces the same bytes (see tests/fixtures/avatar_vectors.json).
 """
 
-# ---- palette: the dashboard's six tints, with the tones its themes derive from them (oklch from the tint, frozen as hex)
+# ---- palette: the dashboard's six tints, with exactly the colors its themes show (themePalette.ts, badges/tokens.ts) ------
+# ink = the dark theme's page background, paper = the light theme's page background, deep = the light theme's accent,
+# bright = the dark theme's accent. avatars.test.ts holds these rows to the theme code, so they cannot drift.
 #        tint       ink        paper      deep       bright    light tint?
 TINT = [
-    ["#39ff44", "#001b01", "#ebfaea", "#01680c", "#6cf96c", 1],
-    ["#0047ff", "#051232", "#f0f5ff", "#1446c2", "#93b7fe", 0],
-    ["#b00331", "#250a0c", "#fef2f2", "#a1022c", "#fe9498", 0],
-    ["#d57c22", "#121212", "#eeeeee", "#d57c22", "#d57c22", 1],
-    ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0],
-    ["#888888", "#141414", "#f5f5f5", "#555555", "#b7b7b7", 1],
+    ["#39ff44", "#001b00", "#ebfaea", "#006c00", "#39ff44", 1],  # green
+    ["#0047ff", "#051232", "#ecf6ff", "#1446c2", "#8bb6ff", 0],  # blue
+    ["#b00331", "#250a0c", "#fff0f0", "#a50029", "#ff8b91", 0],  # crimson
+    ["#d57c22", "#201004", "#fdf3ec", "#8c3900", "#fb9f4c", 1],  # burnt orange
+    ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0],  # purple
+    ["#888888", "#141414", "#ececec", "#555555", "#b7b7b7", 1],  # charcoal
 ]
-CHAT = ["#4e94da", "#da4e4e", "#4eda88", "#ab4eda", "#4e5ada", "#4edace", "#da4eda", "#4eb7da", "#714eda", "#7dda4e"]
-GUEST = [[0, 1, 3, 4, 5, 6, 7, 8], [1, 2, 3, 6, 9], [0, 2, 3, 4, 5, 7, 8, 9], [0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 4, 5, 7, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
 SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
 
 
@@ -41,12 +41,35 @@ def close(col):
     return ('<path fill="none" stroke="%s" stroke-opacity=".5" stroke-width=".5" d="M.25 .25h31.5v31.5h-31.5z"/>' % col[3] if len(col) > 4 and col[4] else "") + "</svg>"
 
 
+def luma(h):
+    """The color's luma, 2126 R + 7152 G + 722 B on the 0-255 values (integer: the TypeScript port does the same)."""
+    return 2126 * int(h[1:3], 16) + 7152 * int(h[3:5], 16) + 722 * int(h[5:7], 16)
+
+
+GUEST_GAP = 892500  # the accent's luma must differ from the picture's ground by 35% of the full range (2,550,000)
+
+
+def guest_color(b):
+    """The accent: a bright or paper shade of one of the OTHER five tints, never the picture's own, picked by b[2] from
+    those whose luma sits at least GUEST_GAP from the ground it is drawn against (the ink on the guest-ground mode)."""
+    t, mode = b[0] % 6, b[1] % 8
+    f = TINT[t]
+    ref = f[1] if mode == 5 else f[1] if mode < 2 else f[2] if mode < 4 else f[0] if mode == 4 else f[3] if mode == 6 else f[4]
+    cands = []
+    for u in range(6):
+        if u != t:
+            cands += [TINT[u][4], TINT[u][2]]
+    ok = [c for c in cands if abs(luma(c) - luma(ref)) >= GUEST_GAP]
+    if not ok:
+        ok = [max(cands, key=lambda c: abs(luma(c) - luma(ref)))]
+    return ok[b[2] % len(ok)]
+
+
 def palette2(b):
     t = b[0] % 6
     f = TINT[t]
-    guest = CHAT[GUEST[t][b[2] % len(GUEST[t])]]
+    guest = guest_color(b)
     mode = b[1] % 8
-    one = f[3] == f[4]
     if mode == 0:
         return [f[1], f[4], guest, f[2]]
     if mode == 1:
@@ -60,8 +83,8 @@ def palette2(b):
     if mode == 5:
         return [guest, f[1], f[2], f[4]]
     if mode == 6:
-        return [f[1], f[2], f[0], guest] if one else [f[3], f[4], guest, f[1]]
-    return [f[2], f[1], f[0], guest, 1] if one else [f[4], f[3], guest, f[1]]
+        return [f[3], f[4], guest, f[1]]
+    return [f[4], f[3], guest, f[1]]
 
 
 def num(v):
