@@ -9,6 +9,8 @@ import { contrast, type Gamut } from "./badges/color.ts";
 import { TINTS, TINT_LABELS } from "./themeConfig.ts";
 import { WHITE_INK, LIGHT_PANEL, rgbHex, deepPalette, vividPalette } from "./themePalette.ts";
 import { themeColors, type ThemeName } from "./badges/tokens.ts";
+import { COMPANIONS } from "./palette.ts";
+import { hexToRgb } from "./badges/color.ts";
 
 type Fs = { readFileSync(p: string, enc: "utf8"): string };
 const proc = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(m: string): unknown } }).process;
@@ -76,11 +78,11 @@ describe("the CSS carries the palette", () => {
 
   it("the vivid rules name the same tints for white ink and the lighter panel as the table", () => {
     expect(WHITE_INK).toEqual(["tint-blue", "tint-red", "tint-purple"]);
-    expect(LIGHT_PANEL).toEqual(["tint-orange"]);
+    expect(LIGHT_PANEL).toEqual(["tint-orange", "tint-charcoal"]);
     expect(DASH).toContain("body.e-look.theme-vivid.tint-blue,\nbody.e-look.theme-vivid.tint-red,\nbody.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }");
     // The dark theme's chip ink is white on the same tints (crimson was missing here: dark red ink on crimson chips).
     expect(DASH).toContain("body.e-look.theme-dark.tint-blue,\nbody.e-look.theme-dark.tint-red,\nbody.e-look.theme-dark.tint-purple { --anim-ink: #fff; }");
-    expect(DASH).toContain("body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
+    expect(DASH).toContain("body.e-look.theme-vivid.tint-orange,\nbody.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
   });
 
   it("the kit's global.css has the same three ramps for every tint", () => {
@@ -99,5 +101,42 @@ describe("the CSS carries the palette", () => {
       expect(read(f), f).not.toMatch(/#f0a832|#f5b84a/i);
     }
     expect(read("badges/tokens.ts")).not.toMatch(/\bAMBER\b/);
+  });
+});
+
+describe("the chat sender names", () => {
+  it(`every companion reads (${AA}:1) where a name sits: the light tone on the dark theme's canvas and panel, the deep tone on the light theme's, in every tint`, () => {
+    const fails: string[] = [];
+    for (const tint of TINTS) {
+      const dark = themeColors("animatic", "dark", tint), light = themeColors("animatic", "light", tint);
+      for (const other of TINTS) {
+        const c = COMPANIONS[other];
+        for (const s of dark.surfaces.filter((x) => x.name !== "wash")) {
+          const r = contrast(hexToRgb(c.light), s.rgb);
+          if (r < AA) fails.push(`dark ${TINT_LABELS[tint]} ${TINT_LABELS[other]} light on ${s.name}: ${r.toFixed(2)}`);
+        }
+        for (const s of light.surfaces.filter((x) => x.name !== "wash")) {
+          const r = contrast(hexToRgb(c.deep), s.rgb);
+          if (r < AA) fails.push(`light ${TINT_LABELS[tint]} ${TINT_LABELS[other]} deep on ${s.name}: ${r.toFixed(2)}`);
+        }
+      }
+    }
+    expect(fails).toEqual([]);
+  });
+
+  it("the kit's body.tint-* rules set --tint-light and --tint-deep to palette.ts", () => {
+    for (const t of TINTS) {
+      const rule = KIT.match(new RegExp(`body\\.${t} \\{[^}]*\\}`));
+      expect(rule, t).not.toBeNull();
+      expect(rule![0], t).toContain(`--tint-light: ${COMPANIONS[t].light};`);
+      expect(rule![0], t).toContain(`--tint-deep: ${COMPANIONS[t].deep};`);
+    }
+  });
+
+  it("the accent in the dark theme is the light companion (green pinned) and in the light theme the deep one", () => {
+    for (const tint of TINTS) {
+      expect(rgbHex(deepPalette(tint).accent), tint).toBe(tint === "tint-green" ? "#39ff44" : COMPANIONS[tint].light);
+      expect(rgbHex(themeColors("animatic", "light", tint).accent), tint).toBe(COMPANIONS[tint].deep);
+    }
   });
 });

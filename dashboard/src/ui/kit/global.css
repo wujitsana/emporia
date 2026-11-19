@@ -362,34 +362,46 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 body.tint-green {
   --tint: #39ff44;
+  --tint-light: #72e072;
+  --tint-deep: #006c00;
 }
 
 body.tint-blue {
   --tint: #0047ff;
+  --tint-light: #69cdff;
+  --tint-deep: #005e8b;
 }
 
 body.tint-red {
   --tint: #b00331;   /* crimson, as the user picked (11-14) */
-}
-
-body.tint-yellow {
-  --tint: #cdbf1f;   /* deeper yellow, as the user picked (11-19) */
+  --tint-light: #ffbeff;
+  --tint-deep: #743c76;
 }
 
 body.tint-purple {
   --tint: #7d3c98;   /* plum purple, as the user picked (11-19) */
+  --tint-light: #dc97fb;
+  --tint-deep: #74338e;
 }
 
 body.tint-orange {
   --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
+  --tint-light: #ffad33;
+  --tint-deep: #814400;
+}
+
+body.tint-charcoal {
+  --tint: #888888;   /* neutral gray, as the user picked (11-19) */
+  --tint-light: #b7b7b7;
+  --tint-deep: #555555;
 }
 
 body.theme-light.tint-green,
 body.theme-light.tint-blue,
 body.theme-light.tint-red,
-body.theme-light.tint-yellow,
 body.theme-light.tint-purple,
-body.theme-light.tint-orange {
+body.theme-light.tint-orange,
+body.theme-light.tint-charcoal {
   /*
   NOTE(jimmylee):
   Light tint ramp is anchored to the ANSI light grays:
@@ -413,8 +425,8 @@ body.theme-light.tint-orange {
   --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);
   --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);
   --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
-  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);
-  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);
+  --theme-focused-foreground: var(--tint-deep, #006c00);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-deep, #006c00) 50%, transparent);
   /*
   NOTE(jimmylee):
   Window body matches background-modal so the panel sits one step darker than the
@@ -423,6 +435,19 @@ body.theme-light.tint-orange {
   */
   --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
   --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);
+}
+
+/* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). */
+body.theme-light.tint-charcoal {
+  --theme-background: #ececec;
+  --theme-background-modal: #e0e0e0;
+  --theme-background-modal-footer: #d4d4d4;
+  --theme-background-input: #ececec;
+  --theme-border: #b8b8b8;
+  --theme-border-subdued: #c8c8c8;
+  --theme-button-text: #ececec;
+  --theme-button-background: #e0e0e0;
+  --theme-window-background: #e0e0e0;
 }
 
 /*
@@ -437,9 +462,9 @@ BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit r
 body.theme-dark.tint-green,
 body.theme-dark.tint-blue,
 body.theme-dark.tint-red,
-body.theme-dark.tint-yellow,
 body.theme-dark.tint-purple,
-body.theme-dark.tint-orange {
+body.theme-dark.tint-orange,
+body.theme-dark.tint-charcoal {
   --theme-overlay: var(--color-black-alpha-40);
   --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
@@ -452,8 +477,8 @@ body.theme-dark.tint-orange {
   --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
   --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
-  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);
-  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --theme-focused-foreground: var(--tint-light, #39ff44);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
   --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
   --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);
 }
@@ -484,9 +509,9 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 body.theme-vivid.tint-green,
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
-body.theme-vivid.tint-yellow,
 body.theme-vivid.tint-purple,
-body.theme-vivid.tint-orange {
+body.theme-vivid.tint-orange,
+body.theme-vivid.tint-charcoal {
   --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);
   --theme-overlay: var(--color-black-alpha-40);
@@ -506,7 +531,8 @@ body.theme-vivid.tint-orange {
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
-body.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
+body.theme-vivid.tint-orange,
+body.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }

@@ -9,9 +9,10 @@ describe("capture URL parameters", () => {
     expect(tintFromParam("Purple")).toBe("tint-purple");
     expect(tintFromParam("amber")).toBe("tint-green");
     expect(tintFromParam("default")).toBe("tint-green");
-    expect(tintFromParam("amber")).toBe("tint-green");   // amber is gone; orange and yellow are tints again
+    expect(tintFromParam("amber")).toBe("tint-green");   // amber is gone; orange is a tint again
     expect(tintFromParam("orange")).toBe("tint-orange");
-    expect(tintFromParam("yellow")).toBe("tint-yellow");
+    expect(tintFromParam("yellow")).toBeNull();   // removed; the page then falls back to green
+    expect(tintFromParam("charcoal")).toBe("tint-charcoal");
     expect(tintFromParam("teal")).toBeNull();
     expect(tintFromParam("")).toBeNull();
     expect(tintFromParam(null)).toBeNull();

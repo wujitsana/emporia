@@ -1,24 +1,21 @@
 import Text from "@kit/Text";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { COMPANIONS, type Companions } from "../palette";
+import { TINTS } from "../themeConfig";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { whenText } from "../relayFormat";
 import { QuietChip } from "./chips";
 import { AgentName } from "./AgentName";
 
-/* 10 well-separated hues (none in the amber band, 20-70) — shared with AgentMoireAvatar */
-const SENDER_PALETTE = [210, 0, 145, 280, 235, 175, 300, 195, 255, 100] as const;
-
-function senderHue(s: string): number {
+/* A sender's name takes one companion pair of the palette (palette.ts), by a hash of its id: the light tone on the dark theme,
+   the deep tone on the light one (dashboard.css sets which). */
+function senderCompanions(s: string): Companions {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return SENDER_PALETTE[(h >>> 0) % SENDER_PALETTE.length];
-}
-
-function senderColor(id: string) {
-  return `hsl(${senderHue(id)}, 65%, 58%)`;
+  return COMPANIONS[TINTS[(h >>> 0) % TINTS.length]];
 }
 
 export type ChatLine = {
@@ -77,13 +74,14 @@ export function ReadOnlyChat({
           <Text className="e-faint">{emptyLabel}</Text>
         ) : (
           messages.map((m) => {
-            const color = senderColor(m.sender_id);
+            const c = senderCompanions(m.sender_id);
+            const color = { "--e-sender-light": c.light, "--e-sender-deep": c.deep } as CSSProperties;
             return (
               <div key={m.id} className="e-chat-line">
                 <AgentMoireAvatar agentId={m.sender_id} stableId={m.sender_stable_id} size={26} />
                 <div className="e-chat-line__body">
                   <div className="e-chat-line__meta">
-                    <span className="e-chat-line__name" style={{ color }}><AgentName id={m.sender_id}>{m.sender_id}</AgentName></span>
+                    <span className="e-chat-line__name" style={color}><AgentName id={m.sender_id}>{m.sender_id}</AgentName></span>
                     {m.msg_type && <span className="e-chat-line__type">{m.msg_type}</span>}
                     {m.created_at && (
                       <span className="e-chat-line__time" title={new Date(m.created_at).toLocaleString()}>

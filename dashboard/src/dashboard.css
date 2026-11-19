@@ -2701,8 +2701,17 @@ body.e-look.theme-light {
   --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
   --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
   --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
-  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);
-  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
+  --theme-focused-foreground: var(--tint-deep, #006c00);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-deep, #006c00) 50%, transparent);
+}
+/* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). Mirrored in themePalette.ts. */
+body.e-look.theme-light.tint-charcoal {
+  --theme-background: #ececec;
+  --theme-background-modal: #e0e0e0;
+  --theme-background-input: #ececec;
+  --theme-border: #b8b8b8;
+  --theme-border-subdued: #c8c8c8;
+  --theme-button-text: #ececec;
 }
 
 /* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
@@ -2725,8 +2734,8 @@ body.e-look.theme-dark {
   --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
   --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
   --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
-  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
-  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --theme-focused-foreground: var(--tint-light, #39ff44);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
   --anim-line: oklch(from var(--anim-tint) 0.72 c h);
   --anim-fill: var(--anim-tint);
   --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
@@ -2774,7 +2783,8 @@ body.e-look.theme-vivid {
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
-body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+body.e-look.theme-vivid.tint-orange,
+body.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
@@ -3121,8 +3131,11 @@ body.e-look.theme-vivid.e-ink-pure.e-ink-pure.e-ink-pure { --vv-ink: var(--e-pur
   color: var(--anim-faint);
 }
 .e-look .e-phase-strip__step.is-done { opacity: 1; }
-/* Names in a chat are ink, so they read on the tint. */
-.e-look .e-chat-line__name { color: var(--theme-text) !important; }
+/* Names in a chat: the sender's companion tone (palette.ts) - deep on the light theme, light on the dark one; ink on vivid,
+   so they read on the tint. ReadOnlyChat sets --e-sender-light and --e-sender-deep on the name. */
+.e-look .e-chat-line__name { color: var(--e-sender-deep, var(--theme-text)); }
+body.e-look.theme-dark .e-chat-line__name { color: var(--e-sender-light, var(--theme-text)); }
+body.e-look.theme-vivid .e-chat-line__name { color: var(--theme-text); }
 .e-look .e-entity-chip--agent,
 .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }
 

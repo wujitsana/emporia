@@ -9,10 +9,11 @@
  * - deep (the dark theme): the video's all-dark-green screens in OKLCH relative to the tint
  *   (bg L .192 C×.243, panel L .253 C×.243, border L .366 C×.328, text L .962 C×.243), green pinned
  *   to #001b00 / #0b2a0b / #1d4a1d / #d8ffd8 with #39ff44 as the accent. The accent as text is
- *   `oklch(from tint max(l, .78) min(c, .22) h)` (green keeps #39ff44).
+ *   the tint's light companion (palette.ts); green keeps #39ff44.
  */
 import { type Gamut, type RGB, hexToRgb, mixOver, relativeOklch } from "./badges/color.ts";
 import { TINT_COLORS, type Tint } from "./themeConfig.ts";
+import { COMPANIONS } from "./palette.ts";
 
 export interface Palette {
   bg: RGB;
@@ -33,7 +34,9 @@ const hex = hexToRgb;
 /** Tints whose vivid ink is white (the tint is too dark for a dark ink). */
 export const WHITE_INK: readonly Tint[] = ["tint-blue", "tint-red", "tint-purple"];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
-export const LIGHT_PANEL: readonly Tint[] = ["tint-orange"];
+export const LIGHT_PANEL: readonly Tint[] = ["tint-orange", "tint-charcoal"];
+/** Light-theme canvas and panel for the neutral tint: gray, not near-white (the others derive theirs from the tint). */
+export const LIGHT_NEUTRAL: Partial<Record<Tint, { bg: string; panel: string }>> = { "tint-charcoal": { bg: "#ececec", panel: "#e0e0e0" } };
 export const LIGHT_PANEL_WHITE = 0.2;
 
 export function vividPalette(tint: Tint, gamut: Gamut = "css"): Palette {
@@ -60,7 +63,7 @@ export function deepPalette(tint: Tint, gamut: Gamut = "css"): Palette {
     panel: relativeOklch(t, 0.253, (c) => c * 0.243, gamut),
     border: relativeOklch(t, 0.366, (c) => c * 0.328, gamut),
     text: relativeOklch(t, 0.962, (c) => c * 0.243, gamut),
-    accent: relativeOklch(t, (l) => Math.max(l, 0.78), (c) => Math.min(c, 0.22), gamut),
+    accent: hex(COMPANIONS[tint].light),
     fill: hex(t),
     fillInk: WHITE_INK.includes(tint) ? WHITE : bg,
   };

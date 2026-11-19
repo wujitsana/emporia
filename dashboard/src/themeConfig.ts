@@ -8,9 +8,9 @@ export const TINTS = [
   "tint-green",
   "tint-blue",
   "tint-red",
-  "tint-yellow",
-  "tint-purple",
   "tint-orange",
+  "tint-purple",
+  "tint-charcoal",
 ] as const;
 export type Tint = (typeof TINTS)[number];
 export const DEFAULT_TINT: Tint = "tint-green";
@@ -19,18 +19,18 @@ export const TINT_LABELS: Record<Tint, string> = {
   "tint-green": "Green",
   "tint-blue": "Blue",
   "tint-red": "Crimson",
-  "tint-yellow": "Yellow",
-  "tint-purple": "Purple",
   "tint-orange": "Orange",
+  "tint-purple": "Purple",
+  "tint-charcoal": "Charcoal",
 };
 
 export const TINT_COLORS: Record<Tint, string> = {
   "tint-green": "#39ff44",
   "tint-blue": "#0047ff",
   "tint-red": "#b00331",
-  "tint-yellow": "#cdbf1f",
-  "tint-purple": "#7d3c98",
   "tint-orange": "#d57c22",
+  "tint-purple": "#7d3c98",
+  "tint-charcoal": "#888888",
 };
 
 /** A saved or typed tint → a tint. The old default (`""`, "amber") and anything unknown load as green. */
