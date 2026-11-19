@@ -549,3 +549,18 @@ def test_the_date_is_the_issued_time_formatted_so_a_wallet_reader_and_the_math_a
     a = erc8004.agent_link_typed_data(84532, REG, "1", "0x" + "11" * 20, FX["stable_id"], 1_700_000_000, NAME)
     b = erc8004.agent_link_typed_data(84532, REG, "1", "0x" + "11" * 20, FX["stable_id"], 1_700_000_060, NAME)
     assert erc8004.agent_link_digest(a) != erc8004.agent_link_digest(b)
+
+
+@needs_lib
+def test_a_high_s_signature_is_refused_with_a_plain_message_and_its_low_s_twin_passes():
+    key, addr = keypair()
+    ch = FakeChain()
+    ch.owners[AGENT] = addr
+    low = bytes.fromhex(sign(key, 84532, REG, AGENT, addr, FX["stable_id"]).removeprefix("0x"))
+    assert erc8004.verify(make_link(key, addr, sig="0x" + low.hex()), ch)["tier"] == "owner"
+    n = erc8004.SECP256K1_N
+    s = int.from_bytes(low[32:64], "big")
+    v = low[64]
+    high = low[:32] + (n - s).to_bytes(32, "big") + bytes([27 + ((v - 27) ^ 1) if v >= 27 else v ^ 1])
+    r = erc8004.verify(make_link(key, addr, sig="0x" + high.hex()), ch)
+    assert r["status"] == "invalid" and "non-standard form; sign again" in r["reason"]

@@ -212,6 +212,8 @@ def _signature_ok(read: Reader, p: dict, td: dict) -> None:
     except ChainUnknown:
         raise _Stop("unknown", "the signer's account could not be read") from None
     if not has_code:
+        if len(p["sig"]) == 65 and int.from_bytes(p["sig"][32:64], "big") > SECP256K1_N // 2:
+            raise _Stop("invalid", "the signature is in a non-standard form; sign again")
         raise _Stop("invalid", "the signature is not the signer's")
     try:
         ret = _call(read, p["signer"], SEL_IS_VALID_SIG, ["bytes32", "bytes"], [agent_link_digest(td), p["sig"]])
