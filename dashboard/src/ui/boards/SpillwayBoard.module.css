@@ -13,7 +13,7 @@
 .cell.shut { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }
 /* Silt: hatched, neutral. */
 .silt { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }
-/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */
+/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not color. */
 .stoneA { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }
 .stoneB { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }
 .n { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }

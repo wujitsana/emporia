@@ -15,7 +15,7 @@ const tables = (c: HTMLElement) => [...c.querySelectorAll("table")].map((t) => [
 const frameOf = (fx: typeof SPILLWAY, i: number) => buildTimeline(fx.session, fx.actions).frameAt(i);
 
 describe("SpillwayBoard", () => {
-  it("draws the cells as a table: words, never colour alone", () => {
+  it("draws the cells as a table: words, never color alone", () => {
     const { container } = render(<SpillwayBoard {...spillwayFromFrame(frameOf(SPILLWAY, 0) as never, (s) => s)} />);
     const [grid] = tables(container);
     expect(grid[4]).toEqual(["1", "silt", "alpha", "beta", "alpha", "beta", "silt"]);

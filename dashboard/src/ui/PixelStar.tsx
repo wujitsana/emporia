@@ -1,6 +1,6 @@
 /**
  * The brand's star, drawn on a 7 x 7 pixel grid like the wordmark's face (Silkscreen has no star glyph,
- * so a typed ✶ fell back to another font and looked off). Inline SVG: it takes the text's colour
+ * so a typed ✶ fell back to another font and looked off). Inline SVG: it takes the text's color
  * (`currentColor`), is as tall as the capitals beside it and is hidden from screen readers.
  */
 const CELLS = [

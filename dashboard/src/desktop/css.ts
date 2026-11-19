@@ -15,7 +15,7 @@ export const DESKTOP_CSS: string = "__EMPORIA_DESKTOP_CSS__";
  * takes every element inside the page back to the browser's own defaults. It
  * is unlayered, so it wins over Desktop's layered base rules; and `:where()`
  * gives it no specificity, so every rule of the app's own still wins over it.
- * Inherited properties (font, colour) still come from the app's own root.
+ * Inherited properties (font, color) still come from the app's own root.
  *
  * What is inside an <svg> is left alone: its fill and stroke are presentation
  * attributes (`<g fill="currentColor">`), which count as author rules, so
@@ -49,7 +49,7 @@ export const DESKTOP_POLISH = `
   overflow-y: auto;
   box-sizing: border-box;
 }
-/* Before the app has a profile: the "opening", "not set up" and "did not answer" notes, in Desktop's own colours. */
+/* Before the app has a profile: the "opening", "not set up" and "did not answer" notes, in Desktop's own colors. */
 .e-desktop-root .e-desktop-note {
   max-width: 36rem;
   margin: 3rem auto;

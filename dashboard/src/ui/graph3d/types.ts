@@ -6,14 +6,14 @@ export interface GraphNode {
   /** Position inside the layer. */
   index: number;
   label: string;
-  /** Signed activation; drives size and colour. */
+  /** Signed activation; drives size and color. */
   value: number;
 }
 
 export interface GraphEdge {
   from: string;
   to: string;
-  /** Signed; thickness is |weight|, sign is line style and colour. */
+  /** Signed; thickness is |weight|, sign is line style and color. */
   weight: number;
   /** Drawn dotted and faint; carries no flow. */
   blocked?: boolean;

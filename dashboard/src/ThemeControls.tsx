@@ -58,7 +58,7 @@ export function ThemePanelBody({
         style={{ background: TINT_COLORS[tint] }}
         onClick={() => onTint(nextTint(tint))}
         title={`accent: ${TINT_LABELS[tint]} (click for the next)`}
-        aria-label={`Accent colour: ${TINT_LABELS[tint]}, click to cycle`}
+        aria-label={`Accent color: ${TINT_LABELS[tint]}, click to cycle`}
       />
       {ink && (
         <>

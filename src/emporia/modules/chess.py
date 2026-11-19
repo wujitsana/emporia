@@ -39,7 +39,7 @@ def _next_player(participants: list[str], current: str) -> str:
     return participants[(idx + 1) % len(participants)]
 
 
-def _colours(data: dict[str, Any], participants: list[str]) -> tuple[str | None, str | None]:
+def _colors(data: dict[str, Any], participants: list[str]) -> tuple[str | None, str | None]:
     """(white, black). Stored at start since P131 (the creator may play
     black); older states mean participants[0] is white."""
     if "white" in data:
@@ -91,7 +91,7 @@ def _result(board, participants: list[str], data: dict[str, Any] | None = None) 
     `is_terminal` used to return `state.current_agent`, which after the final
     move is the side *to move*: the player just checkmated. Settlement reads
     `is_terminal`, so every decided chess game named the loser, and every draw
-    named whoever happened to be on move. The colour comes from the board;
+    named whoever happened to be on move. The color comes from the board;
     white is `participants[0]` (see `initial_state`).
 
     A draw names no winner and says so with `outcome_type="draw"`, which the
@@ -101,7 +101,7 @@ def _result(board, participants: list[str], data: dict[str, Any] | None = None) 
     if outcome is None:
         return {"winner": None}
     termination = str(outcome.termination)
-    white, black = _colours(data or {}, participants)
+    white, black = _colors(data or {}, participants)
     if outcome.winner is None or not (white and black):
         return {"winner": None, "outcome_type": "draw", "termination": termination}
     winner = white if outcome.winner == _chess_lib.WHITE else black
@@ -280,7 +280,7 @@ Clock: `move_time_limit_s`, when the creator set one; running out loses on time.
         if cap and state.data.get("plies", 0) >= cap:
             return True, {"winner": None, "outcome_type": "draw", "termination": "move_limit"}
         left = _seconds_left(state.data)
-        white, black = _colours(state.data, participants)
+        white, black = _colors(state.data, participants)
         if left is not None and left < 0 and white and black:
             # P131: the side to move ran out of time and loses, as agreed by
             # joining a game with a move limit.

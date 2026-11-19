@@ -18,7 +18,7 @@ import { TINTS } from "./themeConfig";
 export const TINT: (string | number)[][] = [
   ["#39ff44", "#001b00", "#ebfaea", "#006c00", "#39ff44", 1], // green
   ["#0047ff", "#051232", "#ecf6ff", "#005e8b", "#69cdff", 0], // blue
-  ["#b00331", "#250a0c", "#fff0f0", "#743c76", "#ffbeff", 0], // crimson
+  ["#b00331", "#250a0c", "#fff0f0", "#5c0e1b", "#ffbeff", 0], // crimson
   ["#d57c22", "#201004", "#fdf3ec", "#814400", "#ffad33", 1], // burnt orange
   ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0], // purple
   ["#888888", "#141414", "#ececec", "#555555", "#b7b7b7", 1], // charcoal

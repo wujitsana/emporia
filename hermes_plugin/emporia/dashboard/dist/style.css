@@ -375,7 +375,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-host-body.tint-red {
   --tint: #b00331;   /* crimson, as the user picked (11-14) */
   --tint-light: #ffbeff;
-  --tint-deep: #743c76;
+  --tint-deep: #5c0e1b;
 }
 
 .e-host-body.tint-purple {
@@ -453,7 +453,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 /*
 DEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the
 tint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);
-the accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.
+the accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colors.
 Mirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.
 BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):
   background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24
@@ -1588,7 +1588,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
-/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */
+/* The vivid circle: the tint with a ring of its ink (color set inline); the ring fills in when vivid is on. */
 .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
 .e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
 /* The text switch: a real toggle (track and knob), not a circle. */
@@ -1778,7 +1778,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   opacity: 0.45;
   font-variant-numeric: tabular-nums;
 }
-/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */
+/* A list's own filter, at the top of its column: compact, the theme's colors, a clear button inside. */
 .e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }
 .e-list-filter input {
   box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;
@@ -3118,7 +3118,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 /* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
 /* On only for the length of a theme or tint change (themeConfig.applyTheme),
    so hovers and other transitions are untouched the rest of the time. A run
-   through the tints reads as one surface changing colour, not a flash. */
+   through the tints reads as one surface changing color, not a flash. */
 @media (prefers-reduced-motion: no-preference) {
   .e-theme-anim,
   .e-theme-anim *,
@@ -3198,7 +3198,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
    the only one. `.e-look` is on the app's root with the theme and
    tint classes (themeConfig.applyTheme), so these rules keep their
    weight over the older ones above without a switch.
-   - It follows light, vivid, dark and all seven tints: every colour comes
+   - It follows light, vivid, dark and all seven tints: every color comes
      from the tint (--tint; green when there is none).
    - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
      prefers-reduced-motion or in capture mode (?capture=1).
@@ -3258,7 +3258,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 
 /* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
    L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the
-   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple
+   video's exact colors. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple
    read; a chip is the pure tint with the canvas on it (white on blue and purple).
    Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.
    BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):
@@ -3354,7 +3354,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 /* On the dark canvas a strong wash would sit under light text: keep it faint. */
 /* Dark cards and hover rows are the deep panel (the video's #0b2a0b in green), not a mix of the tint over the canvas. */
 .e-look.theme-dark .e-dashboard-shell { --anim-wash: var(--e-panel); }
-/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */
+/* The hover / selected wash in vivid is the panel color: text on it clears 4.5:1 in every tint. */
 .e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }
 
 /* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
@@ -3633,7 +3633,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 
 /* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────
    Secondary text used to dim to 35–50 % opacity, which falls under
-   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
+   4.5:1 on a tinted canvas. Faint is a color at about 4.6:1 or more. */
 .e-look {
   --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }
@@ -4416,8 +4416,8 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 }
 /* ═══════════════════════════════════════════════════════════════
    PIXEL BADGES — badges/Badge.tsx, the ui-badges design note (kept outside the repo)
-   Two colour roles, no background:
-   - ink    = currentColor (the text colour where the badge sits);
+   Two color roles, no background:
+   - ink    = currentColor (the text color where the badge sits);
    - accent = --e-badge-accent, from the tint, darker on the light canvas
      and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row
      wash in every theme and tint; badges.test.tsx holds it to that).
@@ -4871,39 +4871,39 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   font-size: 0.78rem;
   line-height: 1.5;
 }
-.BlottoBars_root_19rvs { max-width: 44rem; }
+.BlottoBars_root_k3zo9 { max-width: 44rem; }
 
-.BlottoBars_grid_19rvs { min-width: 18rem; display: grid; gap: 4px; }
-.BlottoBars_head_19rvs, .BlottoBars_row_19rvs { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }
-.BlottoBars_who_19rvs { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
-.BlottoBars_whoB_19rvs { text-align: right; }
-.BlottoBars_state_19rvs { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }
+.BlottoBars_grid_k3zo9 { min-width: 18rem; display: grid; gap: 4px; }
+.BlottoBars_head_k3zo9, .BlottoBars_row_k3zo9 { display: grid; grid-template-columns: minmax(0, 1fr) 4.2rem minmax(0, 1fr); align-items: center; gap: 6px; }
+.BlottoBars_who_k3zo9 { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.BlottoBars_whoB_k3zo9 { text-align: right; }
+.BlottoBars_state_k3zo9 { font-size: 0.68rem; letter-spacing: 0.04em; opacity: 0.8; }
 
-.BlottoBars_cell_19rvs { display: flex; align-items: center; min-height: 1.7rem; }
-.BlottoBars_left_19rvs { justify-content: flex-end; }
-.BlottoBars_right_19rvs { justify-content: flex-start; }
-.BlottoBars_wrap_19rvs { position: relative; display: block; height: 1.1rem; min-width: 2px; }
-.BlottoBars_bar_19rvs { display: block; width: 100%; height: 100%; }
-.BlottoBars_full_19rvs { display: block; width: 100%; height: 1.1rem; }
-.BlottoBars_none_19rvs { opacity: 0.6; padding: 0 4px; }
+.BlottoBars_cell_k3zo9 { display: flex; align-items: center; min-height: 1.7rem; }
+.BlottoBars_left_k3zo9 { justify-content: flex-end; }
+.BlottoBars_right_k3zo9 { justify-content: flex-start; }
+.BlottoBars_wrap_k3zo9 { position: relative; display: block; height: 1.1rem; min-width: 2px; }
+.BlottoBars_bar_k3zo9 { display: block; width: 100%; height: 100%; }
+.BlottoBars_full_k3zo9 { display: block; width: 100%; height: 1.1rem; }
+.BlottoBars_none_k3zo9 { opacity: 0.6; padding: 0 4px; }
 /* The number and the mark sit just past the bar's end. */
-.BlottoBars_end_19rvs { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }
-.BlottoBars_left_19rvs .BlottoBars_end_19rvs { right: 100%; flex-direction: row-reverse; padding-right: 4px; }
-.BlottoBars_right_19rvs .BlottoBars_end_19rvs { left: 100%; padding-left: 4px; }
+.BlottoBars_end_k3zo9 { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 3px; }
+.BlottoBars_left_k3zo9 .BlottoBars_end_k3zo9 { right: 100%; flex-direction: row-reverse; padding-right: 4px; }
+.BlottoBars_right_k3zo9 .BlottoBars_end_k3zo9 { left: 100%; padding-left: 4px; }
 
-/* Two players, told apart by side and by fill vs outline, not by colour alone. */
-.BlottoBars_barA_19rvs { background: var(--board-line); }
-.BlottoBars_barB_19rvs {
+/* Two players, told apart by side and by fill vs outline, not by color alone. */
+.BlottoBars_barA_k3zo9 { background: var(--board-line); }
+.BlottoBars_barB_k3zo9 {
   background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px);
   border: 1px solid var(--board-line);
 }
-.BlottoBars_took_19rvs { outline: 2px solid var(--theme-text); outline-offset: 1px; }
+.BlottoBars_took_k3zo9 { outline: 2px solid var(--theme-text); outline-offset: 1px; }
 
-.BlottoBars_num_19rvs { font-size: 0.9rem; }
-.BlottoBars_mark_19rvs { font-size: 0.8rem; }
+.BlottoBars_num_k3zo9 { font-size: 0.9rem; }
+.BlottoBars_mark_k3zo9 { font-size: 0.8rem; }
 
 /* The centre line the bars grow from. */
-.BlottoBars_centre_19rvs {
+.BlottoBars_centre_k3zo9 {
   text-align: center;
   font-size: 0.72rem;
   letter-spacing: 0.06em;
@@ -4911,8 +4911,8 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   border-right: 2px solid var(--theme-text);
   padding: 2px 0;
 }
-.BlottoBars_weight_19rvs { font-weight: 700; }
-.BlottoBars_tie_19rvs { font-weight: 700; }
+.BlottoBars_weight_k3zo9 { font-weight: 700; }
+.BlottoBars_tie_k3zo9 { font-weight: 700; }
 .PickLine_root_5id3o { max-width: 44rem; }
 
 .PickLine_line_5id3o {
@@ -5008,94 +5008,94 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .AuctionLine_span_1bjou { position: absolute; top: 4px; height: 0.8rem; min-width: 3px; background: var(--board-line); }
 .AuctionLine_loss_1bjou { background: repeating-linear-gradient(45deg, var(--board-line) 0 3px, transparent 3px 6px); border: 1px solid var(--board-line); }
 .AuctionLine_segText_1bjou { position: absolute; top: 1.3rem; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
-.DiceTable_root_1yna5 { max-width: 44rem; }
+.DiceTable_root_klezg { max-width: 44rem; }
 
-.DiceTable_grid_1yna5 { min-width: 30rem; display: grid; gap: 3px; }
-.DiceTable_row_1yna5 { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }
-.DiceTable_qty_1yna5 { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }
-.DiceTable_faceHead_1yna5 { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }
-.DiceTable_cell_1yna5 { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }
-.DiceTable_bid_1yna5 { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }
-.DiceTable_called_1yna5 { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }
+.DiceTable_grid_klezg { min-width: 30rem; display: grid; gap: 3px; }
+.DiceTable_row_klezg { display: grid; grid-template-columns: 2.4rem repeat(6, minmax(0, 1fr)); gap: 3px; align-items: stretch; }
+.DiceTable_qty_klezg { font-size: 0.78rem; text-align: right; padding-right: 4px; align-self: center; }
+.DiceTable_faceHead_klezg { font-size: 0.66rem; letter-spacing: 0.06em; text-align: center; opacity: 0.7; }
+.DiceTable_cell_klezg { min-height: 1.5rem; border: 1px dashed var(--board-rule); font-size: 0.72rem; padding: 2px 4px; overflow-wrap: anywhere; }
+.DiceTable_bid_klezg { border-style: solid; border-color: var(--theme-text); background: var(--board-rule); }
+.DiceTable_called_klezg { outline: 3px double var(--board-line); outline-offset: 1px; font-weight: 700; }
 
-.DiceTable_cups_1yna5 { display: grid; gap: 6px; margin-top: 10px; }
-.DiceTable_cup_1yna5 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.DiceTable_cupName_1yna5 { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
-.DiceTable_dice_1yna5 { display: inline-flex; gap: 4px; flex-wrap: wrap; }
-.DiceTable_die_1yna5 { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }
-/* A die that counts for the called face is filled and underlined, not only coloured. */
-.DiceTable_counts_1yna5 { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }
+.DiceTable_cups_klezg { display: grid; gap: 6px; margin-top: 10px; }
+.DiceTable_cup_klezg { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.DiceTable_cupName_klezg { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.DiceTable_dice_klezg { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.DiceTable_die_klezg { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }
+/* A die that counts for the called face is filled and underlined, not only colored. */
+.DiceTable_counts_klezg { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }
 
-.DiceTable_meter_1yna5 { display: grid; gap: 4px; margin-top: 10px; }
-.DiceTable_track_1yna5 { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }
-.DiceTable_fill_1yna5 { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }
-.DiceTable_need_1yna5 { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }
-.DiceTable_meterText_1yna5 { font-size: 0.8rem; }
-.SpillwayBoard_root_vtso3 { max-width: 30rem; }
+.DiceTable_meter_klezg { display: grid; gap: 4px; margin-top: 10px; }
+.DiceTable_track_klezg { position: relative; display: block; height: 0.9rem; border: 1px solid var(--theme-text); }
+.DiceTable_fill_klezg { position: absolute; left: 0; top: 0; bottom: 0; background: var(--board-line); }
+.DiceTable_need_klezg { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 3px double var(--theme-text); }
+.DiceTable_meterText_klezg { font-size: 0.8rem; }
+.SpillwayBoard_root_195iv { max-width: 30rem; }
 
-.SpillwayBoard_grid_vtso3 { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }
-.SpillwayBoard_row_vtso3 { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }
+.SpillwayBoard_grid_195iv { min-width: 16rem; display: grid; gap: 3px; width: max-content; max-width: 100%; }
+.SpillwayBoard_row_195iv { display: grid; grid-template-columns: 1.4rem repeat(var(--cols, 6), 2.5rem); gap: 3px; align-items: stretch; }
 
-.SpillwayBoard_rowNo_vtso3 { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }
-.SpillwayBoard_head_vtso3 { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }
+.SpillwayBoard_rowNo_195iv { font-size: 0.66rem; opacity: 0.7; align-self: center; text-align: right; padding-right: 3px; }
+.SpillwayBoard_head_195iv { font-size: 0.7rem; text-align: center; padding: 2px 0; border-bottom: 2px solid var(--board-rule); }
 /* The gate: a filled bar across the top of the shut channel, and the word. */
-.SpillwayBoard_gate_vtso3 { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }
-.SpillwayBoard_gateWord_vtso3 { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.SpillwayBoard_gate_195iv { background: var(--board-fill); color: var(--board-ink); border-bottom-color: var(--board-line); font-weight: 700; }
+.SpillwayBoard_gateWord_195iv { display: block; font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; }
 
-.SpillwayBoard_cell_vtso3 { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
-.SpillwayBoard_cell_vtso3.SpillwayBoard_shut_vtso3 { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }
+.SpillwayBoard_cell_195iv { position: relative; height: 2.5rem; border: 1px dotted var(--board-rule); display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.SpillwayBoard_cell_195iv.SpillwayBoard_shut_195iv { background-image: repeating-linear-gradient(90deg, var(--board-rule) 0 1px, transparent 1px 6px); }
 /* Silt: hatched, neutral. */
-.SpillwayBoard_silt_vtso3 { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }
-/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not colour. */
-.SpillwayBoard_stoneA_vtso3 { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }
-.SpillwayBoard_stoneB_vtso3 { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }
-.SpillwayBoard_n_vtso3 { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }
+.SpillwayBoard_silt_195iv { background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 5px); border: 1px solid var(--board-rule); opacity: 0.6; }
+/* Seat A is a filled square, seat B a hollow ring: shape tells them apart, not color. */
+.SpillwayBoard_stoneA_195iv { width: 1.6rem; height: 1.6rem; background: var(--board-fill); }
+.SpillwayBoard_stoneB_195iv { width: 1.6rem; height: 1.6rem; border: 3px solid var(--board-line); border-radius: 50%; box-sizing: border-box; }
+.SpillwayBoard_n_195iv { position: absolute; right: 2px; bottom: 0; font-size: 0.55rem; line-height: 1; opacity: 0.75; }
 /* The drop just made. */
-.SpillwayBoard_last_vtso3 { outline: 2px double var(--board-line); outline-offset: 1px; }
+.SpillwayBoard_last_195iv { outline: 2px double var(--board-line); outline-offset: 1px; }
 /* The winning line: thick outline, filled ground. */
-.SpillwayBoard_win_vtso3 { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }
+.SpillwayBoard_win_195iv { background: var(--board-rule); outline: 3px solid var(--board-line); outline-offset: -2px; }
 
-.SpillwayBoard_legend_vtso3 { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }
-.SpillwayBoard_key_vtso3 { display: inline-flex; align-items: center; gap: 5px; }
-.SpillwayBoard_keyA_vtso3 { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }
-.SpillwayBoard_keyB_vtso3 { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }
-.SpillwayBoard_keySilt_vtso3 { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }
-/* Tesseract's table: theme variables only (the board kit's), no colour of its own. */
-.TesseractBoard_root_1igqw { max-width: 44rem; }
+.SpillwayBoard_legend_195iv { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; margin: 8px 0 0; }
+.SpillwayBoard_key_195iv { display: inline-flex; align-items: center; gap: 5px; }
+.SpillwayBoard_keyA_195iv { width: 0.8rem; height: 0.8rem; background: var(--board-fill); display: inline-block; }
+.SpillwayBoard_keyB_195iv { width: 0.8rem; height: 0.8rem; border: 2px solid var(--board-line); border-radius: 50%; display: inline-block; box-sizing: border-box; }
+.SpillwayBoard_keySilt_195iv { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--board-rule); background-image: repeating-linear-gradient(135deg, var(--theme-text) 0 1px, transparent 1px 4px); }
+/* Tesseract's table: theme variables only (the board kit's), no color of its own. */
+.TesseractBoard_root_z2xx6 { max-width: 44rem; }
 
-.TesseractBoard_seats_1igqw { list-style: none; margin: 4px 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.TesseractBoard_seat_1igqw { padding: 2px 8px; border: 1px solid var(--board-rule); font-size: 0.8rem; }
-.TesseractBoard_winner_1igqw { border-color: var(--board-line); font-weight: 700; }
+.TesseractBoard_seats_z2xx6 { list-style: none; margin: 4px 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.TesseractBoard_seat_z2xx6 { padding: 2px 8px; border: 1px solid var(--board-rule); font-size: 0.8rem; }
+.TesseractBoard_winner_z2xx6 { border-color: var(--board-line); font-weight: 700; }
 
-.TesseractBoard_round_1igqw { margin: 0 0 10px; }
-.TesseractBoard_bars_1igqw { display: grid; grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)); gap: 4px; align-items: stretch; }
-.TesseractBoard_label_1igqw { font-size: 0.72rem; align-self: center; opacity: 0.8; }
-.TesseractBoard_bar_1igqw { position: relative; display: block; min-height: 1.4rem; border: 1px solid var(--board-rule); overflow: hidden; }
-.TesseractBoard_fill_1igqw { position: absolute; inset: 0 auto 0 0; background: var(--board-fill); opacity: 0.35; }
-.TesseractBoard_value_1igqw { position: relative; font-size: 0.72rem; padding: 0 4px; line-height: 1.4rem; white-space: nowrap; }
+.TesseractBoard_round_z2xx6 { margin: 0 0 10px; }
+.TesseractBoard_bars_z2xx6 { display: grid; grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)); gap: 4px; align-items: stretch; }
+.TesseractBoard_label_z2xx6 { font-size: 0.72rem; align-self: center; opacity: 0.8; }
+.TesseractBoard_bar_z2xx6 { position: relative; display: block; min-height: 1.4rem; border: 1px solid var(--board-rule); overflow: hidden; }
+.TesseractBoard_fill_z2xx6 { position: absolute; inset: 0 auto 0 0; background: var(--board-fill); opacity: 0.35; }
+.TesseractBoard_value_z2xx6 { position: relative; font-size: 0.72rem; padding: 0 4px; line-height: 1.4rem; white-space: nowrap; }
 
-.TesseractBoard_pushes_1igqw { margin: 2px 0 0 5.5rem; font-size: 0.72rem; line-height: 1.4; opacity: 0.85; overflow-wrap: anywhere; }
-.TesseractBoard_results_1igqw { margin: 6px 0 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.5; }
-/* Every colour is a theme token, so the viewer follows light, vivid, dark and each tint. */
-.Graph3D_root_19ri3 {
+.TesseractBoard_pushes_z2xx6 { margin: 2px 0 0 5.5rem; font-size: 0.72rem; line-height: 1.4; opacity: 0.85; overflow-wrap: anywhere; }
+.TesseractBoard_results_z2xx6 { margin: 6px 0 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.5; }
+/* Every color is a theme token, so the viewer follows light, vivid, dark and each tint. */
+.Graph3D_root_l77x9 {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   color: var(--theme-text);
 }
-.Graph3D_bar_19ri3 {
+.Graph3D_bar_l77x9 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.Graph3D_switch_19ri3 {
+.Graph3D_switch_l77x9 {
   display: inline-flex;
   border: 1px solid var(--theme-border);
 }
-.Graph3D_switchBtn_19ri3,
-.Graph3D_resetBtn_19ri3 {
+.Graph3D_switchBtn_l77x9,
+.Graph3D_resetBtn_l77x9 {
   font: inherit;
   font-size: 0.85em;
   padding: 4px 10px;
@@ -5105,33 +5105,33 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   border: 0;
   cursor: pointer;
 }
-.Graph3D_resetBtn_19ri3 {
+.Graph3D_resetBtn_l77x9 {
   border: 1px solid var(--theme-border);
 }
-.Graph3D_switchBtn_19ri3 + .Graph3D_switchBtn_19ri3 {
+.Graph3D_switchBtn_l77x9 + .Graph3D_switchBtn_l77x9 {
   border-left: 1px solid var(--theme-border);
 }
-.Graph3D_switchBtn_19ri3[aria-pressed="true"] {
+.Graph3D_switchBtn_l77x9[aria-pressed="true"] {
   background: var(--anim-fill);
   color: var(--anim-ink);
 }
-.Graph3D_switchBtn_19ri3:focus-visible,
-.Graph3D_resetBtn_19ri3:focus-visible,
-.Graph3D_stage_19ri3:focus-visible {
+.Graph3D_switchBtn_l77x9:focus-visible,
+.Graph3D_resetBtn_l77x9:focus-visible,
+.Graph3D_stage_l77x9:focus-visible {
   outline: 2px solid var(--theme-focused-foreground);
   outline-offset: 2px;
 }
-.Graph3D_hint_19ri3 {
+.Graph3D_hint_l77x9 {
   font-size: 0.8em;
   color: var(--anim-faint, var(--theme-text-subdued));
 }
-.Graph3D_stage_19ri3 {
+.Graph3D_stage_l77x9 {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--theme-border-subdued);
   background: var(--theme-background);
 }
-.Graph3D_svg_19ri3 {
+.Graph3D_svg_l77x9 {
   display: block;
   width: 100%;
   height: auto;
@@ -5140,87 +5140,87 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   user-select: none;
   cursor: grab;
 }
-.Graph3D_svg_19ri3:active {
+.Graph3D_svg_l77x9:active {
   cursor: grabbing;
 }
-.Graph3D_flat_19ri3 {
+.Graph3D_flat_l77x9 {
   touch-action: pan-y;
   cursor: default;
 }
 
 /* Edges */
-.Graph3D_edge_19ri3 {
+.Graph3D_edge_l77x9 {
   fill: none;
   stroke-linecap: round;
   stroke: var(--anim-line);
 }
-.Graph3D_neg_19ri3 {
+.Graph3D_neg_l77x9 {
   stroke: var(--theme-warning, var(--theme-text));
   stroke-dasharray: 7 4;
 }
-.Graph3D_blocked_19ri3 {
+.Graph3D_blocked_l77x9 {
   stroke-dasharray: 1.5 4;
   opacity: 0.35;
 }
-.Graph3D_dim_19ri3 {
+.Graph3D_dim_l77x9 {
   opacity: 0.12;
 }
-.Graph3D_lit_19ri3 {
+.Graph3D_lit_l77x9 {
   opacity: 1;
 }
 /* Flow: a dash that travels along the edge (moving) or a soft wider underlay (still). */
-.Graph3D_flowStill_19ri3 {
+.Graph3D_flowStill_l77x9 {
   fill: none;
   stroke: var(--anim-tint, var(--anim-line));
   stroke-linecap: round;
   opacity: 0.28;
   pointer-events: none;
 }
-.Graph3D_pulse_19ri3 {
+.Graph3D_pulse_l77x9 {
   fill: none;
   stroke: var(--theme-focused-foreground);
   stroke-linecap: round;
   stroke-dasharray: 2 14;
   pointer-events: none;
-  animation: Graph3D_flow_19ri3 1.2s linear infinite;
+  animation: Graph3D_flow_l77x9 1.2s linear infinite;
 }
-@keyframes Graph3D_flow_19ri3 {
+@keyframes Graph3D_flow_l77x9 {
   to {
     stroke-dashoffset: -16;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .Graph3D_pulse_19ri3 {
+  .Graph3D_pulse_l77x9 {
     animation: none;
   }
 }
 
 /* Nodes */
-.Graph3D_dot_19ri3 {
+.Graph3D_dot_l77x9 {
   fill: color-mix(in srgb, var(--anim-line) var(--mix, 50%), var(--theme-background));
   stroke: var(--anim-line);
   stroke-width: 1.2;
 }
-.Graph3D_dotNeg_19ri3 {
+.Graph3D_dotNeg_l77x9 {
   fill: color-mix(in srgb, var(--theme-warning, var(--theme-text)) var(--mix, 50%), var(--theme-background));
   stroke: var(--theme-warning, var(--theme-text));
 }
-.Graph3D_hit_19ri3 {
+.Graph3D_hit_l77x9 {
   fill: transparent;
   stroke: transparent;
   stroke-width: 3;
   cursor: pointer;
   outline: none;
 }
-.Graph3D_hit_19ri3:focus-visible {
+.Graph3D_hit_l77x9:focus-visible {
   stroke: var(--theme-focused-foreground);
   stroke-width: 3;
 }
-.Graph3D_picked_19ri3 {
+.Graph3D_picked_l77x9 {
   stroke: var(--theme-text);
   stroke-width: 2;
 }
-.Graph3D_label_19ri3 {
+.Graph3D_label_l77x9 {
   fill: var(--theme-text);
   font-size: 9px;
   paint-order: stroke;
@@ -5228,38 +5228,38 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   stroke-width: 3px;
   pointer-events: none;
 }
-.Graph3D_layerTag_19ri3 {
+.Graph3D_layerTag_l77x9 {
   fill: var(--anim-faint, var(--theme-text-subdued));
   font-size: 9px;
   text-anchor: middle;
 }
 
 /* Decor: a shaded solid, its edges, the corners and a mix or target drawn over it. Theme tokens only. */
-.Graph3D_decorFace_19ri3 {
+.Graph3D_decorFace_l77x9 {
   fill: var(--anim-fill, var(--theme-focused-foreground));
   fill-opacity: 0.1;
   stroke: none;
 }
-.Graph3D_decorLine_19ri3 {
+.Graph3D_decorLine_l77x9 {
   stroke: var(--anim-line, var(--theme-text));
   stroke-opacity: 0.55;
   stroke-linecap: round;
   fill: none;
 }
-.Graph3D_decorDashed_19ri3 {
+.Graph3D_decorDashed_l77x9 {
   stroke-dasharray: 3 4;
 }
-.Graph3D_decorDot_19ri3 {
+.Graph3D_decorDot_l77x9 {
   fill: var(--theme-text);
   stroke: var(--theme-background);
   stroke-width: 1.5;
 }
-.Graph3D_decorRing_19ri3 {
+.Graph3D_decorRing_l77x9 {
   fill: none;
   stroke: var(--theme-text);
   stroke-width: 2;
 }
-.Graph3D_decorCorner_19ri3 {
+.Graph3D_decorCorner_l77x9 {
   fill: var(--theme-background);
   stroke: var(--anim-line, var(--theme-text));
   stroke-width: 1.2;
@@ -5363,7 +5363,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 }
 /* The agent chat drawer: monospace, hairline rules, the theme's accent as the
    one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,
-   --e-accent-wash); no colours of its own.
+   --e-accent-wash); no colors of its own.
 
    It is sized to the app's own frame, never to the browser window: inside the
    Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the
@@ -5371,7 +5371,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
    see. Below the header-nav width it covers the frame (absolute, inside the
    shell's `contain: layout paint`), never the Hermes app around it. */
 
-.ChatDrawer_root_tg8j6 {
+.ChatDrawer_root_uft46 {
   display: none;
   flex: none;
   flex-direction: column;
@@ -5388,26 +5388,26 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   line-height: 1.5;
 }
 
-.ChatDrawer_open_tg8j6 {
+.ChatDrawer_open_uft46 {
   display: flex;
 }
 
 /* ── head ─────────────────────────────────────────────────────────────── */
 
-.ChatDrawer_head_tg8j6 {
+.ChatDrawer_head_uft46 {
   flex: none;
   padding: 12px 16px 10px;
   border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_headRow_tg8j6 {
+.ChatDrawer_headRow_uft46 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.ChatDrawer_heading_tg8j6 {
+.ChatDrawer_heading_uft46 {
   margin: 0;
   display: flex;
   align-items: baseline;
@@ -5419,16 +5419,16 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   text-transform: uppercase;
 }
 
-.ChatDrawer_headIcon_tg8j6 {
+.ChatDrawer_headIcon_uft46 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_close_tg8j6 {
+.ChatDrawer_close_uft46 {
   min-width: 40px !important;
   min-height: 40px !important;
 }
 
-.ChatDrawer_meta_tg8j6 {
+.ChatDrawer_meta_uft46 {
   display: flex;
   flex-wrap: wrap;
   gap: 0 1ch;
@@ -5437,18 +5437,18 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   opacity: 0.62;
 }
 
-.ChatDrawer_conn_tg8j6[data-conn="open"] {
+.ChatDrawer_conn_uft46[data-conn="open"] {
   color: var(--theme-focused-foreground);
   opacity: 1;
 }
 
-.ChatDrawer_sessionBar_tg8j6 {
+.ChatDrawer_sessionBar_uft46 {
   display: flex;
   gap: 8px;
   margin-top: 10px;
 }
 
-.ChatDrawer_sessionPick_tg8j6 {
+.ChatDrawer_sessionPick_uft46 {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -5465,18 +5465,18 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: pointer;
 }
 
-.ChatDrawer_sessionPick_tg8j6:hover,
-.ChatDrawer_sessionPick_tg8j6[aria-expanded="true"] {
+.ChatDrawer_sessionPick_uft46:hover,
+.ChatDrawer_sessionPick_uft46[aria-expanded="true"] {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_sessionPickTitle_tg8j6 {
+.ChatDrawer_sessionPickTitle_uft46 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ChatDrawer_smallButton_tg8j6 {
+.ChatDrawer_smallButton_uft46 {
   flex: none;
   min-height: 36px;
   padding: 4px 12px;
@@ -5490,11 +5490,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   white-space: nowrap;
 }
 
-.ChatDrawer_smallButton_tg8j6:hover {
+.ChatDrawer_smallButton_uft46:hover {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_error_tg8j6 {
+.ChatDrawer_error_uft46 {
   margin: 8px 0 0;
   font-size: 0.78rem;
   color: var(--theme-focused-foreground);
@@ -5502,7 +5502,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* ── transcript ───────────────────────────────────────────────────────── */
 
-.ChatDrawer_transcript_tg8j6 {
+.ChatDrawer_transcript_uft46 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -5513,71 +5513,71 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   gap: 12px;
 }
 
-.ChatDrawer_intro_tg8j6 {
+.ChatDrawer_intro_uft46 {
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   border-left: 3px solid var(--theme-focused-foreground);
   padding: 10px 14px 12px;
   line-height: 1.55;
 }
 
-.ChatDrawer_intro_tg8j6 p {
+.ChatDrawer_intro_uft46 p {
   margin: 0 0 6px;
 }
 
-.ChatDrawer_introTitle_tg8j6 {
+.ChatDrawer_introTitle_uft46 {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   opacity: 0.6;
 }
 
-.ChatDrawer_introNote_tg8j6 {
+.ChatDrawer_introNote_uft46 {
   font-size: 0.78rem;
   opacity: 0.65;
 }
 
-.ChatDrawer_line_tg8j6 {
+.ChatDrawer_line_uft46 {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.ChatDrawer_who_tg8j6 {
+.ChatDrawer_who_uft46 {
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a color, >= 4.5:1 (dashboard.css 30.7) */
 }
 
-.ChatDrawer_line_tg8j6[data-who="you"] .ChatDrawer_who_tg8j6 {
+.ChatDrawer_line_uft46[data-who="you"] .ChatDrawer_who_uft46 {
   color: var(--theme-focused-foreground);
   opacity: 1;
 }
 
-.ChatDrawer_line_tg8j6[data-who="you"] .ChatDrawer_text_tg8j6 {
+.ChatDrawer_line_uft46[data-who="you"] .ChatDrawer_text_uft46 {
   padding: 6px 10px;
   background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));
   border-left: 2px solid var(--theme-focused-foreground);
 }
 
-.ChatDrawer_text_tg8j6 {
+.ChatDrawer_text_uft46 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.ChatDrawer_caret_tg8j6 {
+.ChatDrawer_caret_uft46 {
   color: var(--theme-focused-foreground);
-  animation: ChatDrawer_blink_tg8j6 1s steps(1) infinite;
+  animation: ChatDrawer_blink_uft46 1s steps(1) infinite;
 }
 
-@keyframes ChatDrawer_blink_tg8j6 {
+@keyframes ChatDrawer_blink_uft46 {
   50% {
     opacity: 0;
   }
 }
 
-.ChatDrawer_working_tg8j6 {
+.ChatDrawer_working_uft46 {
   display: flex;
   gap: 1ch;
   align-items: center;
@@ -5585,7 +5585,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   opacity: 0.7;
 }
 
-.ChatDrawer_notice_tg8j6 {
+.ChatDrawer_notice_uft46 {
   font-size: 0.78rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -5596,29 +5596,29 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   overflow-y: auto;
 }
 
-.ChatDrawer_notice_tg8j6[data-tone="error"] {
+.ChatDrawer_notice_uft46[data-tone="error"] {
   opacity: 1;
   border-left: 2px solid var(--theme-focused-foreground);
 }
 
-.ChatDrawer_notice_tg8j6[data-tone="command"] {
+.ChatDrawer_notice_uft46[data-tone="command"] {
   border-left: 0;
   padding-left: 0;
   opacity: 0.9;
 }
 
-.ChatDrawer_prompt_tg8j6 {
+.ChatDrawer_prompt_uft46 {
   color: var(--theme-focused-foreground);
 }
 
 /* ── tool cards ───────────────────────────────────────────────────────── */
 
-.ChatDrawer_tool_tg8j6 {
+.ChatDrawer_tool_uft46 {
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   min-width: 0;
 }
 
-.ChatDrawer_toolHead_tg8j6 {
+.ChatDrawer_toolHead_uft46 {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -5634,28 +5634,28 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: pointer;
 }
 
-.ChatDrawer_toolHead_tg8j6:hover .ChatDrawer_toolName_tg8j6 {
+.ChatDrawer_toolHead_uft46:hover .ChatDrawer_toolName_uft46 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_toolMark_tg8j6 {
+.ChatDrawer_toolMark_uft46 {
   flex: none;
   width: 1.5ch;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_tool_tg8j6[data-status="failed"] .ChatDrawer_toolMark_tg8j6,
-.ChatDrawer_tool_tg8j6[data-status="blocked"] .ChatDrawer_toolMark_tg8j6 {
+.ChatDrawer_tool_uft46[data-status="failed"] .ChatDrawer_toolMark_uft46,
+.ChatDrawer_tool_uft46[data-status="blocked"] .ChatDrawer_toolMark_uft46 {
   color: inherit;
   opacity: 0.8;
 }
 
-.ChatDrawer_toolName_tg8j6 {
+.ChatDrawer_toolName_uft46 {
   flex: none;
   font-weight: 600;
 }
 
-.ChatDrawer_toolContext_tg8j6 {
+.ChatDrawer_toolContext_uft46 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -5664,18 +5664,18 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   opacity: 0.65;
 }
 
-.ChatDrawer_toolTime_tg8j6 {
+.ChatDrawer_toolTime_uft46 {
   flex: none;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a color, >= 4.5:1 (dashboard.css 30.7) */
   font-size: 0.72rem;
 }
 
-.ChatDrawer_toolCaret_tg8j6 {
+.ChatDrawer_toolCaret_uft46 {
   flex: none;
   opacity: 0.5;
 }
 
-.ChatDrawer_toolOut_tg8j6 {
+.ChatDrawer_toolOut_uft46 {
   margin: 0;
   padding: 8px 10px;
   border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
@@ -5688,16 +5688,16 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 }
 
 /* Relay content: dashed rule, a label that says so. */
-.ChatDrawer_untrusted_tg8j6 {
+.ChatDrawer_untrusted_uft46 {
   border-style: dashed;
 }
 
-.ChatDrawer_line_tg8j6.ChatDrawer_untrusted_tg8j6 {
+.ChatDrawer_line_uft46.ChatDrawer_untrusted_uft46 {
   border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));
   padding: 6px 10px;
 }
 
-.ChatDrawer_untrustedLabel_tg8j6 {
+.ChatDrawer_untrustedLabel_uft46 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -5707,11 +5707,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   opacity: 0.8;
 }
 
-.ChatDrawer_line_tg8j6 .ChatDrawer_untrustedLabel_tg8j6 {
+.ChatDrawer_line_uft46 .ChatDrawer_untrustedLabel_uft46 {
   padding: 0;
 }
 
-.ChatDrawer_untrustedLabel_tg8j6 [class*="Badge_root"] {
+.ChatDrawer_untrustedLabel_uft46 [class*="Badge_root"] {
   font-size: 0.66rem;
   letter-spacing: 0.08em;
   background: transparent;
@@ -5720,14 +5720,14 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* ── approval / clarify ───────────────────────────────────────────────── */
 
-.ChatDrawer_approval_tg8j6 {
+.ChatDrawer_approval_uft46 {
   border: 1px solid var(--theme-focused-foreground);
   border-left-width: 3px;
   padding: 10px 12px;
   background: var(--e-accent-wash, transparent);
 }
 
-.ChatDrawer_cardTitle_tg8j6 {
+.ChatDrawer_cardTitle_uft46 {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -5735,23 +5735,23 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   margin-bottom: 6px;
 }
 
-.ChatDrawer_cardText_tg8j6 {
+.ChatDrawer_cardText_uft46 {
   margin: 0 0 6px;
 }
 
-.ChatDrawer_cardNote_tg8j6 {
+.ChatDrawer_cardNote_uft46 {
   margin: 6px 0;
   font-size: 0.78rem;
   font-weight: 600;
 }
 
-.ChatDrawer_cardFoot_tg8j6 {
+.ChatDrawer_cardFoot_uft46 {
   margin: 8px 0 0;
   font-size: 0.7rem;
   opacity: 0.6;
 }
 
-.ChatDrawer_command_tg8j6 {
+.ChatDrawer_command_uft46 {
   margin: 0 0 8px;
   padding: 6px 8px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
@@ -5764,13 +5764,13 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   overflow: auto;
 }
 
-.ChatDrawer_choices_tg8j6 {
+.ChatDrawer_choices_uft46 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.ChatDrawer_choice_tg8j6 {
+.ChatDrawer_choice_uft46 {
   min-height: 36px;
   padding: 4px 12px;
   border: 1px solid var(--theme-focused-foreground);
@@ -5781,31 +5781,31 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: pointer;
 }
 
-.ChatDrawer_choice_tg8j6:hover:not(:disabled),
-.ChatDrawer_picked_tg8j6 {
+.ChatDrawer_choice_uft46:hover:not(:disabled),
+.ChatDrawer_picked_uft46 {
   background: var(--theme-focused-foreground);
   color: var(--theme-background);
 }
 
-.ChatDrawer_choice_tg8j6:disabled {
+.ChatDrawer_choice_uft46:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-.ChatDrawer_deny_tg8j6 {
+.ChatDrawer_deny_uft46 {
   border-color: var(--e-rule, rgba(128, 128, 128, 0.4));
 }
 
-.ChatDrawer_answered_tg8j6 {
+.ChatDrawer_answered_uft46 {
   font-size: 0.8rem;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_question_tg8j6 + .ChatDrawer_question_tg8j6 {
+.ChatDrawer_question_uft46 + .ChatDrawer_question_uft46 {
   margin-top: 10px;
 }
 
-.ChatDrawer_answerInput_tg8j6 {
+.ChatDrawer_answerInput_uft46 {
   box-sizing: border-box;
   width: 100%;
   margin-top: 6px;
@@ -5824,7 +5824,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* ── sessions ─────────────────────────────────────────────────────────── */
 
-.ChatDrawer_sessions_tg8j6 {
+.ChatDrawer_sessions_uft46 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -5832,7 +5832,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   padding-bottom: 16px;
 }
 
-.ChatDrawer_sessionsHead_tg8j6 {
+.ChatDrawer_sessionsHead_uft46 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5840,13 +5840,13 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   padding: 4px 12px 4px 0;
 }
 
-.ChatDrawer_sessionList_tg8j6 {
+.ChatDrawer_sessionList_uft46 {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.ChatDrawer_sessionRow_tg8j6 {
+.ChatDrawer_sessionRow_uft46 {
   display: flex !important;
   flex-direction: column;
   align-items: flex-start;
@@ -5861,11 +5861,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: pointer;
 }
 
-.ChatDrawer_sessionRow_tg8j6:hover .ChatDrawer_sessionTitle_tg8j6 {
+.ChatDrawer_sessionRow_uft46:hover .ChatDrawer_sessionTitle_uft46 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_sessionTitle_tg8j6 {
+.ChatDrawer_sessionTitle_uft46 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -5873,12 +5873,12 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   overflow-wrap: anywhere;
 }
 
-.ChatDrawer_sessionMeta_tg8j6 {
+.ChatDrawer_sessionMeta_uft46 {
   font-size: 0.74rem;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a color, >= 4.5:1 (dashboard.css 30.7) */
 }
 
-.ChatDrawer_tag_tg8j6 {
+.ChatDrawer_tag_uft46 {
   font-size: 0.64rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -5888,7 +5888,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   white-space: nowrap;
 }
 
-.ChatDrawer_empty_tg8j6 {
+.ChatDrawer_empty_uft46 {
   padding: 8px 12px;
   margin: 0;
   font-size: 0.8rem;
@@ -5897,7 +5897,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* ── composer ─────────────────────────────────────────────────────────── */
 
-.ChatDrawer_composer_tg8j6 {
+.ChatDrawer_composer_uft46 {
   position: relative;
   flex: none;
   padding: 8px 12px 10px;
@@ -5905,7 +5905,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   background: var(--theme-background);
 }
 
-.ChatDrawer_inputRow_tg8j6 {
+.ChatDrawer_inputRow_uft46 {
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -5913,7 +5913,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* One slim line (42px) by default; it grows with the text (ChatDrawer's
    layout effect) up to six lines, then scrolls inside. */
-.ChatDrawer_input_tg8j6 {
+.ChatDrawer_input_uft46 {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
@@ -5931,11 +5931,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   overflow-y: auto;
 }
 
-.ChatDrawer_input_tg8j6:focus {
+.ChatDrawer_input_uft46:focus {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_send_tg8j6 {
+.ChatDrawer_send_uft46 {
   flex: none;
   box-sizing: border-box;
   min-width: 48px;
@@ -5951,7 +5951,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: pointer;
 }
 
-.ChatDrawer_send_tg8j6:disabled {
+.ChatDrawer_send_uft46:disabled {
   background: transparent;
   color: inherit;
   border-color: var(--e-rule, rgba(128, 128, 128, 0.35));
@@ -5959,18 +5959,18 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: default;
 }
 
-.ChatDrawer_stop_tg8j6 {
+.ChatDrawer_stop_uft46 {
   background: transparent;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_readOnly_tg8j6 {
+.ChatDrawer_readOnly_uft46 {
   margin: 0 0 8px;
   font-size: 0.78rem;
   opacity: 0.7;
 }
 
-.ChatDrawer_typeahead_tg8j6 {
+.ChatDrawer_typeahead_uft46 {
   position: absolute;
   left: 16px;
   right: 16px;
@@ -5985,7 +5985,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   background: var(--theme-background);
 }
 
-.ChatDrawer_typeRow_tg8j6 {
+.ChatDrawer_typeRow_uft46 {
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: baseline;
@@ -6003,22 +6003,22 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   cursor: pointer;
 }
 
-.ChatDrawer_typeRow_tg8j6[data-reach="terminal"],
-.ChatDrawer_typeRow_tg8j6[data-reach="voice"],
-.ChatDrawer_typeRow_tg8j6[data-reach="settings"] {
+.ChatDrawer_typeRow_uft46[data-reach="terminal"],
+.ChatDrawer_typeRow_uft46[data-reach="voice"],
+.ChatDrawer_typeRow_uft46[data-reach="settings"] {
   opacity: 0.6;
 }
 
-.ChatDrawer_typeRowOn_tg8j6 {
+.ChatDrawer_typeRowOn_uft46 {
   background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));
 }
 
-.ChatDrawer_typeName_tg8j6 {
+.ChatDrawer_typeName_uft46 {
   color: var(--theme-focused-foreground);
   white-space: nowrap;
 }
 
-.ChatDrawer_typeMeta_tg8j6 {
+.ChatDrawer_typeMeta_uft46 {
   grid-column: 1 / -1;
   font-size: 0.72rem;
   opacity: 0.6;
@@ -6029,7 +6029,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* ── back control (phone) ─────────────────────────────────────────────── */
 
-.ChatDrawer_back_tg8j6 {
+.ChatDrawer_back_uft46 {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -6051,18 +6051,18 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 }
 
 /* "← back to the dashboard", then the menu: the full-page chat's top row. */
-.ChatDrawer_backRow_tg8j6 {
+.ChatDrawer_backRow_uft46 {
   align-items: stretch;
   flex: none;
   border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_backRow_tg8j6 .ChatDrawer_back_tg8j6 {
+.ChatDrawer_backRow_uft46 .ChatDrawer_back_uft46 {
   flex: 1;
   border-bottom: 0;
 }
 
-.ChatDrawer_menu_tg8j6 {
+.ChatDrawer_menu_uft46 {
   flex: none;
   min-width: 48px;
   min-height: 44px;
@@ -6070,13 +6070,13 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_phoneOnly_tg8j6 {
+.ChatDrawer_phoneOnly_uft46 {
   display: none;
 }
 
 /* Below the header-nav breakpoint: one full-screen panel, "← back" on top. */
 @media (max-width: 900px) {
-  .ChatDrawer_root_tg8j6 {
+  .ChatDrawer_root_uft46 {
     position: absolute;
     inset: 0;
     z-index: 120;
@@ -6085,64 +6085,64 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
     border-left: 0;
   }
 
-  .ChatDrawer_phoneOnly_tg8j6 {
+  .ChatDrawer_phoneOnly_uft46 {
     display: flex;
   }
 
-  .ChatDrawer_close_tg8j6 {
+  .ChatDrawer_close_uft46 {
     display: none !important;
   }
 
-  .ChatDrawer_sessionPick_tg8j6,
-  .ChatDrawer_smallButton_tg8j6,
-  .ChatDrawer_choice_tg8j6,
-  .ChatDrawer_toolHead_tg8j6,
-  .ChatDrawer_typeRow_tg8j6 {
+  .ChatDrawer_sessionPick_uft46,
+  .ChatDrawer_smallButton_uft46,
+  .ChatDrawer_choice_uft46,
+  .ChatDrawer_toolHead_uft46,
+  .ChatDrawer_typeRow_uft46 {
     min-height: 44px;
   }
 
-  .ChatDrawer_sessionRow_tg8j6 {
+  .ChatDrawer_sessionRow_uft46 {
     min-height: 48px;
   }
 
-  .ChatDrawer_input_tg8j6,
-  .ChatDrawer_answerInput_tg8j6 {
+  .ChatDrawer_input_uft46,
+  .ChatDrawer_answerInput_uft46 {
     font-size: 16px; /* no zoom-on-focus on a phone */
   }
 }
 
 /* The kit gives every `ul li` an inline :before spacer (global.css), which
    opens an empty line above a block button. Lists here are rows, not prose. */
-.ChatDrawer_typeahead_tg8j6 > li::before,
-.ChatDrawer_sessionList_tg8j6 > li::before {
+.ChatDrawer_typeahead_uft46 > li::before,
+.ChatDrawer_sessionList_uft46 > li::before {
   content: none;
   display: none;
 }
 
 /* A flex column shrinks its scrollable children to nothing when it overflows;
    transcript items keep their height and the transcript scrolls instead. */
-.ChatDrawer_transcript_tg8j6 > * {
+.ChatDrawer_transcript_uft46 > * {
   flex-shrink: 0;
 }
 
 /* A short screen (the 540 × 540 capture frame, a phone held sideways): the
    "← back" row already says where you are, so the title row goes. */
 @media (max-width: 900px) and (max-height: 640px) {
-  .ChatDrawer_headRow_tg8j6 {
+  .ChatDrawer_headRow_uft46 {
     display: none;
   }
 
-  .ChatDrawer_head_tg8j6 {
+  .ChatDrawer_head_uft46 {
     padding-top: 8px;
   }
 
-  .ChatDrawer_sessionBar_tg8j6 {
+  .ChatDrawer_sessionBar_uft46 {
     margin-top: 6px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ChatDrawer_caret_tg8j6 {
+  .ChatDrawer_caret_uft46 {
     animation: none;
   }
 }

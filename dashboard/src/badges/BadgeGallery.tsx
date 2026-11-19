@@ -57,7 +57,7 @@ export function BadgeGallery({ embedded = false }: { embedded?: boolean } = {}) 
       ) : (
         <>
           <p className="e-badge-gallery__lede">
-            Emporia's pixel badges: ink in the text colour, one accent from the tint, no background. {ids.length} badges,
+            Emporia's pixel badges: ink in the text color, one accent from the tint, no background. {ids.length} badges,
             drawn at whole-number scales. Season-0 is an open testnet season; badges move no attribute, ladder or points.
           </p>
           <div className="e-badge-gallery__bar" role="group" aria-label="Show the page in">
@@ -114,7 +114,7 @@ export function BadgeGallery({ embedded = false }: { embedded?: boolean } = {}) 
 
       {embedded ? null : <><h2>EVERY TINT</h2>
       <p className="e-badge-gallery__lede">
-        Each panel carries its own theme and tint; the lowest contrast any badge colour meets on its canvas, panel and
+        Each panel carries its own theme and tint; the lowest contrast any badge color meets on its canvas, panel and
         row wash is printed on it (WCAG non-text: 3:1).
       </p>
       <div className="e-badge-panels">

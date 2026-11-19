@@ -5,7 +5,7 @@
  * - The look's text tokens reach WCAG AA (4.5:1) on the canvas, computed from
  *   the CSS formulas (badges/tokens.ts mirrors them) under both gamut treatments.
  * - No text is dimmed by opacity below 0.6 without the look turning it into the
- *   faint colour: at 0.45 a label measured 2.9:1 on the light green canvas, at
+ *   faint color: at 0.45 a label measured 2.9:1 on the light green canvas, at
  *   0.55 4.0:1. A rule that dims graphics or a state that is out of play
  *   (a struck-out seat, an empty cell) says so in GRAPHICS_OR_INACTIVE.
  */
@@ -124,7 +124,7 @@ describe("no text dimmed below AA by opacity", () => {
     expect(bad.map((d) => `${d.sel} { opacity: ${d.value} }`)).toEqual([]);
   });
 
-  it("the chat's speaker, tool time and session lines are faint as a colour, not by opacity", () => {
+  it("the chat's speaker, tool time and session lines are faint as a color, not by opacity", () => {
     const { dimmed } = walk(CHAT);
     const text = dimmed.map((d) => d.sel).filter((s) => [".who", ".toolTime", ".sessionMeta"].includes(s));
     expect(text).toEqual([]);

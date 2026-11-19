@@ -13,7 +13,7 @@ describe("graph3d rules", () => {
   it("imports no react-dom (the Desktop page forbids it)", () => {
     for (const f of files) expect(fs.readFileSync(`${DIR}/${f}`, "utf8"), f).not.toMatch(/react-dom/);
   });
-  it("styles use theme tokens only: no hex, rgb() or named colours", () => {
+  it("styles use theme tokens only: no hex, rgb() or named colors", () => {
     for (const f of files.filter((x) => x.endsWith(".css"))) {
       const css = fs.readFileSync(`${DIR}/${f}`, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
       expect(css, f).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);

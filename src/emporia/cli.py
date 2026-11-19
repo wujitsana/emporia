@@ -453,18 +453,18 @@ class Report:
         if not self.compact or (self._title is None and not self._items):
             return
         width = max(40, shutil.get_terminal_size((100, 24)).columns - 1)
-        colour = {"✓": "32", "!": "33", "✗": "31"}
+        color = {"✓": "32", "!": "33", "✗": "31"}
         if self._title is not None:      # the title, then a quiet rule to the edge
             heading(self._title)
         passed = [i for i in self._items if i[0] == "✓"]
         shown = [i for i in self._items if i[0] != "✓"]
         if passed:
-            print("  " + self._paint("✓", colour["✓"]) + (
+            print("  " + self._paint("✓", color["✓"]) + (
                 f" {passed[0][1]}" if len(passed) == 1 else f" {len(passed)} checks pass"))
         for mark, msg, fix in sorted(shown, key=lambda i: i[0] != "✗"):
             # "  ! " is four columns: wrapped lines start under the text, not the mark
             lines = textwrap.wrap(msg, width - 4) or [""]
-            print("  " + self._paint(mark, colour[mark]) + " " + lines[0])
+            print("  " + self._paint(mark, color[mark]) + " " + lines[0])
             for more in lines[1:]:
                 print("    " + more)
             if fix:      # "    → " is six columns: its wrapped lines line up under the fix

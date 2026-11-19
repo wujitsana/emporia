@@ -54,7 +54,7 @@ describe("TesseractBoard", () => {
     expect(w.container.textContent).not.toContain("round 1");
   });
 
-  it("uses theme variables only: no colour value and no amber in its own style", () => {
+  it("uses theme variables only: no color value and no amber in its own style", () => {
     const css = fs.readFileSync(`${proc.cwd()}/src/ui/boards/TesseractBoard.module.css`, "utf8");
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(|amber|orange|oklch\(/i);
     expect(css).toMatch(/var\(--/);

@@ -21,7 +21,7 @@ export interface BadgeProps {
 }
 
 /**
- * A pixel badge: an inline SVG of `<rect>`s in two colour roles, no background.
+ * A pixel badge: an inline SVG of `<rect>`s in two color roles, no background.
  * `role="img"` with the badge's human name as its label; the tooltip says the name
  * and, in one line, how it was earned. Read-only: it shows, it never acts.
  */

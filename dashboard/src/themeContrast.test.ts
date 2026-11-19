@@ -54,7 +54,7 @@ describe("contrast of every tint in every theme", () => {
   });
 });
 
-describe("the green themes are the video's exact colours", () => {
+describe("the green themes are the video's exact colors", () => {
   it("vivid green: #39ff44 / #2ee03a / #001b00", () => {
     const p = vividPalette("tint-green");
     expect([p.bg, p.panel, p.text, p.border, p.accent].map(rgbHex)).toEqual(["#39ff44", "#2ee03a", "#001b00", "#001b00", "#001b00"]);
@@ -96,7 +96,7 @@ describe("the CSS carries the palette", () => {
     expect(KIT).toMatch(/body\.theme-dark\.tint-green \{[^}]*--theme-text: #d8ffd8;[^}]*--theme-focused-foreground: #39ff44;/);
   });
 
-  it("no amber is left as a colour in the look, the kit, the badges or the theme config", () => {
+  it("no amber is left as a color in the look, the kit, the badges or the theme config", () => {
     for (const f of ["dashboard.css", "ui/kit/global.css", "badges/badges.css", "badges/tokens.ts", "themeConfig.ts"]) {
       expect(read(f), f).not.toMatch(/#f0a832|#f5b84a/i);
     }

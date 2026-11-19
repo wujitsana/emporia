@@ -13,7 +13,7 @@
 .cupName { min-width: 6rem; font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
 .dice { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .die { width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--theme-text); font-size: 0.95rem; }
-/* A die that counts for the called face is filled and underlined, not only coloured. */
+/* A die that counts for the called face is filled and underlined, not only colored. */
 .counts { background: var(--board-fill); color: var(--board-ink); border-color: var(--board-line); font-weight: 700; text-decoration: underline; }
 
 .meter { display: grid; gap: 4px; margin-top: 10px; }

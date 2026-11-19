@@ -20,7 +20,7 @@ describe("the theme control", () => {
     expect(buttons).toHaveLength(3);
     expect(buttons[0].getAttribute("aria-label")).toBe("Theme: light, switch to dark");
     expect(buttons[1].getAttribute("aria-label")).toBe("Vivid: off, switch on");
-    expect(buttons[2].getAttribute("aria-label")).toBe("Accent colour: Green, click to cycle");
+    expect(buttons[2].getAttribute("aria-label")).toBe("Accent color: Green, click to cycle");
     expect(buttons[0].className).toContain("e-theme-circle--mode");
     expect(buttons[1].className).toContain("e-theme-circle--vivid");
     expect(buttons[2].className).toContain("e-theme-circle--accent");
@@ -55,11 +55,11 @@ describe("the theme control", () => {
 
   it("the tint circle goes to the next tint, wrapping to green after charcoal", () => {
     const a = setup("theme-light", "theme-light", "tint-green");
-    fireEvent.click(screen.getByLabelText("Accent colour: Green, click to cycle"));
+    fireEvent.click(screen.getByLabelText("Accent color: Green, click to cycle"));
     expect(a.onTint).toHaveBeenCalledWith("tint-blue");
     cleanup();
     const b = setup("theme-light", "theme-light", "tint-charcoal");
-    fireEvent.click(screen.getByLabelText("Accent colour: Charcoal, click to cycle"));
+    fireEvent.click(screen.getByLabelText("Accent color: Charcoal, click to cycle"));
     expect(b.onTint).toHaveBeenCalledWith("tint-green");
   });
 

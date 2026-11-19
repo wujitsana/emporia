@@ -80,7 +80,7 @@ export const THEME_FADE_MS = 450;
 const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
 /**
- * Put the theme and tint on the app's root. When either *changes*, colours
+ * Put the theme and tint on the app's root. When either *changes*, colors
  * cross-fade (dashboard.css § 28) for a moment; the first paint does not fade,
  * and `prefers-reduced-motion` turns the fade off in CSS. Back-to-back changes
  * (a run through the tints) keep the class on until the last one settles.

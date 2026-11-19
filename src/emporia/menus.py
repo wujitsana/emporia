@@ -10,7 +10,7 @@ the keys Hermes's own menus use:
     /        filter (long lists)        Space   tick (where several may be chosen)
     y / n    answer a yes-or-no question
 
-Colours are the terminal's own: its foreground and background, its theme's
+Colors are the terminal's own: its foreground and background, its theme's
 cyan for the question, inverse for the highlighted line; NO_COLOR drops the
 cyan. A line too wide ends in "…" and the highlighted one is shown whole
 beneath. When it is answered the menu is erased and the CLI prints the answer

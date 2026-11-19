@@ -375,7 +375,7 @@ body.tint-blue {
 body.tint-red {
   --tint: #b00331;   /* crimson, as the user picked (11-14) */
   --tint-light: #ffbeff;
-  --tint-deep: #743c76;
+  --tint-deep: #5c0e1b;
 }
 
 body.tint-purple {
@@ -453,7 +453,7 @@ body.theme-light.tint-charcoal {
 /*
 DEEP (the dark theme with a tint): the demo video's all-dark-green screens in OKLCH relative to the
 tint — canvas L .192, panel L .253 (chroma x .243), border L .366 (x .328), text L .962 (x .243);
-the accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colours.
+the accent as text is lifted to L .78 (chroma capped at .22); green is pinned to the video's colors.
 Mirrored in dashboard.css (body.e-look.theme-dark) and themePalette.ts.
 BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit restores it):
   background  oklch(from var(--tint) 0.14 calc(c * 0.18) h)   modal 0.24 / c*0.22   footer 0.3 / c*0.24

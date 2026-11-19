@@ -1,6 +1,6 @@
 /* The agent chat drawer: monospace, hairline rules, the theme's accent as the
    one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,
-   --e-accent-wash); no colours of its own.
+   --e-accent-wash); no colors of its own.
 
    It is sized to the app's own frame, never to the browser window: inside the
    Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the
@@ -184,7 +184,7 @@
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a color, >= 4.5:1 (dashboard.css 30.7) */
 }
 
 .line[data-who="you"] .who {
@@ -303,7 +303,7 @@
 
 .toolTime {
   flex: none;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a color, >= 4.5:1 (dashboard.css 30.7) */
   font-size: 0.72rem;
 }
 
@@ -512,7 +512,7 @@
 
 .sessionMeta {
   font-size: 0.74rem;
-  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a color, >= 4.5:1 (dashboard.css 30.7) */
 }
 
 .tag {

@@ -1,4 +1,4 @@
-/* Every colour is a theme token, so the viewer follows light, vivid, dark and each tint. */
+/* Every color is a theme token, so the viewer follows light, vivid, dark and each tint. */
 .root {
   display: flex;
   flex-direction: column;

@@ -1,7 +1,7 @@
 /**
- * The colours a badge meets, per style, theme and tint, computed the way the CSS does.
+ * The colors a badge meets, per style, theme and tint, computed the way the CSS does.
  *
- * - Ink is `currentColor`: the theme's text colour where the badge sits (`--theme-text`).
+ * - Ink is `currentColor`: the theme's text color where the badge sits (`--theme-text`).
  * - The accent is `--e-badge-accent` (badges.css), derived from `--tint` like the
  *   look's accent-as-text (`--theme-focused-foreground`, dashboard.css § 30): dark
  *   enough on the light canvas, light enough on the dark one, for every tint. Since

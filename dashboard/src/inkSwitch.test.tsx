@@ -81,7 +81,7 @@ describe("the text switch: the page follows", () => {
     expect(root.style.getPropertyValue("--e-pure-ink")).toBe("");
   });
 
-  it("a card's text colour follows the switch (the rules reach every token)", () => {
+  it("a card's text color follows the switch (the rules reach every token)", () => {
     const proc = (globalThis as unknown as { process: { getBuiltinModule(m: string): unknown } }).process;
     const fs = proc.getBuiltinModule("fs") as { readFileSync(p: string, enc: "utf8"): string };
     const css = fs.readFileSync("src/dashboard.css", "utf8");
@@ -91,6 +91,6 @@ describe("the text switch: the page follows", () => {
     expect(block).toMatch(/--theme-button: var\(--e-pure-ink\)/);
     expect(block).toMatch(/--theme-focused-foreground: var\(--e-pure-ink\)/);
     expect(css).toMatch(/body\.e-look\.theme-vivid\.e-ink-pure\.e-ink-pure\.e-ink-pure \{ --vv-ink: var\(--e-pure-ink\); \}/);
-    // jsdom does not resolve var(): the computed colour of a card under the real rules is checked in Chrome (ui-look-fix/ink-check.json).
+    // jsdom does not resolve var(): the computed color of a card under the real rules is checked in Chrome (ui-look-fix/ink-check.json).
   });
 });

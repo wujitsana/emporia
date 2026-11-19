@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    PIXEL BADGES — badges/Badge.tsx, the ui-badges design note (kept outside the repo)
-   Two colour roles, no background:
-   - ink    = currentColor (the text colour where the badge sits);
+   Two color roles, no background:
+   - ink    = currentColor (the text color where the badge sits);
    - accent = --e-badge-accent, from the tint, darker on the light canvas
      and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row
      wash in every theme and tint; badges.test.tsx holds it to that).

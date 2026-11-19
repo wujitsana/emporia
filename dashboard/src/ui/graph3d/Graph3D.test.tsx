@@ -47,7 +47,7 @@ describe("Graph3D story: the fixture in each view", () => {
     expect(within(document.body).getAllByRole("columnheader").length).toBe(8);
   });
 
-  it("edge sign is style and colour class, blocked is marked", () => {
+  it("edge sign is style and color class, blocked is marked", () => {
     render(<Graph3D nodes={nodes} edges={edges} initialMode="3d" animate={false} />);
     const neg = edges.filter((e) => e.weight < 0).length;
     expect(svg().querySelectorAll('[data-sign="neg"]').length).toBe(neg);

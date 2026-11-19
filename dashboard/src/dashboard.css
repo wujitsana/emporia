@@ -1046,7 +1046,7 @@ body.theme-light {
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
-/* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */
+/* The vivid circle: the tint with a ring of its ink (color set inline); the ring fills in when vivid is on. */
 .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
 .e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
 /* The text switch: a real toggle (track and knob), not a circle. */
@@ -1236,7 +1236,7 @@ body.theme-light {
   opacity: 0.45;
   font-variant-numeric: tabular-nums;
 }
-/* A list's own filter, at the top of its column: compact, the theme's colours, a clear button inside. */
+/* A list's own filter, at the top of its column: compact, the theme's colors, a clear button inside. */
 .e-list-filter { position: relative; padding: 8px 10px; border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued)); }
 .e-list-filter input {
   box-sizing: border-box; width: 100%; padding: 5px 26px 5px 8px; border: 1px solid var(--e-rule, currentColor); border-radius: 0;
@@ -2576,7 +2576,7 @@ body.theme-light {
 /* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
 /* On only for the length of a theme or tint change (themeConfig.applyTheme),
    so hovers and other transitions are untouched the rest of the time. A run
-   through the tints reads as one surface changing colour, not a flash. */
+   through the tints reads as one surface changing color, not a flash. */
 @media (prefers-reduced-motion: no-preference) {
   .e-theme-anim,
   .e-theme-anim *,
@@ -2656,7 +2656,7 @@ body.theme-light {
    the only one. `.e-look` is on the app's root with the theme and
    tint classes (themeConfig.applyTheme), so these rules keep their
    weight over the older ones above without a switch.
-   - It follows light, vivid, dark and all seven tints: every colour comes
+   - It follows light, vivid, dark and all seven tints: every color comes
      from the tint (--tint; green when there is none).
    - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
      prefers-reduced-motion or in capture mode (?capture=1).
@@ -2716,7 +2716,7 @@ body.e-look.theme-light.tint-charcoal {
 
 /* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
    L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the
-   video's exact colours. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple
+   video's exact colors. The accent as text is lifted to L .78 (chroma capped at .22) so blue, red and purple
    read; a chip is the pure tint with the canvas on it (white on blue and purple).
    Mirrored in themePalette.ts, which the contrast tests read; keep the two the same.
    BEFORE (the previous dark, kept to compare; `git revert` of the deep commit restores it):
@@ -2812,7 +2812,7 @@ body.e-look.theme-vivid.e-ink-pure.e-ink-pure.e-ink-pure { --vv-ink: var(--e-pur
 /* On the dark canvas a strong wash would sit under light text: keep it faint. */
 /* Dark cards and hover rows are the deep panel (the video's #0b2a0b in green), not a mix of the tint over the canvas. */
 .e-look.theme-dark .e-dashboard-shell { --anim-wash: var(--e-panel); }
-/* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */
+/* The hover / selected wash in vivid is the panel color: text on it clears 4.5:1 in every tint. */
 .e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }
 
 /* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
@@ -3091,7 +3091,7 @@ body.e-look.theme-vivid.e-ink-pure.e-ink-pure.e-ink-pure { --vv-ink: var(--e-pur
 
 /* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────
    Secondary text used to dim to 35–50 % opacity, which falls under
-   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
+   4.5:1 on a tinted canvas. Faint is a color at about 4.6:1 or more. */
 .e-look {
   --anim-faint: color-mix(in srgb, var(--theme-text) min(100%, calc(68% + var(--e-ink-boost, 0%))), var(--theme-background));
 }

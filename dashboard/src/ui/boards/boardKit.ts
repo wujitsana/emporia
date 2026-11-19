@@ -8,8 +8,8 @@
  *   draws a value for a seat that is not `revealed`. A board also drops a value it was given for a
  *   seat that is not revealed, so a caller's slip cannot put a sealed move in the DOM.
  * - Accessible: the drawing is `aria-hidden` and a real table (visually hidden, `BoardTable`) states
- *   every number the drawing shows. Nothing is told by colour alone: a mark, a pattern or a word.
- * - Colours come only from the theme variables (`--theme-*`, `--anim-*`), so every theme works.
+ *   every number the drawing shows. Nothing is told by color alone: a mark, a pattern or a word.
+ * - Colors come only from the theme variables (`--theme-*`, `--anim-*`), so every theme works.
  *   Motion only under `prefers-reduced-motion: no-preference`; no board animates today.
  * - A wide board scrolls inside its own box, never the page.
  */

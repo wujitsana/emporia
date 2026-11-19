@@ -2,7 +2,7 @@
  * The pixel badge format: a badge is a small grid written as one string per row.
  *
  *   "."  (or a space)  transparent: nothing is drawn, so the badge sits on any canvas
- *   "#"                ink: `currentColor`, the text colour where the badge is placed
+ *   "#"                ink: `currentColor`, the text color where the badge is placed
  *   "+"                accent: `var(--e-badge-accent)`, derived from the tint (badges.css)
  *
  * Two roles at most, and no background: the badge follows light/dark and every tint by
@@ -158,7 +158,7 @@ export function toScale(size: unknown): Scale {
   return size === 2 || size === 3 ? size : 1;
 }
 
-/** What fills each role. The defaults are the live ones; the sheet renderer passes colours. */
+/** What fills each role. The defaults are the live ones; the sheet renderer passes colors. */
 export interface Paint {
   ink?: string;
   accent?: string;

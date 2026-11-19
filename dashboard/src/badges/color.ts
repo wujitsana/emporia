@@ -1,11 +1,11 @@
 /**
- * Just enough colour science to check a badge the way the style work checked text:
- * OKLCH ⇄ sRGB (CSS Color 4's relative colour syntax, `oklch(from <tint> L C H)`),
+ * Just enough color science to check a badge the way the style work checked text:
+ * OKLCH ⇄ sRGB (CSS Color 4's relative color syntax, `oklch(from <tint> L C H)`),
  * WCAG relative luminance and contrast. Pure; used by the tests and the gallery.
  *
- * A colour outside sRGB is brought back in two ways, and a check should pass both:
+ * A color outside sRGB is brought back in two ways, and a check should pass both:
  * per-channel clipping (what some engines do) and the CSS Color 4 gamut mapping
- * (chroma reduced in OKLCH until the clipped colour is within a just-noticeable difference).
+ * (chroma reduced in OKLCH until the clipped color is within a just-noticeable difference).
  */
 
 export type RGB = readonly [number, number, number]; // sRGB, 0–1 (gamma-encoded)
@@ -77,7 +77,7 @@ export function oklchToRgb(o: OKLCH, gamut: Gamut = "css"): RGB {
   if (gamut === "clip") return clip(raw);
   if (o.l >= 1) return [1, 1, 1];
   if (o.l <= 0) return [0, 0, 0];
-  // CSS Color 4 §13.2: binary search on chroma, accepting a clipped colour within the JND.
+  // CSS Color 4 §13.2: binary search on chroma, accepting a clipped color within the JND.
   const JND = 0.02;
   let lo = 0;
   let hi = o.c;

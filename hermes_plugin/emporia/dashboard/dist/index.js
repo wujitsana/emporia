@@ -11558,7 +11558,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		themeRoot = el;
 	}
 	/**
-	* Put the theme and tint on the app's root. When either *changes*, colours
+	* Put the theme and tint on the app's root. When either *changes*, colors
 	* cross-fade (dashboard.css § 28) for a moment; the first paint does not fade,
 	* and `prefers-reduced-motion` turns the fade off in CSS. Back-to-back changes
 	* (a run through the tints) keep the class on until the last one settles.
@@ -13738,7 +13738,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			},
 			"tint-red": {
 				light: "#ffbeff",
-				deep: "#743c76"
+				deep: "#5c0e1b"
 			},
 			"tint-orange": {
 				light: "#ffad33",
@@ -13865,7 +13865,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					style: { background: TINT_COLORS[tint] },
 					onClick: () => onTint(nextTint(tint)),
 					title: `accent: ${TINT_LABELS[tint]} (click for the next)`,
-					"aria-label": `Accent colour: ${TINT_LABELS[tint]}, click to cycle`
+					"aria-label": `Accent color: ${TINT_LABELS[tint]}, click to cycle`
 				}),
 				ink && /* @__PURE__ */ (0, import_jsx_runtime$122.jsxs)(import_jsx_runtime$122.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
 					className: "e-theme-duo__rule",
@@ -15724,7 +15724,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				"#b00331",
 				"#250a0c",
 				"#fff0f0",
-				"#743c76",
+				"#5c0e1b",
 				"#ffbeff",
 				0
 			],
@@ -18632,7 +18632,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/badges/Badge.tsx
 	/**
-	* A pixel badge: an inline SVG of `<rect>`s in two colour roles, no background.
+	* A pixel badge: an inline SVG of `<rect>`s in two color roles, no background.
 	* `role="img"` with the badge's human name as its label; the tooltip says the name
 	* and, in one line, how it was earned. Read-only: it shows, it never acts.
 	*/
@@ -28981,7 +28981,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!removed) return "removed";
 		return removed.role === "author" ? `removed by ${removed.by ?? "its author"}` : `removed by ${removed.by ?? "?"} (${removed.role ?? "?"})`;
 	}
-	/** Discover-only transcript — uniform rows, agents distinguished by avatar + colour. */
+	/** Discover-only transcript — uniform rows, agents distinguished by avatar + color. */
 	function ReadOnlyChat({ messages, viewerId: _viewerId, emptyLabel = "No messages yet", footer, endRef }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$72.jsxs)("div", {
 			className: "e-chat-pane",
@@ -35917,29 +35917,29 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/boards/BlottoBars.module.css
 	var root$10, grid$2, head$3, row$4, who$3, whoB, state, cell$3, left, right, wrap$1, bar$3, full, none, end, barA, barB, took, num$7, mark$2, centre, weight, tie, BlottoBars_module_default;
 	var init_BlottoBars_module = __esmMin((() => {
-		root$10 = "BlottoBars_root_19rvs";
-		grid$2 = "BlottoBars_grid_19rvs";
-		head$3 = "BlottoBars_head_19rvs";
-		row$4 = "BlottoBars_row_19rvs";
-		who$3 = "BlottoBars_who_19rvs";
-		whoB = "BlottoBars_whoB_19rvs";
-		state = "BlottoBars_state_19rvs";
-		cell$3 = "BlottoBars_cell_19rvs";
-		left = "BlottoBars_left_19rvs";
-		right = "BlottoBars_right_19rvs";
-		wrap$1 = "BlottoBars_wrap_19rvs";
-		bar$3 = "BlottoBars_bar_19rvs";
-		full = "BlottoBars_full_19rvs";
-		none = "BlottoBars_none_19rvs";
-		end = "BlottoBars_end_19rvs";
-		barA = "BlottoBars_barA_19rvs";
-		barB = "BlottoBars_barB_19rvs";
-		took = "BlottoBars_took_19rvs";
-		num$7 = "BlottoBars_num_19rvs";
-		mark$2 = "BlottoBars_mark_19rvs";
-		centre = "BlottoBars_centre_19rvs";
-		weight = "BlottoBars_weight_19rvs";
-		tie = "BlottoBars_tie_19rvs";
+		root$10 = "BlottoBars_root_k3zo9";
+		grid$2 = "BlottoBars_grid_k3zo9";
+		head$3 = "BlottoBars_head_k3zo9";
+		row$4 = "BlottoBars_row_k3zo9";
+		who$3 = "BlottoBars_who_k3zo9";
+		whoB = "BlottoBars_whoB_k3zo9";
+		state = "BlottoBars_state_k3zo9";
+		cell$3 = "BlottoBars_cell_k3zo9";
+		left = "BlottoBars_left_k3zo9";
+		right = "BlottoBars_right_k3zo9";
+		wrap$1 = "BlottoBars_wrap_k3zo9";
+		bar$3 = "BlottoBars_bar_k3zo9";
+		full = "BlottoBars_full_k3zo9";
+		none = "BlottoBars_none_k3zo9";
+		end = "BlottoBars_end_k3zo9";
+		barA = "BlottoBars_barA_k3zo9";
+		barB = "BlottoBars_barB_k3zo9";
+		took = "BlottoBars_took_k3zo9";
+		num$7 = "BlottoBars_num_k3zo9";
+		mark$2 = "BlottoBars_mark_k3zo9";
+		centre = "BlottoBars_centre_k3zo9";
+		weight = "BlottoBars_weight_k3zo9";
+		tie = "BlottoBars_tie_k3zo9";
 		BlottoBars_module_default = {
 			root: root$10,
 			grid: grid$2,
@@ -37671,25 +37671,25 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/boards/DiceTable.module.css
 	var root$5, grid$1, row$2, qty, faceHead, cell$1, bid, called, cups, cup, cupName, dice, die, counts$1, meter, track, fill$2, need, meterText, DiceTable_module_default;
 	var init_DiceTable_module = __esmMin((() => {
-		root$5 = "DiceTable_root_1yna5";
-		grid$1 = "DiceTable_grid_1yna5";
-		row$2 = "DiceTable_row_1yna5";
-		qty = "DiceTable_qty_1yna5";
-		faceHead = "DiceTable_faceHead_1yna5";
-		cell$1 = "DiceTable_cell_1yna5";
-		bid = "DiceTable_bid_1yna5";
-		called = "DiceTable_called_1yna5";
-		cups = "DiceTable_cups_1yna5";
-		cup = "DiceTable_cup_1yna5";
-		cupName = "DiceTable_cupName_1yna5";
-		dice = "DiceTable_dice_1yna5";
-		die = "DiceTable_die_1yna5";
-		counts$1 = "DiceTable_counts_1yna5";
-		meter = "DiceTable_meter_1yna5";
-		track = "DiceTable_track_1yna5";
-		fill$2 = "DiceTable_fill_1yna5";
-		need = "DiceTable_need_1yna5";
-		meterText = "DiceTable_meterText_1yna5";
+		root$5 = "DiceTable_root_klezg";
+		grid$1 = "DiceTable_grid_klezg";
+		row$2 = "DiceTable_row_klezg";
+		qty = "DiceTable_qty_klezg";
+		faceHead = "DiceTable_faceHead_klezg";
+		cell$1 = "DiceTable_cell_klezg";
+		bid = "DiceTable_bid_klezg";
+		called = "DiceTable_called_klezg";
+		cups = "DiceTable_cups_klezg";
+		cup = "DiceTable_cup_klezg";
+		cupName = "DiceTable_cupName_klezg";
+		dice = "DiceTable_dice_klezg";
+		die = "DiceTable_die_klezg";
+		counts$1 = "DiceTable_counts_klezg";
+		meter = "DiceTable_meter_klezg";
+		track = "DiceTable_track_klezg";
+		fill$2 = "DiceTable_fill_klezg";
+		need = "DiceTable_need_klezg";
+		meterText = "DiceTable_meterText_klezg";
 		DiceTable_module_default = {
 			root: root$5,
 			grid: grid$1,
@@ -38135,26 +38135,26 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/boards/SpillwayBoard.module.css
 	var root$4, grid, row$1, rowNo, head$1, gate, gateWord, cell, shut, silt, stoneA, stoneB, n$1, last, win, legend, key, keyA, keyB, keySilt, SpillwayBoard_module_default;
 	var init_SpillwayBoard_module = __esmMin((() => {
-		root$4 = "SpillwayBoard_root_vtso3";
-		grid = "SpillwayBoard_grid_vtso3";
-		row$1 = "SpillwayBoard_row_vtso3";
-		rowNo = "SpillwayBoard_rowNo_vtso3";
-		head$1 = "SpillwayBoard_head_vtso3";
-		gate = "SpillwayBoard_gate_vtso3";
-		gateWord = "SpillwayBoard_gateWord_vtso3";
-		cell = "SpillwayBoard_cell_vtso3";
-		shut = "SpillwayBoard_shut_vtso3";
-		silt = "SpillwayBoard_silt_vtso3";
-		stoneA = "SpillwayBoard_stoneA_vtso3";
-		stoneB = "SpillwayBoard_stoneB_vtso3";
-		n$1 = "SpillwayBoard_n_vtso3";
-		last = "SpillwayBoard_last_vtso3";
-		win = "SpillwayBoard_win_vtso3";
-		legend = "SpillwayBoard_legend_vtso3";
-		key = "SpillwayBoard_key_vtso3";
-		keyA = "SpillwayBoard_keyA_vtso3";
-		keyB = "SpillwayBoard_keyB_vtso3";
-		keySilt = "SpillwayBoard_keySilt_vtso3";
+		root$4 = "SpillwayBoard_root_195iv";
+		grid = "SpillwayBoard_grid_195iv";
+		row$1 = "SpillwayBoard_row_195iv";
+		rowNo = "SpillwayBoard_rowNo_195iv";
+		head$1 = "SpillwayBoard_head_195iv";
+		gate = "SpillwayBoard_gate_195iv";
+		gateWord = "SpillwayBoard_gateWord_195iv";
+		cell = "SpillwayBoard_cell_195iv";
+		shut = "SpillwayBoard_shut_195iv";
+		silt = "SpillwayBoard_silt_195iv";
+		stoneA = "SpillwayBoard_stoneA_195iv";
+		stoneB = "SpillwayBoard_stoneB_195iv";
+		n$1 = "SpillwayBoard_n_195iv";
+		last = "SpillwayBoard_last_195iv";
+		win = "SpillwayBoard_win_195iv";
+		legend = "SpillwayBoard_legend_195iv";
+		key = "SpillwayBoard_key_195iv";
+		keyA = "SpillwayBoard_keyA_195iv";
+		keyB = "SpillwayBoard_keyB_195iv";
+		keySilt = "SpillwayBoard_keySilt_195iv";
 		SpillwayBoard_module_default = {
 			root: root$4,
 			grid,
@@ -40414,18 +40414,18 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/boards/TesseractBoard.module.css
 	var root$3, seats, seat, winner, round, bars$1, label$2, bar$2, fill$1, value, pushes, results, TesseractBoard_module_default;
 	var init_TesseractBoard_module = __esmMin((() => {
-		root$3 = "TesseractBoard_root_1igqw";
-		seats = "TesseractBoard_seats_1igqw";
-		seat = "TesseractBoard_seat_1igqw";
-		winner = "TesseractBoard_winner_1igqw";
-		round = "TesseractBoard_round_1igqw";
-		bars$1 = "TesseractBoard_bars_1igqw";
-		label$2 = "TesseractBoard_label_1igqw";
-		bar$2 = "TesseractBoard_bar_1igqw";
-		fill$1 = "TesseractBoard_fill_1igqw";
-		value = "TesseractBoard_value_1igqw";
-		pushes = "TesseractBoard_pushes_1igqw";
-		results = "TesseractBoard_results_1igqw";
+		root$3 = "TesseractBoard_root_z2xx6";
+		seats = "TesseractBoard_seats_z2xx6";
+		seat = "TesseractBoard_seat_z2xx6";
+		winner = "TesseractBoard_winner_z2xx6";
+		round = "TesseractBoard_round_z2xx6";
+		bars$1 = "TesseractBoard_bars_z2xx6";
+		label$2 = "TesseractBoard_label_z2xx6";
+		bar$2 = "TesseractBoard_bar_z2xx6";
+		fill$1 = "TesseractBoard_fill_z2xx6";
+		value = "TesseractBoard_value_z2xx6";
+		pushes = "TesseractBoard_pushes_z2xx6";
+		results = "TesseractBoard_results_z2xx6";
 		TesseractBoard_module_default = {
 			root: root$3,
 			seats,
@@ -40927,38 +40927,38 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/graph3d/Graph3D.module.css
 	var root$2, bar$1, switchBtn, resetBtn, stage, hint, svg, flat, edge, neg, blocked, dim, lit, flowStill, pulse, flow, dot, dotNeg, hit, picked$1, label$1, layerTag, decorFace, decorLine, decorDashed, decorDot, decorRing, decorCorner, Graph3D_module_default;
 	var init_Graph3D_module = __esmMin((() => {
-		root$2 = "Graph3D_root_19ri3";
-		bar$1 = "Graph3D_bar_19ri3";
-		switchBtn = "Graph3D_switchBtn_19ri3";
-		resetBtn = "Graph3D_resetBtn_19ri3";
-		stage = "Graph3D_stage_19ri3";
-		hint = "Graph3D_hint_19ri3";
-		svg = "Graph3D_svg_19ri3";
-		flat = "Graph3D_flat_19ri3";
-		edge = "Graph3D_edge_19ri3";
-		neg = "Graph3D_neg_19ri3";
-		blocked = "Graph3D_blocked_19ri3";
-		dim = "Graph3D_dim_19ri3";
-		lit = "Graph3D_lit_19ri3";
-		flowStill = "Graph3D_flowStill_19ri3";
-		pulse = "Graph3D_pulse_19ri3";
-		flow = "Graph3D_flow_19ri3";
-		dot = "Graph3D_dot_19ri3";
-		dotNeg = "Graph3D_dotNeg_19ri3";
-		hit = "Graph3D_hit_19ri3";
-		picked$1 = "Graph3D_picked_19ri3";
-		label$1 = "Graph3D_label_19ri3";
-		layerTag = "Graph3D_layerTag_19ri3";
-		decorFace = "Graph3D_decorFace_19ri3";
-		decorLine = "Graph3D_decorLine_19ri3";
-		decorDashed = "Graph3D_decorDashed_19ri3";
-		decorDot = "Graph3D_decorDot_19ri3";
-		decorRing = "Graph3D_decorRing_19ri3";
-		decorCorner = "Graph3D_decorCorner_19ri3";
+		root$2 = "Graph3D_root_l77x9";
+		bar$1 = "Graph3D_bar_l77x9";
+		switchBtn = "Graph3D_switchBtn_l77x9";
+		resetBtn = "Graph3D_resetBtn_l77x9";
+		stage = "Graph3D_stage_l77x9";
+		hint = "Graph3D_hint_l77x9";
+		svg = "Graph3D_svg_l77x9";
+		flat = "Graph3D_flat_l77x9";
+		edge = "Graph3D_edge_l77x9";
+		neg = "Graph3D_neg_l77x9";
+		blocked = "Graph3D_blocked_l77x9";
+		dim = "Graph3D_dim_l77x9";
+		lit = "Graph3D_lit_l77x9";
+		flowStill = "Graph3D_flowStill_l77x9";
+		pulse = "Graph3D_pulse_l77x9";
+		flow = "Graph3D_flow_l77x9";
+		dot = "Graph3D_dot_l77x9";
+		dotNeg = "Graph3D_dotNeg_l77x9";
+		hit = "Graph3D_hit_l77x9";
+		picked$1 = "Graph3D_picked_l77x9";
+		label$1 = "Graph3D_label_l77x9";
+		layerTag = "Graph3D_layerTag_l77x9";
+		decorFace = "Graph3D_decorFace_l77x9";
+		decorLine = "Graph3D_decorLine_l77x9";
+		decorDashed = "Graph3D_decorDashed_l77x9";
+		decorDot = "Graph3D_decorDot_l77x9";
+		decorRing = "Graph3D_decorRing_l77x9";
+		decorCorner = "Graph3D_decorCorner_l77x9";
 		Graph3D_module_default = {
 			root: root$2,
 			bar: bar$1,
-			"switch": "Graph3D_switch_19ri3",
+			"switch": "Graph3D_switch_l77x9",
 			switchBtn,
 			resetBtn,
 			stage,
@@ -46742,78 +46742,78 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/chat/ChatDrawer.module.css
 	var root, open, head, headRow, heading, headIcon, close, meta, conn, sessionBar, sessionPick, sessionPickTitle, smallButton, error, transcript, intro, introTitle, introNote, line, who, text, caret, blink, working, notice, prompt, tool, toolHead, toolName, toolMark, toolContext, toolTime, toolCaret, toolOut, untrusted, untrustedLabel, approval, cardTitle, cardText, cardNote, cardFoot, command, choices, choice, picked, deny, answered, question, answerInput, sessions, sessionsHead, sessionList, sessionRow, sessionTitle, sessionMeta, tag, empty, composer, inputRow, input, send, stop, readOnly, typeahead, typeRow, typeRowOn, typeName, typeMeta, back, backRow, menu, phoneOnly, ChatDrawer_module_default;
 	var init_ChatDrawer_module = __esmMin((() => {
-		root = "ChatDrawer_root_tg8j6";
-		open = "ChatDrawer_open_tg8j6";
-		head = "ChatDrawer_head_tg8j6";
-		headRow = "ChatDrawer_headRow_tg8j6";
-		heading = "ChatDrawer_heading_tg8j6";
-		headIcon = "ChatDrawer_headIcon_tg8j6";
-		close = "ChatDrawer_close_tg8j6";
-		meta = "ChatDrawer_meta_tg8j6";
-		conn = "ChatDrawer_conn_tg8j6";
-		sessionBar = "ChatDrawer_sessionBar_tg8j6";
-		sessionPick = "ChatDrawer_sessionPick_tg8j6";
-		sessionPickTitle = "ChatDrawer_sessionPickTitle_tg8j6";
-		smallButton = "ChatDrawer_smallButton_tg8j6";
-		error = "ChatDrawer_error_tg8j6";
-		transcript = "ChatDrawer_transcript_tg8j6";
-		intro = "ChatDrawer_intro_tg8j6";
-		introTitle = "ChatDrawer_introTitle_tg8j6";
-		introNote = "ChatDrawer_introNote_tg8j6";
-		line = "ChatDrawer_line_tg8j6";
-		who = "ChatDrawer_who_tg8j6";
-		text = "ChatDrawer_text_tg8j6";
-		caret = "ChatDrawer_caret_tg8j6";
-		blink = "ChatDrawer_blink_tg8j6";
-		working = "ChatDrawer_working_tg8j6";
-		notice = "ChatDrawer_notice_tg8j6";
-		prompt = "ChatDrawer_prompt_tg8j6";
-		tool = "ChatDrawer_tool_tg8j6";
-		toolHead = "ChatDrawer_toolHead_tg8j6";
-		toolName = "ChatDrawer_toolName_tg8j6";
-		toolMark = "ChatDrawer_toolMark_tg8j6";
-		toolContext = "ChatDrawer_toolContext_tg8j6";
-		toolTime = "ChatDrawer_toolTime_tg8j6";
-		toolCaret = "ChatDrawer_toolCaret_tg8j6";
-		toolOut = "ChatDrawer_toolOut_tg8j6";
-		untrusted = "ChatDrawer_untrusted_tg8j6";
-		untrustedLabel = "ChatDrawer_untrustedLabel_tg8j6";
-		approval = "ChatDrawer_approval_tg8j6";
-		cardTitle = "ChatDrawer_cardTitle_tg8j6";
-		cardText = "ChatDrawer_cardText_tg8j6";
-		cardNote = "ChatDrawer_cardNote_tg8j6";
-		cardFoot = "ChatDrawer_cardFoot_tg8j6";
-		command = "ChatDrawer_command_tg8j6";
-		choices = "ChatDrawer_choices_tg8j6";
-		choice = "ChatDrawer_choice_tg8j6";
-		picked = "ChatDrawer_picked_tg8j6";
-		deny = "ChatDrawer_deny_tg8j6";
-		answered = "ChatDrawer_answered_tg8j6";
-		question = "ChatDrawer_question_tg8j6";
-		answerInput = "ChatDrawer_answerInput_tg8j6";
-		sessions = "ChatDrawer_sessions_tg8j6";
-		sessionsHead = "ChatDrawer_sessionsHead_tg8j6";
-		sessionList = "ChatDrawer_sessionList_tg8j6";
-		sessionRow = "ChatDrawer_sessionRow_tg8j6";
-		sessionTitle = "ChatDrawer_sessionTitle_tg8j6";
-		sessionMeta = "ChatDrawer_sessionMeta_tg8j6";
-		tag = "ChatDrawer_tag_tg8j6";
-		empty = "ChatDrawer_empty_tg8j6";
-		composer = "ChatDrawer_composer_tg8j6";
-		inputRow = "ChatDrawer_inputRow_tg8j6";
-		input = "ChatDrawer_input_tg8j6";
-		send = "ChatDrawer_send_tg8j6";
-		stop = "ChatDrawer_stop_tg8j6";
-		readOnly = "ChatDrawer_readOnly_tg8j6";
-		typeahead = "ChatDrawer_typeahead_tg8j6";
-		typeRow = "ChatDrawer_typeRow_tg8j6";
-		typeRowOn = "ChatDrawer_typeRowOn_tg8j6";
-		typeName = "ChatDrawer_typeName_tg8j6";
-		typeMeta = "ChatDrawer_typeMeta_tg8j6";
-		back = "ChatDrawer_back_tg8j6";
-		backRow = "ChatDrawer_backRow_tg8j6";
-		menu = "ChatDrawer_menu_tg8j6";
-		phoneOnly = "ChatDrawer_phoneOnly_tg8j6";
+		root = "ChatDrawer_root_uft46";
+		open = "ChatDrawer_open_uft46";
+		head = "ChatDrawer_head_uft46";
+		headRow = "ChatDrawer_headRow_uft46";
+		heading = "ChatDrawer_heading_uft46";
+		headIcon = "ChatDrawer_headIcon_uft46";
+		close = "ChatDrawer_close_uft46";
+		meta = "ChatDrawer_meta_uft46";
+		conn = "ChatDrawer_conn_uft46";
+		sessionBar = "ChatDrawer_sessionBar_uft46";
+		sessionPick = "ChatDrawer_sessionPick_uft46";
+		sessionPickTitle = "ChatDrawer_sessionPickTitle_uft46";
+		smallButton = "ChatDrawer_smallButton_uft46";
+		error = "ChatDrawer_error_uft46";
+		transcript = "ChatDrawer_transcript_uft46";
+		intro = "ChatDrawer_intro_uft46";
+		introTitle = "ChatDrawer_introTitle_uft46";
+		introNote = "ChatDrawer_introNote_uft46";
+		line = "ChatDrawer_line_uft46";
+		who = "ChatDrawer_who_uft46";
+		text = "ChatDrawer_text_uft46";
+		caret = "ChatDrawer_caret_uft46";
+		blink = "ChatDrawer_blink_uft46";
+		working = "ChatDrawer_working_uft46";
+		notice = "ChatDrawer_notice_uft46";
+		prompt = "ChatDrawer_prompt_uft46";
+		tool = "ChatDrawer_tool_uft46";
+		toolHead = "ChatDrawer_toolHead_uft46";
+		toolName = "ChatDrawer_toolName_uft46";
+		toolMark = "ChatDrawer_toolMark_uft46";
+		toolContext = "ChatDrawer_toolContext_uft46";
+		toolTime = "ChatDrawer_toolTime_uft46";
+		toolCaret = "ChatDrawer_toolCaret_uft46";
+		toolOut = "ChatDrawer_toolOut_uft46";
+		untrusted = "ChatDrawer_untrusted_uft46";
+		untrustedLabel = "ChatDrawer_untrustedLabel_uft46";
+		approval = "ChatDrawer_approval_uft46";
+		cardTitle = "ChatDrawer_cardTitle_uft46";
+		cardText = "ChatDrawer_cardText_uft46";
+		cardNote = "ChatDrawer_cardNote_uft46";
+		cardFoot = "ChatDrawer_cardFoot_uft46";
+		command = "ChatDrawer_command_uft46";
+		choices = "ChatDrawer_choices_uft46";
+		choice = "ChatDrawer_choice_uft46";
+		picked = "ChatDrawer_picked_uft46";
+		deny = "ChatDrawer_deny_uft46";
+		answered = "ChatDrawer_answered_uft46";
+		question = "ChatDrawer_question_uft46";
+		answerInput = "ChatDrawer_answerInput_uft46";
+		sessions = "ChatDrawer_sessions_uft46";
+		sessionsHead = "ChatDrawer_sessionsHead_uft46";
+		sessionList = "ChatDrawer_sessionList_uft46";
+		sessionRow = "ChatDrawer_sessionRow_uft46";
+		sessionTitle = "ChatDrawer_sessionTitle_uft46";
+		sessionMeta = "ChatDrawer_sessionMeta_uft46";
+		tag = "ChatDrawer_tag_uft46";
+		empty = "ChatDrawer_empty_uft46";
+		composer = "ChatDrawer_composer_uft46";
+		inputRow = "ChatDrawer_inputRow_uft46";
+		input = "ChatDrawer_input_uft46";
+		send = "ChatDrawer_send_uft46";
+		stop = "ChatDrawer_stop_uft46";
+		readOnly = "ChatDrawer_readOnly_uft46";
+		typeahead = "ChatDrawer_typeahead_uft46";
+		typeRow = "ChatDrawer_typeRow_uft46";
+		typeRowOn = "ChatDrawer_typeRowOn_uft46";
+		typeName = "ChatDrawer_typeName_uft46";
+		typeMeta = "ChatDrawer_typeMeta_uft46";
+		back = "ChatDrawer_back_uft46";
+		backRow = "ChatDrawer_backRow_uft46";
+		menu = "ChatDrawer_menu_uft46";
+		phoneOnly = "ChatDrawer_phoneOnly_uft46";
 		ChatDrawer_module_default = {
 			root,
 			open,
@@ -48489,7 +48489,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("p", {
 					className: "e-badge-gallery__lede",
 					children: [
-						"Emporia's pixel badges: ink in the text colour, one accent from the tint, no background. ",
+						"Emporia's pixel badges: ink in the text color, one accent from the tint, no background. ",
 						ids.length,
 						" badges, drawn at whole-number scales. Season-0 is an open testnet season; badges move no attribute, ladder or points."
 					]
@@ -48577,7 +48577,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("h2", { children: "EVERY TINT" }),
 					/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
 						className: "e-badge-gallery__lede",
-						children: "Each panel carries its own theme and tint; the lowest contrast any badge colour meets on its canvas, panel and row wash is printed on it (WCAG non-text: 3:1)."
+						children: "Each panel carries its own theme and tint; the lowest contrast any badge color meets on its canvas, panel and row wash is printed on it (WCAG non-text: 3:1)."
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
 						className: "e-badge-panels",

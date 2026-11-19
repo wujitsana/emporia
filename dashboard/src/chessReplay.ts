@@ -12,7 +12,7 @@ export type ChessReplayData = {
 };
 
 export function chessSides(session: Session): { white: string; black: string } {
-  // P131: colours are stored at start (the creator may play black); older
+  // P131: colors are stored at start (the creator may play black); older
   // states mean participants[0] is white.
   const st = session.state as { white?: string | null; black?: string | null } | undefined;
   const p = session.participants ?? [];

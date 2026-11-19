@@ -1,9 +1,9 @@
 {
-  "note": "sha256 of the UTF-8 SVG string of the token picture (the only picture); regenerated for the unified palette (11-19)",
+  "note": "sha256 of the UTF-8 SVG string of the token picture (the only picture); regenerated for the unified palette with crimson's deep #5c0e1b (11-19)",
   "vectors": [
     {
       "id": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
-      "token": "a03cc31e64277c12d7059a3203e9e20dce1a0d5b4ba45639f05504b8570e8b24"
+      "token": "4a78d82b8aa6fba9e36e6eb762c8b08be14ce08503f82f736fe26d2e746018c0"
     },
     {
       "id": "f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753",
@@ -19,7 +19,7 @@
     },
     {
       "id": "3b3c0bba10de5f65ba12ce7682d26cb7312b6fb768f890477f16952ca4d85a2c",
-      "token": "4e056fad96d5291c45cb4e13335553f688daa0310eec3a13eed0faf738b5bab3"
+      "token": "91f310c9d6d7aeced7ea0c9b567a7b4c3b8d309e575462fbaba0145ba237a536"
     },
     {
       "id": "4ca157c7e7abec2193f5267e530489a9aa24feac696a28a7d05f763ff54de16e",
@@ -39,7 +39,7 @@
     },
     {
       "id": "4436776bd1dbb58f2b8bbe41eb39766f2d9feca363cc9e49006e2f432a866186",
-      "token": "901891f6f9b4f8993b0b728313b8e8de51dc262e78a983c5983a537242ee906c"
+      "token": "bd89ba888c1d5d49f9d7e9329fb3751a71269348e3c350dff7ffb55d3aea1bf5"
     },
     {
       "id": "5ec54ea7bd49cb5a7e7d68000bbdc28021bd5f875f3fa80317d803a78e54fac8",
@@ -71,7 +71,7 @@
     },
     {
       "id": "5c831f5de44bd3c48d453662d46d38b6e2d9e7e28a1a10999964ad778fa7e46c",
-      "token": "7efaf106a9f91c382b2b1180217dafdd367750e68b9054c99895847e27557322"
+      "token": "cb57d908e948e4bdf37749d8dcb4d4c36f7deef27b3e2f9b01e7192eb56c6787"
     },
     {
       "id": "33973d8733c20e593bd3d49c89f08cbcf300c370f118dbcf3ce3d8ac3134e81f",
@@ -79,7 +79,7 @@
     },
     {
       "id": "560e3947563c8a28c9dbbe6414dcc2c06209dd4ff5604f01808da31be5f6e051",
-      "token": "ce32bfa23480f6c03f9685d42d9829e9e553634b929a789c4b3a711e06b224bb"
+      "token": "fa8d1cd4c9bfb34d8816201868b8e021f68d06ba4ae18def5714069467908dc3"
     },
     {
       "id": "a810a189178ae70b900131d167d6de62d2e6e5f16ff57b7ed6983d7b6c4994ee",
@@ -91,7 +91,7 @@
     },
     {
       "id": "f4a26e22b2ddf6a39720f8278a344dc687eefc0890a319791fa98ea29b1392df",
-      "token": "bb3ef7cdb23cd6dcf41d38458968a15482e9888f82eb4d7b2b42e876391c6fdf"
+      "token": "2073d406f5a06b3b9a4da4d0ff064b7c157e5ebeb29c55615fd7b1f89512865e"
     },
     {
       "id": "cf1fdc4600aa7465aeef272d273d7a662c237203d231cc866e50a0f6ece0b18c",
@@ -111,7 +111,7 @@
     },
     {
       "id": "cf3c7fb46c41c71317cd206b8c38bc1eff37441ccd7a1f5c29b5423074efb43c",
-      "token": "cf79b43d96a974b010f0e10b912303dfa2255bb19dce65ff0841ae4c717868c3"
+      "token": "9e8ff234bc0f2b38800b8616afa2c8940863570606073bdff36de945b7026dba"
     },
     {
       "id": "d209f6866ee703c28d1819fdeb37413d3246ca3b5aaa3cb3b0a7ca6fe85ab0f9",
@@ -123,7 +123,7 @@
     },
     {
       "id": "e4423161eb67ed153df1466e187bd7fdbebad784fafb838604e8ea9a397f5903",
-      "token": "ef5df8578162ef2c553c4f85dc69e5ffa966ca4e96f1b5eaef75c993e8354855"
+      "token": "1efdab9e707173041ef47dac3126e0a224e9b35141db417d6e604afc530fa5a5"
     },
     {
       "id": "f2f9d082a3a562c621dc9ee2bad32d83702060472536215781742bcb800a2d22",
@@ -155,7 +155,7 @@
     },
     {
       "id": "c6af9923919b71f9528735938e431236dbada226369d783a89ea8368922e5267",
-      "token": "f3dd9bb0c21ba027d845cc80d982200a9649284f3f8c8a5007130a400b9f21ea"
+      "token": "2cab4053e0434dd19359ae0fefcce9282d99d1949446d6dc1c331fce3149fa7d"
     },
     {
       "id": "2eecf760ff52a57b5aba8e6f8f8bb1dfeeb4b00777e9abc19750bdc6a186ece7",
@@ -167,7 +167,7 @@
     },
     {
       "id": "b02e2b0e6a49a1285012bc2c721f666f24e66e7be13f96ac0723829a56d04753",
-      "token": "328fd4995abafaef207df01f0037ac3608892613ae1df5465c4be1db512463b0"
+      "token": "229681f5f4cc1030abf7fc1235f5072b5c179f6594b3e8bf43681f461a0711ca"
     },
     {
       "id": "6fd9badbe570d985035bd07f5cd940bf12ed092ecefd926ad4945e843d14ff7d",
@@ -199,7 +199,7 @@
     },
     {
       "id": "6bb784ef779a5254f56f11d2e87376db4d80e749a5587f4c6e1cf5d533b20f01",
-      "token": "c324fc773d4e075c9f5ab5af8fd0ff946df1ebe1db416fd3f386d7c3569528e6"
+      "token": "1b5809ccaab8b87dcbc5f776df198f185077b7276f18c6aea698a5eebeb36920"
     },
     {
       "id": "727232ff6decdb305ecbfe2f0805371894afc54fcaf641780d314cd3fc85fef0",
@@ -211,7 +211,7 @@
     },
     {
       "id": "f40f0ebef4d73d6134b51abe6ce3ee734a82b372282147b0a99932c20d83bd97",
-      "token": "9a64688c779b378665a75f13bfd7de84e82cb20e83efe51ee538c32b339df466"
+      "token": "5864c95a6bcf31167d4fdc6bad05c1579014310922cbc16ee443648b95525d9b"
     },
     {
       "id": "44fc18b8cd11b28f8d6867fa02abfe3c3171388f145d6425f75bb22cf0ef427b",
@@ -223,7 +223,7 @@
     },
     {
       "id": "c69c7f387075a4dc79d325d37c47333744bac456ee72742a66eb63131d1b5455",
-      "token": "36886c5b025dc34fdc1e71660eff2d29b7ebd7203265e51212b19ba5665eccfe"
+      "token": "899932738446b96f2c90c3978d40d7693a83341cbe144cfa8bf051aaf0699f1a"
     },
     {
       "id": "e5353e0d43b0000eff0365d925278a4794e8515caeb2cc2b491fa3f74a85d53a",
@@ -231,7 +231,7 @@
     },
     {
       "id": "f3525e615787ebc232dcac966ac91c09111c6e1b389157bd480f49143c40fff1",
-      "token": "483f22be5ed595dbaddfff1fbd2577a3b8a1bb77e532f27ad0e816d72d467343"
+      "token": "710b81615cf42945d86ef206d150d87220600f62cf9f2057f168daebc03a3eb8"
     },
     {
       "id": "04b83c8904661017c70ad5eae6ed2b150c7c147aa2151624d19d5db63393270e",
@@ -243,7 +243,7 @@
     },
     {
       "id": "4a3ec32ed5c70fdf5987116eb1034ba533686aaf1a662a5c8240aa7f357b9e21",
-      "token": "9a7be389e92f726b8f72d58e3ca806f7ac6a1f4dea6f388d0c136a501acc454b"
+      "token": "23ffc703e6f1945309e51448391a680d5d53b839691857f23fe30385acc7f0b5"
     },
     {
       "id": "1c0a28b601e606528327ee81c0678701a41718467c75fde64178289c78d4e49f",

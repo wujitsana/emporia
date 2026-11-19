@@ -59,7 +59,7 @@ function removedLabel(removed: { by?: string; role?: string } | null): string {
     : `removed by ${removed.by ?? "?"} (${removed.role ?? "?"})`;
 }
 
-/** Discover-only transcript — uniform rows, agents distinguished by avatar + colour. */
+/** Discover-only transcript — uniform rows, agents distinguished by avatar + color. */
 export function ReadOnlyChat({
   messages,
   viewerId: _viewerId,

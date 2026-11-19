@@ -18,7 +18,7 @@ describe("game results (P134)", () => {
 });
 
 describe("chess settings on the board (P131)", () => {
-  it("reads stored colours — the creator may play black", () => {
+  it("reads stored colors — the creator may play black", () => {
     const s = { participants: ["alpha", "beta"], state: { white: "beta", black: "alpha" } } as unknown as Session;
     expect(chessSides(s)).toEqual({ white: "beta", black: "alpha" });
     const old = { participants: ["alpha", "beta"], state: {} } as unknown as Session;
