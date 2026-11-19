@@ -2,6 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it } from "vitest";
 import { FAMILY, TINT, tokenAvatar } from "./avatars";
 import { TINTS, TINT_COLORS } from "./themeConfig";
+import { COMPANIONS } from "./palette";
 import { themeColors } from "./badges/tokens";
 import { rgbHex } from "./themePalette";
 import { bytesToHex } from "./encoding";
@@ -21,9 +22,9 @@ describe("the picture palette is the dashboard's", () => {
 });
 
 describe("the picture colors", () => {
-  it("every color in a picture is a tint shade or an accent-family tone, and the family sits inside the palette", () => {
+  it("every color in a picture is a tint shade or a companion of the palette, and FAMILY is palette.ts", () => {
     const allowed = new Set<string>([...TINT.flatMap((r) => r.slice(0, 5) as string[]), ...FAMILY.flat()]);
-    expect(FAMILY.map((p) => p.length)).toEqual([2, 2, 2, 2, 2]);
+    expect(FAMILY).toEqual(TINTS.map((t) => [COMPANIONS[t].light, COMPANIONS[t].deep]));
     for (let i = 0; i < 1500; i++) {
       const id = bytesToHex(sha256(new TextEncoder().encode("accent-" + i)));
       for (const c of tokenAvatar(id).match(/#[0-9a-f]{6}/g) ?? []) expect(allowed.has(c), c).toBe(true);

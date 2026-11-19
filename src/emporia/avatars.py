@@ -10,18 +10,21 @@ copied or flattened. Hallmark: v2's 24 plates and all 135 marks.
 Integer math and literal tables only; avatars.ts produces the same bytes (see tests/fixtures/avatar_vectors.json).
 """
 
-# ---- palette: the dashboard's six tints, with exactly the colors its themes show (themePalette.ts, badges/tokens.ts) ------
-# ink = the dark theme's page background, paper = the light theme's page background, deep = the light theme's accent,
-# bright = the dark theme's accent. avatars.test.ts holds these rows to the theme code, so they cannot drift.
+# ---- palette: the dashboard's palette (dashboard/src/palette.ts), with exactly the colors its themes show ---------------------
+# ink = the dark theme's page background, paper = the light theme's page background, deep = the light theme's accent (the
+# tint's deep companion), bright = the dark theme's accent (its light companion; green is pinned to the video's #39ff44).
+# avatars.test.ts holds these rows to the theme code, so they cannot drift.
 #        tint       ink        paper      deep       bright    light tint?
 TINT = [
     ["#39ff44", "#001b00", "#ebfaea", "#006c00", "#39ff44", 1],  # green
-    ["#0047ff", "#051232", "#ecf6ff", "#1446c2", "#8bb6ff", 0],  # blue
-    ["#b00331", "#250a0c", "#fff0f0", "#a50029", "#ff8b91", 0],  # crimson
-    ["#d57c22", "#201004", "#fdf3ec", "#8c3900", "#fb9f4c", 1],  # burnt orange
+    ["#0047ff", "#051232", "#ecf6ff", "#005e8b", "#69cdff", 0],  # blue
+    ["#b00331", "#250a0c", "#fff0f0", "#743c76", "#ffbeff", 0],  # crimson
+    ["#d57c22", "#201004", "#fdf3ec", "#814400", "#ffad33", 1],  # burnt orange
     ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0],  # purple
     ["#888888", "#141414", "#ececec", "#555555", "#b7b7b7", 1],  # charcoal
 ]
+# The companions per tint, [light, deep], in the same order: the accents come from these.
+FAMILY = [["#72e072", "#006c00"], ["#69cdff", "#005e8b"], ["#ffbeff", "#743c76"], ["#ffad33", "#814400"], ["#dc97fb", "#74338e"], ["#b7b7b7", "#555555"]]
 SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
 
 
@@ -49,15 +52,11 @@ def luma(h):
 GUEST_GAP = 765000   # the accent's luma must differ from the ground by 30% of the full range (2,550,000)
 GUEST_GAP2 = 382500  # and from every other color of the picture by 15%
 MID = 1275000        # the ground's luma at the 50% midpoint: above it the ground is light
-# The accent family, two tones per hue: [pastel for dark and mid grounds, deep partner for light grounds].
-FAMILY = [["#69cdff", "#005e8b"], ["#72e072", "#006c00"], ["#ffad33", "#814400"], ["#ffbeff", "#743c76"], ["#888888", "#555555"]]  # blue green orange pink charcoal
-# Per tint (green blue crimson orange purple charcoal): the family hue to skip (crimson and purple skip pink).
-OWN = [1, 0, 3, 2, 3, 4]
 
 
 def guest_color(b):
-    """The accent. Ground light (luma over MID) -> the deep tone, else the pastel. Of the four hues but the picture's own
-    (charcoal aside), those clear of the ground by GUEST_GAP and of every other color by GUEST_GAP2, picked by b[2]; else
+    """The accent: another tint's companion. Ground light (luma over MID) -> the deep tone, else the light one. Of the other
+    tints' companions (charcoal's aside), those clear of the ground by GUEST_GAP and of every other color by GUEST_GAP2, picked by b[2]; else
     charcoal if clear; else a hue clear of the ground only; else the tint's own deep or bright shade clear of the ground;
     else the candidate with the largest smallest gap."""
     t, mode = b[0] % 6, b[1] % 8
@@ -72,12 +71,12 @@ def guest_color(b):
     def clear(c):
         return gap(c, others[0]) >= GUEST_GAP and all(gap(c, r) >= GUEST_GAP2 for r in others[1:])
 
-    hues = [FAMILY[i][tone] for i in range(4) if i != OWN[t]]
+    hues = [FAMILY[i][tone] for i in range(5) if i != t]
     ok = [c for c in hues if clear(c)]
     if ok:
         return ok[b[2] % len(ok)]
-    gray = FAMILY[4][tone]
-    if OWN[t] != 4 and clear(gray):
+    gray = FAMILY[5][tone]
+    if t != 5 and clear(gray):
         return gray
     ok = [c for c in hues if gap(c, others[0]) >= GUEST_GAP]
     if ok:
