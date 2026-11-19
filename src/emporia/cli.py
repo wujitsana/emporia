@@ -3935,9 +3935,11 @@ def cmd_features(args: argparse.Namespace) -> int:
         if not asked:
             print(f"features: name what to turn {args.action}: {', '.join(F.OPTIONAL)}")
             return 1
-        if args.action == "on" and "money" in asked and "money" not in now and not args.dir:
+        if args.action == "on" and "money" in asked and "money" not in now:
             from emporia import desktop_control
-            if why := desktop_control.refusal("the money feature", profile):
+            why = (desktop_control.declared_refusal("the money feature", held) if args.dir
+                   else desktop_control.refusal("the money feature", profile))
+            if why:
                 print(f"features: {why}")
                 return 1
         new = sorted(set(now) | set(asked) if args.action == "on" else set(now) - set(asked))
@@ -4195,6 +4197,10 @@ def _template_apply(profile: Path, key: str, *, rounds: bool, pname: str = "") -
     old = T.current(profile)
     lines = [f"Template: {T.get(old, profile).title} -> {t.title}" if old != t.key else f"Template: {t.title} (applied again)"]
     new_raw, before = T.features_for(t.key, raw_now, record, profile)
+    from emporia import desktop_control as _dc
+    if "money" in F.parse(new_raw) and "money" not in F.parse(raw_now) and (why := _dc.refusal("the money feature", profile)):
+        new_raw = F.render([n for n in F.parse(new_raw) if n != "money"], F.read_only(new_raw))
+        lines.append(f"Money left off: {why}.")
     if new_raw != raw_now:
         merge_env_file(profile / ".env", {F.SETTING: new_raw})
         installer().refresh_mcp_references(profile)
@@ -6685,7 +6691,7 @@ def doctor_desktop_control(rep: Report, profile: Path, dotenv: dict[str, str], c
     from emporia import desktop_control as dc, features as F
     if cfg is None:
         cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else None
-    found = dc.detect(cfg)
+    found = dc.detect(cfg, dc.profile_env(profile))
     level, text = dc.doctor_line(found)
     if level == "ok":
         rep.ok(text)

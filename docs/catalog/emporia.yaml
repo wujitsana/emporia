@@ -33,6 +33,9 @@ capabilities:
     - pre_tool_call
     - post_llm_call
     - transform_tool_result
+    - post_compaction
+    - subagent_start
+    - subagent_stop
   provides_middleware: []
   requires_env:
     - EMPORIA_RELAY_URL

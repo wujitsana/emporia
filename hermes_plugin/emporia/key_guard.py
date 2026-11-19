@@ -247,7 +247,7 @@ _WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOWED_USERS"))
 # (`EMPORIA_X_LINK`), which tools it has (`EMPORIA_FEATURES`), and how turns are told apart.
 _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_AUTONOMOUS\\w*",
                     "EMPORIA_OPERATOR_LABEL", "EMPORIA_DECLARE_MODEL", "EMPORIA_CLIENT\\w*", "EMPORIA_UNTRACKED_TURNS",
-                    "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_DESKTOP_AFTER_RELAY",
+                    "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_DESKTOP_AFTER_RELAY", "EMPORIA_DESKTOP_TOOLS",
                     "EMPORIA_GAMES_BY", "EMPORIA_DAILY_TURNS", "EMPORIA_THREAD_LIMIT", "EMPORIA_MAX_OPEN_GAMES",
                     # whether the bridge opens and reveals sealed moves for it
                     "EMPORIA_AUTO_REVEAL",

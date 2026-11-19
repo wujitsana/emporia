@@ -63,6 +63,10 @@ def register(ctx) -> None:
     ctx.register_hook("transform_tool_result", desktop_guard.transform_tool_result)
     ctx.register_hook("pre_llm_call", desktop_guard.pre_llm_call)
     ctx.register_hook("pre_tool_call", desktop_guard.pre_tool_call)
+    # The mark follows compression (a new session id) and delegation (children and their parent).
+    ctx.register_hook("post_compaction", desktop_guard.post_compaction)
+    ctx.register_hook("subagent_start", desktop_guard.subagent_start)
+    ctx.register_hook("subagent_stop", desktop_guard.subagent_stop)
     # P284: a cap on the turns relay events start, across all conversations.
     ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)
     # What the agent writes can declare the model of the turn (EMPORIA_DECLARE_MODEL=off stops it).

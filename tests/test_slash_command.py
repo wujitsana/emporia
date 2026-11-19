@@ -269,7 +269,8 @@ def test_the_plugin_adds_no_tool_and_declares_no_new_hook():
     """The agent-callable surface is unchanged: the command module defines no tool, and the manifest lists no tools."""
     manifest = yaml.safe_load((PLUGIN / "plugin.yaml").read_text())
     assert "provides_tools" not in manifest
-    assert manifest["provides_hooks"] == ["pre_llm_call", "pre_tool_call", "post_llm_call", "transform_tool_result"]
+    assert manifest["provides_hooks"] == ["pre_llm_call", "pre_tool_call", "post_llm_call", "transform_tool_result",
+                                          "post_compaction", "subagent_start", "subagent_stop"]     # the last three: desktop_guard
     src = (PLUGIN / "slash_command.py").read_text() + (PLUGIN / "__init__.py").read_text()
     assert "ctx.register_tool" not in src and "registry.register" not in src and "import registry" not in src
     assert re.findall(r"ctx\.register_command\(", src) == ["ctx.register_command("]

@@ -283,12 +283,14 @@ def _refuse_in_agent_session(cmd: str) -> bool:
     return False
 
 
-def _refuse_with_desktop_control(cmd: str, what: str) -> bool:
+def _refuse_with_desktop_control(cmd: str, what: str, t: _Target) -> bool:
     """`--browser` (the person's browser wallet signs) and `--from-agent-wallet` are refused, with no override, where
     the profile lets the agent control the desktop or a real browser (emporia.desktop_control). `--signature` and
     `--tx` (signed or sent elsewhere) are not asked."""
     from emporia import desktop_control
-    if why := desktop_control.refusal(what):
+    if t.profile is None:                      # an agent Hermes does not run has no profile to read: unknown
+        return False
+    if why := desktop_control.refusal(what, t.profile):    # the NAMED agent's profile, not the one this runs in
         print(f"agent {cmd}: {why}")
         return True
     return False
@@ -305,9 +307,9 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
         return 1
     if (signature or browser or from_agent_wallet) and _refuse_in_agent_session("link-8004"):
         return 1
-    if browser and _refuse_with_desktop_control("link-8004", "--browser has a browser wallet sign"):
+    if browser and _refuse_with_desktop_control("link-8004", "--browser has a browser wallet sign", t):
         return 1
-    if from_agent_wallet and _refuse_with_desktop_control("link-8004", "--from-agent-wallet signs with the agent's wallet"):
+    if from_agent_wallet and _refuse_with_desktop_control("link-8004", "--from-agent-wallet signs with the agent's wallet", t):
         return 1
     if from_agent_wallet and (signature or issued_at or browser or signer):
         print("agent link-8004: --from-agent-wallet signs with the agent's own wallet; do not give --signature, "
@@ -511,9 +513,9 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     if not chain:
         print("agent register-8004: --chain is required (base-sepolia is the only one open for now)")
         return 1
-    if browser and _refuse_with_desktop_control("register-8004", "--browser has a browser wallet send"):
+    if browser and _refuse_with_desktop_control("register-8004", "--browser has a browser wallet send", t):
         return 1
-    if from_agent_wallet and _refuse_with_desktop_control("register-8004", "--from-agent-wallet sends from the agent's wallet"):
+    if from_agent_wallet and _refuse_with_desktop_control("register-8004", "--from-agent-wallet sends from the agent's wallet", t):
         return 1
     if browser and tx:
         print("agent register-8004: --browser sends the transaction; --tx reads one already sent: give one of them")

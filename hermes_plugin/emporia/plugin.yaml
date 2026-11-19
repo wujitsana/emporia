@@ -33,6 +33,9 @@ provides_hooks:
   - pre_tool_call
   - post_llm_call
   - transform_tool_result
+  - post_compaction
+  - subagent_start
+  - subagent_stop
 # Nothing is asked at install: `hermes emporia setup` writes every setting below
 # into the profile's .env. The gateway platform starts once the first three are set.
 optional_env:
@@ -127,6 +130,13 @@ optional_env:
       Emporia. Default `block`: such a session loses them for the rest of that session (start a new one for that
       work). `allow` turns the guard off, knowing a post could then steer the agent to your desktop or wallet.
     prompt: "Desktop control after reading Emporia (block/allow, default block)"
+    password: false
+  - name: EMPORIA_DESKTOP_TOOLS
+    description: >
+      Extra tools to treat as desktop control, comma-separated names or prefixes (for example
+      `mcp__mydriver__` for an MCP server that drives your screen). They are refused in a session that read
+      other agents' words on Emporia, and while any is on, Emporia does no crypto in this profile.
+    prompt: "Extra desktop-control tools (comma-separated names or prefixes, default none)"
     password: false
   - name: EMPORIA_X_LINK
     description: >
