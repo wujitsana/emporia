@@ -13724,6 +13724,36 @@ var EmporiaHermesPlugin = (function(exports) {
 		clip$1 = (rgb) => rgb.map((x) => Math.min(1, Math.max(0, x)));
 		inGamut = (rgb) => rgb.every((x) => x >= -1e-6 && x <= 1 + 1e-6);
 	}));
+	// src/palette.ts
+	var COMPANIONS;
+	var init_palette = __esmMin((() => {
+		COMPANIONS = {
+			"tint-green": {
+				light: "#72e072",
+				deep: "#006c00"
+			},
+			"tint-blue": {
+				light: "#69cdff",
+				deep: "#005e8b"
+			},
+			"tint-red": {
+				light: "#ffbeff",
+				deep: "#743c76"
+			},
+			"tint-orange": {
+				light: "#ffad33",
+				deep: "#814400"
+			},
+			"tint-purple": {
+				light: "#dc97fb",
+				deep: "#74338e"
+			},
+			"tint-charcoal": {
+				light: "#b7b7b7",
+				deep: "#555555"
+			}
+		};
+	}));
 	// src/themePalette.ts
 	function vividPalette(tint, gamut = "css") {
 		const t = TINT_COLORS[tint];
@@ -13760,7 +13790,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			panel: relativeOklch(t, .253, (c) => c * .243, gamut),
 			border: relativeOklch(t, .366, (c) => c * .328, gamut),
 			text: relativeOklch(t, .962, (c) => c * .243, gamut),
-			accent: relativeOklch(t, (l) => Math.max(l, .78), (c) => Math.min(c, .22), gamut),
+			accent: hex(COMPANIONS[tint].light),
 			fill: hex(t),
 			fillInk: WHITE_INK.includes(tint) ? WHITE$2 : bg
 		};
@@ -13769,6 +13799,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_themePalette = __esmMin((() => {
 		init_color();
 		init_themeConfig();
+		init_palette();
 		WHITE$2 = [
 			1,
 			1,
@@ -15404,11 +15435,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		const gap = (c, r) => Math.abs(luma(c) - luma(r));
 		const clear = (c) => gap(c, others[0]) >= GUEST_GAP && others.slice(1).every((r) => gap(c, r) >= GUEST_GAP2);
 		const hues = [];
-		for (let i = 0; i < 4; i++) if (i !== OWN[t]) hues.push(FAMILY[i][tone]);
+		for (let i = 0; i < 5; i++) if (i !== t) hues.push(FAMILY[i][tone]);
 		let ok = hues.filter(clear);
 		if (ok.length) return ok[b[2] % ok.length];
-		const gray = FAMILY[4][tone];
-		if (OWN[t] !== 4 && clear(gray)) return gray;
+		const gray = FAMILY[5][tone];
+		if (t !== 5 && clear(gray)) return gray;
 		ok = hues.filter((c) => gap(c, others[0]) >= GUEST_GAP);
 		if (ok.length) return ok[b[2] % ok.length];
 		ok = [f[3], f[4]].filter((c) => gap(c, others[0]) >= GUEST_GAP);
@@ -15668,8 +15699,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	function tokenAvatar(id) {
 		return DRAWERS[idBytes(id)[31] % 8](id);
 	}
-	var TINT, SVG_OPEN, GUEST_GAP, GUEST_GAP2, MID, FAMILY, OWN, ROOM_WALLS, STRATA_Y3, STRATA_Y2, STRATA_ORDER, AMP, PLATES, MARK_PARTS, MARK_WIDEN, DRAWERS;
+	var TINT, FAMILY, SVG_OPEN, GUEST_GAP, GUEST_GAP2, MID, ROOM_WALLS, STRATA_Y3, STRATA_Y2, STRATA_ORDER, AMP, PLATES, MARK_PARTS, MARK_WIDEN, DRAWERS;
 	var init_avatars = __esmMin((() => {
+		init_palette();
+		init_themeConfig();
 		TINT = [
 			[
 				"#39ff44",
@@ -15683,24 +15716,24 @@ var EmporiaHermesPlugin = (function(exports) {
 				"#0047ff",
 				"#051232",
 				"#ecf6ff",
-				"#1446c2",
-				"#8bb6ff",
+				"#005e8b",
+				"#69cdff",
 				0
 			],
 			[
 				"#b00331",
 				"#250a0c",
 				"#fff0f0",
-				"#a50029",
-				"#ff8b91",
+				"#743c76",
+				"#ffbeff",
 				0
 			],
 			[
 				"#d57c22",
 				"#201004",
 				"#fdf3ec",
-				"#8c3900",
-				"#fb9f4c",
+				"#814400",
+				"#ffad33",
 				1
 			],
 			[
@@ -15720,25 +15753,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				1
 			]
 		];
+		FAMILY = TINTS.map((t) => [COMPANIONS[t].light, COMPANIONS[t].deep]);
 		SVG_OPEN = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\">";
 		GUEST_GAP = 765e3;
 		GUEST_GAP2 = 382500;
 		MID = 1275e3;
-		FAMILY = [
-			["#69cdff", "#005e8b"],
-			["#72e072", "#006c00"],
-			["#ffad33", "#814400"],
-			["#ffbeff", "#743c76"],
-			["#888888", "#555555"]
-		];
-		OWN = [
-			1,
-			0,
-			3,
-			2,
-			3,
-			4
-		];
 		ROOM_WALLS = [
 			[
 				1,
@@ -25551,7 +25570,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function accentFor(theme, tint, gamut = "css") {
 		if (theme === "vivid") return vividPalette(tint, gamut).accent;
 		if (theme === "dark") return deepPalette(tint, gamut).accent;
-		return relativeOklch(TINT_COLORS[tint], .45, (c) => Math.min(c, .2), gamut);
+		return hexToRgb(COMPANIONS[tint].deep);
 	}
 	function themeColors(style, theme, tint, gamut = "css") {
 		const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
@@ -25620,6 +25639,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_tokens = __esmMin((() => {
 		init_themeConfig();
 		init_color();
+		init_palette();
 		init_themePalette();
 		DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
 		WASH = { light: .45 };
@@ -28948,16 +28968,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$73 = require_jsx_runtime();
 	}));
 	// src/ui/ReadOnlyChat.tsx
-	function senderHue(s) {
+	function senderCompanions(s) {
 		let h = 2166136261;
 		for (let i = 0; i < s.length; i++) {
 			h ^= s.charCodeAt(i);
 			h = Math.imul(h, 16777619);
 		}
-		return SENDER_PALETTE[(h >>> 0) % SENDER_PALETTE.length];
-	}
-	function senderColor(id) {
-		return `hsl(${senderHue(id)}, 65%, 58%)`;
+		return COMPANIONS[TINTS[(h >>> 0) % TINTS.length]];
 	}
 	/** P192: how a removed message reads — who removed it, in what role. */
 	function removedLabel(removed) {
@@ -28974,7 +28991,11 @@ var EmporiaHermesPlugin = (function(exports) {
 					className: "e-faint",
 					children: emptyLabel
 				}) : messages.map((m) => {
-					const color = senderColor(m.sender_id);
+					const c = senderCompanions(m.sender_id);
+					const color = {
+						"--e-sender-light": c.light,
+						"--e-sender-deep": c.deep
+					};
 					return /* @__PURE__ */ (0, import_jsx_runtime$72.jsxs)("div", {
 						className: "e-chat-line",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)(AgentMoireAvatar, {
@@ -28988,7 +29009,7 @@ var EmporiaHermesPlugin = (function(exports) {
 								children: [
 									/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("span", {
 										className: "e-chat-line__name",
-										style: { color },
+										style: color,
 										children: /* @__PURE__ */ (0, import_jsx_runtime$72.jsx)(AgentName, {
 											id: m.sender_id,
 											children: m.sender_id
@@ -29050,26 +29071,16 @@ var EmporiaHermesPlugin = (function(exports) {
 			}) : null]
 		});
 	}
-	var import_jsx_runtime$72, SENDER_PALETTE;
+	var import_jsx_runtime$72;
 	var init_ReadOnlyChat = __esmMin((() => {
 		init_Text();
+		init_palette();
+		init_themeConfig();
 		init_AgentMoireAvatar();
 		init_relayFormat();
 		init_chips();
 		init_AgentName();
 		import_jsx_runtime$72 = require_jsx_runtime();
-		SENDER_PALETTE = [
-			210,
-			0,
-			145,
-			280,
-			235,
-			175,
-			300,
-			195,
-			255,
-			100
-		];
 	}));
 	// src/integrityCheck.ts
 	/** `json.dumps(payload, sort_keys=True, separators=(",", ":"))` for a flat
