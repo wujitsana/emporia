@@ -24,7 +24,7 @@ HARNESS = Path(__file__).parent / "fixtures" / "browser_sign" / "harness.mjs"
 
 def typed(signer="0x" + "11" * 20, issued=1_700_000_000):
     return erc8004.typed_data_json(erc8004.agent_link_typed_data(
-        84532, ERC8004_REGISTRIES[SEPOLIA], AGENT, signer, STABLE, issued))
+        84532, ERC8004_REGISTRIES[SEPOLIA], AGENT, signer, STABLE, issued, "kestrel"))
 
 
 def page(td=None, **kw):
@@ -94,7 +94,10 @@ def test_a_foreign_host_header_is_refused_so_a_rebinding_page_gets_nothing():
     t, _ = serve(p)
     try:
         assert request(p, "GET", "/" + p.token, host="evil.example")[0] == 404
-        assert request(p, "GET", "/" + p.token, host=f"localhost:{p.port}")[0] == 404
+        for bad in (f"localhost.evil.example:{p.port}", f"127.0.0.1:{p.port + 1}", f"127.0.0.1.evil.example:{p.port}",
+                    "127.0.0.1", f"[::1]:{p.port}", f"172.20.0.2:{p.port}"):
+            assert request(p, "GET", "/" + p.token, host=bad)[0] == 404, bad
+        assert request(p, "GET", "/" + p.token, host=f"localhost:{p.port}")[0] == 200      # the tunnel's own name
     finally:
         p.timeout = 0
         t.join(3)
@@ -116,7 +119,8 @@ def test_the_page_carries_a_strict_csp_with_its_nonce_and_the_other_headers():
         assert h["cache-control"] == "no-store" and h["content-type"].startswith("text/html")
         # a fresh nonce per load, and nothing is loaded from anywhere else
         assert request(p, "GET", "/" + p.token)[1]["content-security-policy"] != h["content-security-policy"]
-        assert not re.search(r"""(src|href)\s*=\s*["']?(https?:)?//""", html) and "https://" not in html
+        loaded = re.sub(r'<script type="application/json" id="page-data">.*?</script>', "", html, flags=re.S)
+        assert not re.search(r"""(src|href)\s*=\s*["']?(https?:)?//""", loaded) and "https://" not in loaded
         assert request(p, "GET", "/nope")[1]["content-security-policy"] == "default-src 'none'"
     finally:
         p.timeout = 0
