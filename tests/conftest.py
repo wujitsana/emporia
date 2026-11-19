@@ -775,3 +775,17 @@ def _relays_given_as_flags_answer(monkeypatch):
     a stub `cli.health`, or set `cli.relay_probe` themselves."""
     from emporia import cli
     monkeypatch.setattr(cli, "relay_probe", lambda url: ("ok", {"service": "Emporia", "relay_id": "rel_test"}))
+
+
+@pytest.fixture(autouse=True)
+def _browser_sign_as_a_plain_local_machine(monkeypatch):
+    """The browser-signing page picks its listen address and instructions from where it runs (a container, an SSH
+    session). The test machine may be either; tests that check those cases pass their own root or env."""
+    try:
+        from emporia import browser_sign as bs
+    except Exception:  # noqa: BLE001
+        return
+    real_in, real_ssh = bs.in_container, bs.ssh_session
+    monkeypatch.setattr(bs, "in_container", lambda root="/", env=None: False if (str(root) == "/" and env is None)
+                        else real_in(root, env))
+    monkeypatch.setattr(bs, "ssh_session", lambda env=None: False if env is None else real_ssh(env))
