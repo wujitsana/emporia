@@ -1,17 +1,21 @@
 """A one-shot local page for signing the ERC-8004 link statement (or sending the registration transaction) with a browser wallet.
 
 Runs only while `emporia agent link-8004 NAME --browser` (or `register-8004 NAME --browser`) waits, and never inside the dashboard (which has no wallet UI).
-The standard library only: `http.server` on 127.0.0.1 at a random port, one page, one POST.
+The standard library only: `http.server`, one page, one POST. It listens on loopback at a random port by default;
+`--port` fixes the port (for an SSH tunnel) and `--listen` picks the address: inside a container the page listens on the
+container's own private address so the host can tunnel to it. It never listens on a public interface (`resolve_listen`).
 
 * The address carries a one-time token (`/<token>`). Any other path, or a wrong token, is a plain 404; the Host
-  header must be this server's own address (so a rebinding page cannot reach it) and a POST's Origin, when sent, must
-  be this page's.
+  header must be `127.0.0.1:PORT` or `localhost:PORT` (`[::1]:PORT` for an IPv6 loopback listener): the address the
+  browser uses through a tunnel, never another name (so a rebinding page cannot reach it); a POST's Origin, when sent,
+  must be one of those origins.
 * It accepts one well-formed signature, answers it, and stops. It also stops after `TIMEOUT` seconds, or on Ctrl-C.
   A malformed POST is refused and does not use the one.
 * Strict CSP: nothing loads from anywhere; the one script and one style are inline, by nonce; the page may only
   talk to its own origin. `nosniff`, no referrer, no caching, no framing.
 * The page asks the wallet for the account, checks the wallet's chain against the link's and, if they differ, asks the
-  wallet to switch (`wallet_switchEthereumChain`) and says so when the wallet refuses; then one `eth_signTypedData_v4`.
+  wallet to switch (`wallet_switchEthereumChain`); a wallet that does not know the chain (error 4902) is offered it
+  through `wallet_addEthereumChain` with Emporia's public parameters for that chain, then asked to switch again; then one `eth_signTypedData_v4`.
   Wallets are found through EIP-6963 announcements, falling back to `window.ethereum`. No SDK, no remote script.
 
 The page never decides anything: the CLI verifies the returned signature exactly as it does one given with
@@ -20,12 +24,16 @@ The page never decides anything: the CLI verifies the returned signature exactly
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
+import os
 import re
 import secrets
+import socket
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 TIMEOUT = 600.0                      # seconds the page stays up
@@ -39,6 +47,159 @@ _TX = re.compile(r"0x[0-9a-fA-F]{64}")
 
 class BrowserSignError(Exception):
     """Said to the person as it is."""
+
+
+# -- where the page listens, and how the person reaches it ------------------------------------------------------
+PORT_MIN, PORT_MAX = 1024, 65535
+_PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "fc00::/7", "fe80::/10"))
+
+
+def check_port(port: int | str | None) -> int:
+    """0 (a random port) or a port in 1024-65535; BrowserSignError otherwise."""
+    try:
+        n = int(port or 0)
+    except (TypeError, ValueError):
+        raise BrowserSignError(f"--port must be a number from {PORT_MIN} to {PORT_MAX}") from None
+    if n != 0 and not PORT_MIN <= n <= PORT_MAX:
+        raise BrowserSignError(f"--port must be from {PORT_MIN} to {PORT_MAX} (got {n})")
+    return n
+
+
+def validate_listen(addr: str) -> str:
+    """The address, if the page may listen on it: loopback, private (RFC 1918, 100.64/10, fc00::/7) or link-local.
+    Everything else (0.0.0.0, ::, a public address, a name) is refused: the page never listens on a public interface."""
+    text = str(addr or "").strip()
+    try:
+        ip = ipaddress.ip_address(text)
+    except ValueError:
+        raise BrowserSignError(f"--listen takes an IP address (or auto), not {text!r}") from None
+    if ip.is_unspecified:
+        raise BrowserSignError("--listen refuses 0.0.0.0 and ::: they listen on every interface, public ones included. "
+                               "Give one private address, or leave it on auto")
+    if not (ip.is_loopback or any(ip in net for net in _PRIVATE_NETS)):
+        raise BrowserSignError(f"--listen refuses {text}: it is a public address, and this page must never listen on "
+                               "one. Use auto, 127.0.0.1, or a private address (10.x, 172.16-31.x, 192.168.x)")
+    return str(ip)
+
+
+def in_container(root: str | Path = "/", env: dict[str, str] | None = None) -> bool:
+    """True inside a container: `/.dockerenv` or `/run/.containerenv`, a container word in `/proc/1/cgroup` or
+    `/proc/self/mountinfo`, or a `container` variable in the environment. `root` and `env` are for tests."""
+    root = Path(root)
+    env = os.environ if env is None else env
+    if env.get("container"):
+        return True
+    if (root / ".dockerenv").exists() or (root / "run/.containerenv").exists():
+        return True
+    for rel in ("proc/1/cgroup", "proc/self/mountinfo"):
+        try:
+            text = (root / rel).read_text(errors="replace")
+        except OSError:
+            continue
+        if re.search(r"docker|containerd|kubepods|libpod|lxc", text):
+            return True
+    return False
+
+
+def _default_gateway(route_file: str | Path = "/proc/net/route") -> str:
+    """The default gateway's IPv4 address from the kernel's route table ('' when there is none)."""
+    try:
+        lines = Path(route_file).read_text().splitlines()[1:]
+    except OSError:
+        return ""
+    for line in lines:
+        f = line.split()
+        try:
+            if len(f) >= 4 and f[1] == "00000000" and int(f[3], 16) & 2:
+                return socket.inet_ntoa(bytes.fromhex(f[2])[::-1])
+        except (ValueError, OSError):
+            continue
+    return ""
+
+
+def container_ip(route_file: str | Path = "/proc/net/route") -> str:
+    """This container's own private IPv4: the source address the kernel picks for the default gateway. A UDP connect
+    sends nothing. '' when it cannot be found."""
+    target = _default_gateway(route_file) or "192.0.2.1"       # TEST-NET-1: only the route is looked up
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect((target, 9))
+        return s.getsockname()[0]
+    except OSError:
+        return ""
+    finally:
+        s.close()
+
+
+def resolve_listen(listen: str = "auto", *, container: bool | None = None) -> str:
+    """`auto` -> 127.0.0.1, or inside a container the container's private address; else the validated address."""
+    want = str(listen or "auto").strip().lower()
+    if want != "auto":
+        return validate_listen(want)
+    if container is None:
+        container = in_container()
+    if container:
+        try:
+            return validate_listen(container_ip())
+        except BrowserSignError:
+            pass                       # no private address found: loopback (a published port will not reach it)
+    return HOST
+
+
+def ssh_session(env: dict[str, str] | None = None) -> bool:
+    env = os.environ if env is None else env
+    return bool(env.get("SSH_CONNECTION") or env.get("SSH_CLIENT"))
+
+
+def page_url(listen: str, port: int, token: str) -> str:
+    """What the browser opens: always the loopback address on this port (through a tunnel it is the local end)."""
+    return f"http://{'[::1]' if listen == '::1' else HOST}:{port}/{token}"
+
+
+def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname: str = "", token: str = "",
+                 chain_label: str = "", registry: str = "", what: str = "signature") -> tuple[str, bool]:
+    """What to tell the person when the page starts, for the setup detected, and whether this machine opens the browser
+    (only a local, non-container session does). The browser-side URL is always http://127.0.0.1:PORT/<token>, so a
+    tunnel's local port must equal PORT."""
+    url = page_url(listen, port, token)
+    target = "127.0.0.1" if listen in ("127.0.0.1", "::1") else listen
+    tunnel = f"ssh -L {port}:{target}:{port} <you>@{hostname or '<this-host>'}"
+    ssh_text = (f"  Your browser is on another machine. On THAT machine, in a new terminal, run:\n\n"
+                f"    {tunnel}\n\n"
+                f"  (replace <you> with your login on this host; keep that terminal open). The local port must be {port},\n"
+                f"  the same number: the page only answers at 127.0.0.1:{port}. Then open this in your browser:\n\n"
+                f"    {url}\n")
+    desktop_text = (f"\n  Docker Desktop (macOS/Windows) cannot reach a container's own address. There, publish the "
+                    f"port on the host's\n  loopback only and open the URL on that machine. In compose:\n\n"
+                    f"    ports: [\"127.0.0.1:{port}:{port}\"]\n\n"
+                    f"  (or docker run -p 127.0.0.1:{port}:{port}); run this command with --port {port}.\n  Never publish it on 0.0.0.0. Then open:\n\n"
+                    f"    {url}\n")
+    if ssh:
+        text = ssh_text
+    elif container:
+        text = ssh_text + desktop_text
+    else:
+        text = f"  Opening your browser at this address (it works on this machine only):\n\n    {url}\n"
+    check = f"  Check the wallet popup: network {chain_label}" if chain_label else "  Check the wallet popup"
+    if registry:
+        check += f", and the 'to' address {registry}"
+    check += f". This page only asks for this one {what} and closes.\n"
+    return text + "\n" + check, not (ssh or container)
+
+
+def chain_params(chain_id: int) -> dict | None:
+    """`wallet_addEthereumChain` parameters from Emporia's own network list, for a chain it knows (else None)."""
+    from emporia.networks import NETWORKS
+    n = NETWORKS.get(f"eip155:{chain_id}")
+    if n is None or n.family != "evm" or not n.rpc:
+        return None
+    out: dict[str, Any] = {"chainId": hex(chain_id), "chainName": n.label,
+                           "nativeCurrency": {"name": "Ether", "symbol": "ETH", "decimals": 18}, "rpcUrls": [n.rpc]}
+    base = n.explorer.removesuffix("tx/").rstrip("/") if n.explorer else ""
+    if base:
+        out["blockExplorerUrls"] = [base]
+    return out
 
 
 def _json_for_html(value: Any) -> str:
@@ -87,8 +248,18 @@ SCRIPT = r"""
   async function ensureChain(p) {
     if (await chainId(p) === wantChain) return true;
     say("Your wallet is on another chain. Asking it to switch to " + doc.chain_label + "...");
+    const sw = () => p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChain(wantChain) }] });
     try {
-      await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChain(wantChain) }] });
+      try {
+        await sw();
+      } catch (e) {
+        if (!(e && e.code === 4902 && doc.add_chain)) throw e;
+        // The wallet does not know the chain: offer it Emporia's public parameters for it, then switch again.
+        say("Your wallet does not know " + doc.chain_label + ". Asking it to add the network (public settings: " +
+            doc.add_chain.rpcUrls[0] + ")...");
+        await p.request({ method: "wallet_addEthereumChain", params: [doc.add_chain] });
+        if (await chainId(p) !== wantChain) await sw();
+      }
     } catch (e) {
       say("Your wallet did not switch to " + doc.chain_label + " (chain id " + wantChain + ")" +
           (refused(e) ? ": you declined" : e && e.code === 4902 ? ": it does not know that chain" : "") +
@@ -151,7 +322,8 @@ SCRIPT = r"""
 def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str) -> str:
     """The page. `typed_data` is the JSON form a wallet takes (`erc8004.typed_data_json`)."""
     msg = typed_data["message"]
-    data = _json_for_html({"typed_data": typed_data, "chain_label": chain_label})
+    data = _json_for_html({"typed_data": typed_data, "chain_label": chain_label,
+                           "add_chain": chain_params(int(typed_data["domain"]["chainId"]))})
     shown = html.escape(json.dumps({k: typed_data[k] for k in ("domain", "primaryType", "message")}, indent=2))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -161,6 +333,7 @@ def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str
 <p>Signing links ERC-8004 agent #{html.escape(str(msg['agentId']))} on {html.escape(chain_label)} to the Emporia agent
 {html.escape(agent_name)}. It moves no funds and grants no permission: nothing goes on-chain and it costs no gas.</p>
 <p class="dim">Signer: <code>{html.escape(str(msg['signer']))}</code></p>
+<p class="dim">Check the wallet popup: network {html.escape(chain_label)}. This page only asks for this one signature and closes.</p>
 <p><select id="wallet" hidden aria-label="wallet"></select> <button id="sign" type="button" disabled>Sign</button></p>
 <p id="status" role="status"></p>
 <p id="nowallet" class="dim" hidden>No wallet was found in this browser. Open this page where your browser wallet is, or sign
@@ -176,7 +349,7 @@ the message below with the signer's wallet some other way and give it to the ter
 def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, nonce: str) -> str:
     """The page for sending one transaction from the person's wallet. `tx` is `{chain_id, to, data}`; `summary` is the
     plain-words account of what it does (the CLI printed it too). Nothing is sent without the wallet's own prompt."""
-    data = _json_for_html({"tx": tx, "chain_label": chain_label})
+    data = _json_for_html({"tx": tx, "chain_label": chain_label, "add_chain": chain_params(int(tx["chain_id"]))})
     shown = html.escape(json.dumps({"chain id": tx["chain_id"], "to (the registry)": tx["to"], "value": "0",
                                     "data": tx["data"]}, indent=2))
     return f"""<!doctype html>
@@ -186,7 +359,8 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
 <h1>Register {html.escape(agent_name)} on ERC-8004</h1>
 <p>{html.escape(summary)}</p>
 <p class="dim">Your wallet will ask you to confirm one transaction on {html.escape(chain_label)}. Check its prompt against
-the call below before you confirm.</p>
+the call below before you confirm. Check the network ({html.escape(chain_label)}) and the &ldquo;to&rdquo; address
+{html.escape(tx['to'])}. This page only asks for this one transaction and closes.</p>
 <p><select id="wallet" hidden aria-label="wallet"></select> <button id="sign" type="button" disabled>Send the registration</button></p>
 <p id="status" role="status"></p>
 <p id="nowallet" class="dim" hidden>No wallet was found in this browser. Open this page where your browser wallet is, or send
@@ -212,7 +386,8 @@ class SigningPage:
     `SendPage` is the same page for sending one transaction: it overrides `render` and `accept` only."""
 
     def __init__(self, typed_data: dict, *, chain_label: str, agent_name: str, token: str | None = None,
-                 timeout: float = TIMEOUT):
+                 timeout: float = TIMEOUT, port: int = 0, listen: str = HOST):
+        self.port_wanted, self.listen = check_port(port), validate_listen(listen)
         self.typed_data, self.chain_label, self.agent_name = typed_data, chain_label, agent_name
         self.token = token or secrets.token_urlsafe(24)
         self.timeout = timeout
@@ -243,7 +418,14 @@ class SigningPage:
 
     @property
     def url(self) -> str:
-        return f"http://{HOST}:{self.port}/{self.token}"
+        return page_url(self.listen, self.port, self.token)
+
+    def own_hosts(self) -> set[str]:
+        """The Host values the browser sends (through a tunnel or a published port): loopback names only."""
+        names = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
+        if self.listen == "::1":
+            names.add(f"[::1]:{self.port}")
+        return names
 
     def start(self) -> SigningPage:
         page = self
@@ -272,7 +454,7 @@ class SigningPage:
                     self.wfile.write(body)
 
             def _own_host(self) -> bool:
-                return self.headers.get("Host", "") == f"{HOST}:{page.port}"
+                return self.headers.get("Host", "") in page.own_hosts()
 
             def _route(self) -> str:
                 """'page' | 'sign' | '' for this path: only the right token gets either."""
@@ -296,7 +478,7 @@ class SigningPage:
                 if not self._own_host() or self._route() != "sign":
                     return self._send(404, b"not found")
                 origin = self.headers.get("Origin")
-                if origin is not None and origin != f"http://{HOST}:{page.port}":
+                if origin is not None and origin not in {f"http://{h}" for h in page.own_hosts()}:
                     return self._send(403, b"wrong origin")
                 if page.result is not None:
                     return self._send(409, b"a signature was already received")
@@ -323,7 +505,14 @@ class SigningPage:
 
         # One thread per connection (daemon, never joined), so an idle browser pre-connection cannot hold the
         # accept loop past the time limit; each connection's socket times out on its own (CONN_TIMEOUT).
-        self._server = ThreadingHTTPServer((HOST, 0), Handler)
+        class Server(ThreadingHTTPServer):
+            address_family = socket.AF_INET6 if ":" in page.listen else socket.AF_INET
+
+        try:
+            self._server = Server((self.listen, self.port_wanted), Handler)
+        except OSError as e:
+            raise BrowserSignError(f"cannot listen on {self.listen}:{self.port_wanted}: {e.strerror or e}"
+                                   + (" (that port is in use: pick another with --port)" if self.port_wanted else "")) from e
         self._server.daemon_threads = True
         self._server.timeout = 0.2
         return self
@@ -351,7 +540,8 @@ class SendPage(SigningPage):
     that sent it); the CLI then reads the chain itself, trusting nothing the page says. `tx` is `{chain_id, to, data}`."""
 
     def __init__(self, tx: dict, *, chain_label: str, agent_name: str, summary: str, token: str | None = None,
-                 timeout: float = TIMEOUT):
+                 timeout: float = TIMEOUT, port: int = 0, listen: str = HOST):
+        self.port_wanted, self.listen = check_port(port), validate_listen(listen)
         self.tx, self.summary = tx, summary
         self.typed_data = {}
         self.chain_label, self.agent_name = chain_label, agent_name

@@ -298,12 +298,15 @@ def _refuse_with_desktop_control(cmd: str, what: str, t: _Target) -> bool:
 
 def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature: str = "",
               issued_at: int = 0, yes: bool = False, browser: bool = False, wait: bool = False,
-              from_agent_wallet: bool = False) -> int:
+              from_agent_wallet: bool = False, port: int = 0, listen: str = "auto") -> int:
     """`emporia agent link-8004 NAME --chain C --agent-id N [--signer 0x..] [--signature 0x.. --issued-at T | --browser |
     --from-agent-wallet] [--wait]`. `--wait` first waits (reads only) until the chain's finalized state holds the agent.
     `--from-agent-wallet` has the agent's own wallet sign the statement (for an identity that wallet owns)."""
     t = _link_target("link-8004", name)
     if t is None:
+        return 1
+    if (port or listen != "auto") and not browser:
+        print("agent link-8004: --port and --listen go with --browser")
         return 1
     if (signature or browser or from_agent_wallet) and _refuse_in_agent_session("link-8004"):
         return 1
@@ -332,7 +335,7 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
         if seen is None:
             return 1
     if browser:
-        return _link_in_browser(t, name, chain, agent_id, signer, yes)
+        return _link_in_browser(t, name, chain, agent_id, signer, yes, port=port, listen=listen)
     if not signature:
         out = _chain_run(t, "ask", chain, agent_id, signer)
         if not out.get("success"):
@@ -367,14 +370,45 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
     return 0
 
 
-def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: str, yes: bool, *,
-                     timeout: float | None = None) -> int:
-    """`--browser`: read the chain, serve one local page for the wallet to sign (browser_sign), then check and record
-    what comes back exactly as `--signature` does. Nothing is served unless the chain backs the signer."""
+def _browser_listen(cmd: str, port: int, listen: str) -> str | None:
+    """Check `--port` and `--listen` for a `--browser` run: the address to listen on, or None (said)."""
+    from emporia import browser_sign
+    try:
+        browser_sign.check_port(port)
+        return browser_sign.resolve_listen(listen or "auto")
+    except browser_sign.BrowserSignError as e:
+        print(f"agent {cmd}: {e}")
+        return None
+
+
+def _announce_page(page: Any, *, chain_label: str, registry: str, what: str, lead: str) -> None:
+    """Say how to reach the page for the setup detected (local, SSH, container), then open the browser only when this is
+    a local session (a browser on a server or in a container is not the person's)."""
+    import socket
     import webbrowser
 
     from emporia import browser_sign
+    container, ssh = browser_sign.in_container(), browser_sign.ssh_session()
+    host = "" if container else socket.gethostname()
+    text, opens = browser_sign.instructions(page.port, page.listen, container=container, ssh=ssh, hostname=host,
+                                            token=page.token, chain_label=chain_label, registry=registry, what=what)
+    print(f"\n  {lead}\n\n{text}")
+    if opens:
+        try:
+            webbrowser.open(page.url)       # best effort: the URL above is the fallback
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: str, yes: bool, *,
+                     timeout: float | None = None, port: int = 0, listen: str = "auto") -> int:
+    """`--browser`: read the chain, serve one local page for the wallet to sign (browser_sign), then check and record
+    what comes back exactly as `--signature` does. Nothing is served unless the chain backs the signer."""
+    from emporia import browser_sign
     cli = _cli()
+    addr = _browser_listen("link-8004", port, listen)
+    if addr is None:
+        return 1
     if not yes and not cli._persons_terminal():
         print("agent link-8004: recording publishes the wallet address on the card; there is no terminal to ask in. "
               "Run it in your own terminal, or add --yes.")
@@ -390,14 +424,15 @@ def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: s
               "nothing to sign. Give --signer for the wallet that controls it.")
         return 1
     print(f"  Once signed the card will say: {out['tier']} ({out['tier_wording']}).")
-    page = browser_sign.SigningPage(out["typed_data"], chain_label=out["chain_label"], agent_name=name,
-                                    **({} if timeout is None else {"timeout": timeout})).start()
-    print(f"\n  Open this page in the browser that has your wallet (it only exists while this command waits; "
-          f"closes after one signature or {int(page.timeout // 60)} minutes; Ctrl-C cancels):\n\n    {page.url}\n")
     try:
-        webbrowser.open(page.url)           # best effort: the URL above is the fallback
-    except Exception:  # noqa: BLE001
-        pass
+        page = browser_sign.SigningPage(out["typed_data"], chain_label=out["chain_label"], agent_name=name, port=port,
+                                        listen=addr, **({} if timeout is None else {"timeout": timeout})).start()
+    except browser_sign.BrowserSignError as e:
+        print(f"agent link-8004: {e}")
+        return 1
+    _announce_page(page, chain_label=out["chain_label"], registry=str(out["typed_data"]["domain"]["verifyingContract"]),
+                   what="signature", lead=f"Open this page in the browser that has your wallet (it only exists while "
+                   f"this command waits; closes after one signature or {int(page.timeout // 60)} minutes; Ctrl-C cancels).")
     try:
         got = page.wait()
     except browser_sign.BrowserSignError as e:
@@ -501,12 +536,15 @@ def _cmd_chain(chain: str) -> str:
 
 def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bool = False,
                   browser: bool = False, wait: bool = False, from_agent_wallet: bool = False,
-                  max_gas: int = 0, no_image: bool = False) -> int:
+                  max_gas: int = 0, no_image: bool = False, port: int = 0, listen: str = "auto") -> int:
     """`emporia agent register-8004 NAME --chain C [--from 0x..] [--browser | --tx HASH | --from-agent-wallet --max-gas N]
     [--no-image] [--wait]`: the own-wallet path. The registration carries the agent's token picture unless `--no-image`. `--wait` (with --tx, --browser or --from-agent-wallet) waits for the receipt to be
     safe and the block finalized, then links."""
     t = _link_target("register-8004", name)
     if t is None:
+        return 1
+    if (port or listen != "auto") and not browser:
+        print("agent register-8004: --port and --listen go with --browser")
         return 1
     if _refuse_in_agent_session("register-8004"):
         return 1
@@ -545,7 +583,7 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     _print_register(name, out)
     if not browser:
         return 0
-    return _register_in_browser(t, name, chain, out, yes, wait)
+    return _register_in_browser(t, name, chain, out, yes, wait, port, listen)
 
 
 def _person_at_terminal(cmd: str) -> bool:
@@ -649,12 +687,14 @@ def _print_register(name: str, out: dict[str, Any]) -> None:
     print(f"\n  When it is mined: emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --tx 0xHASH")
 
 
-def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool, wait: bool = False) -> int:
+def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool, wait: bool = False,
+                         port: int = 0, listen: str = "auto") -> int:
     """`--browser`: serve one local page that has the person's wallet send the call, then continue as `--tx`."""
-    import webbrowser
-
     from emporia import browser_sign
     cli = _cli()
+    addr = _browser_listen("register-8004", port, listen)
+    if addr is None:
+        return 1
     if not yes and not cli._persons_terminal():
         print("agent register-8004: sending is the person's act and there is no terminal to ask in. Run it in your own "
               "terminal, or add --yes.")
@@ -666,14 +706,16 @@ def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any
     summary = (f"Sends register(agentURI) to the ERC-8004 identity registry on {built['chain_label']}, from the account "
                f"you pick in your wallet. That account will own the new identity. Emporia sends nothing itself; "
                f"your wallet shows the gas.")
-    page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
-                                 chain_label=built["chain_label"], agent_name=name, summary=summary).start()
-    print(f"\n  Open this page in the browser that has your wallet (it only exists while this command waits; "
-          f"closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels):\n\n    {page.url}\n")
     try:
-        webbrowser.open(page.url)           # best effort: the URL above is the fallback
-    except Exception:  # noqa: BLE001
-        pass
+        page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
+                                     chain_label=built["chain_label"], agent_name=name, summary=summary, port=port,
+                                     listen=addr).start()
+    except browser_sign.BrowserSignError as e:
+        print(f"agent register-8004: {e}")
+        return 1
+    _announce_page(page, chain_label=built["chain_label"], registry=built["registry"], what="transaction",
+                   lead=f"Open this page in the browser that has your wallet (it only exists while this command "
+                   f"waits; closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels).")
     try:
         got = page.wait()
     except browser_sign.BrowserSignError as e:
@@ -777,13 +819,17 @@ def _link_own_wallet(t: _Target, name: str, chain: str, agent_id: str, yes: bool
 
 
 def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: bool = False, browser: bool = False,
-                    wait: bool = False, from_agent_wallet: bool = False, max_gas: int = 0) -> int:
+                    wait: bool = False, from_agent_wallet: bool = False, max_gas: int = 0,
+                    port: int = 0, listen: str = "auto") -> int:
     """`emporia agent set-8004-wallet NAME --chain C --agent-id N [--browser | --from-agent-wallet --max-gas N | --tx HASH]
     [--wait]`: point the identity's `agentWallet` at the agent's own wallet. The agent's wallet signs the registry's
     consent here; the identity's owner sends the call (printed, `--browser`, or the agent's own wallet when it is the
     owner). `--tx` reads the result at the safe block."""
     t = _link_target("set-8004-wallet", name)
     if t is None:
+        return 1
+    if (port or listen != "auto") and not browser:
+        print("agent set-8004-wallet: --port and --listen go with --browser")
         return 1
     if _refuse_in_agent_session("set-8004-wallet"):
         return 1
@@ -816,7 +862,7 @@ def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: boo
         print(f"  When it is mined: emporia agent set-8004-wallet {name} --chain {_cmd_chain(out['chain'])} "
               f"--agent-id {out['agent_id']} --tx 0xHASH")
         return 0
-    return _set_wallet_in_browser(t, name, chain, out, yes, wait)
+    return _set_wallet_in_browser(t, name, chain, out, yes, wait, port, listen)
 
 
 def _print_set_wallet(name: str, out: dict[str, Any]) -> bool:
@@ -871,12 +917,14 @@ def _set_wallet_from_agent_wallet(t: _Target, name: str, chain: str, agent_id: s
     return _wallet_after(t, name, chain, agent_id, sent["tx_hash"], waiting=True, wait=wait)
 
 
-def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool, wait: bool) -> int:
+def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any], yes: bool, wait: bool,
+                           port: int = 0, listen: str = "auto") -> int:
     """`--browser`: one local page that has the owner's wallet send the call, then continue as `--tx`."""
-    import webbrowser
-
     from emporia import browser_sign
     cli = _cli()
+    addr = _browser_listen("set-8004-wallet", port, listen)
+    if addr is None:
+        return 1
     if not yes and not cli._persons_terminal():
         print("agent set-8004-wallet: sending is the person's act and there is no terminal to ask in. Run it in your "
               "own terminal, or add --yes.")
@@ -890,16 +938,17 @@ def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, A
                f"registry refuses any other. It names {name}'s own wallet as where the identity is paid; ownership "
                f"and funds do not change. The consent is valid for about {built['valid_seconds'] // 60} minutes. "
                "Emporia sends nothing itself; your wallet shows the gas.")
-    page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
-                                 chain_label=built["chain_label"], agent_name=name, summary=summary,
-                                 timeout=float(built["valid_seconds"])).start()      # the page ends with the consent
-    print(f"\n  Open this page in the browser that has your wallet (it only exists while this command waits; "
-          f"closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels). The consent in it "
-          f"is valid for about {built['valid_seconds'] // 60} minutes:\n\n    {page.url}\n")
     try:
-        webbrowser.open(page.url)           # best effort: the URL above is the fallback
-    except Exception:  # noqa: BLE001
-        pass
+        page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"]},
+                                     chain_label=built["chain_label"], agent_name=name, summary=summary, port=port,
+                                     listen=addr, timeout=float(built["valid_seconds"])).start()   # ends with the consent
+    except browser_sign.BrowserSignError as e:
+        print(f"agent set-8004-wallet: {e}")
+        return 1
+    _announce_page(page, chain_label=built["chain_label"], registry=built["registry"], what="transaction",
+                   lead=f"Open this page in the browser that has your wallet (it only exists while this command "
+                   f"waits; closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels). The "
+                   f"consent in it is valid for about {built['valid_seconds'] // 60} minutes.")
     try:
         got = page.wait()
     except browser_sign.BrowserSignError as e:
