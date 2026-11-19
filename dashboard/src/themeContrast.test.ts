@@ -76,11 +76,11 @@ describe("the CSS carries the palette", () => {
 
   it("the vivid rules name the same tints for white ink and the lighter panel as the table", () => {
     expect(WHITE_INK).toEqual(["tint-blue", "tint-red", "tint-purple"]);
-    expect(LIGHT_PANEL).toEqual(["tint-orange"]);
+    expect(LIGHT_PANEL).toEqual(["tint-orange", "tint-charcoal"]);
     expect(DASH).toContain("body.e-look.theme-vivid.tint-blue,\nbody.e-look.theme-vivid.tint-red,\nbody.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }");
     // The dark theme's chip ink is white on the same tints (crimson was missing here: dark red ink on crimson chips).
     expect(DASH).toContain("body.e-look.theme-dark.tint-blue,\nbody.e-look.theme-dark.tint-red,\nbody.e-look.theme-dark.tint-purple { --anim-ink: #fff; }");
-    expect(DASH).toContain("body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
+    expect(DASH).toContain("body.e-look.theme-vivid.tint-orange,\nbody.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }");
   });
 
   it("the kit's global.css has the same three ramps for every tint", () => {

@@ -17,7 +17,7 @@
 
 import { TINT_COLORS, TINT_LABELS, TINTS, DEFAULT_TINT, type Tint } from "../themeConfig.ts";
 import { type Gamut, type RGB, mixOver, relativeOklch } from "./color.ts";
-import { deepPalette, vividPalette } from "../themePalette.ts";
+import { LIGHT_NEUTRAL, deepPalette, vividPalette } from "../themePalette.ts";
 
 export type StyleName = "animatic";
 export type ThemeName = "light" | "vivid" | "dark";
@@ -62,10 +62,11 @@ export function themeColors(style: StyleName, theme: ThemeName, tint: Tint, gamu
   if (theme === "light") {
     const rel = (L: number | ((v: number) => number), C: number | ((v: number) => number)) => relativeOklch(hex, L, C, gamut);
     const fill = rel((l) => Math.max(l, 0.86), (c) => c);
-    const bg = rel(0.97, (c) => c * 0.1);
+    const neutral = LIGHT_NEUTRAL[tint];
+    const bg = neutral ? relativeOklch(neutral.bg, (l) => l, (c) => c, gamut) : rel(0.97, (c) => c * 0.1);
     return { ...base, accent: accentFor(theme, tint, gamut), ink: rel(0.18, (c) => c * 0.4),
       fill: { bg: fill, ink: rel(0.18, (c) => c * 0.4) }, surfaces: [
-        { name: "canvas", rgb: bg }, { name: "panel", rgb: rel(0.92, (c) => c * 0.18) },
+        { name: "canvas", rgb: bg }, { name: "panel", rgb: neutral ? relativeOklch(neutral.panel, (l) => l, (c) => c, gamut) : rel(0.92, (c) => c * 0.18) },
         { name: "wash", rgb: mixOver(fill, WASH.light, bg) }] };
   }
   const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);

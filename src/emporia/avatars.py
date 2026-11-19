@@ -14,12 +14,12 @@ TINT = [
     ["#b00331", "#250a0c", "#fef2f2", "#a1022c", "#fe9498", 0],  # crimson
     ["#d57c22", "#121212", "#eeeeee", "#d57c22", "#d57c22", 1],  # burnt orange: only itself plus neutral grounds
     ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0],  # purple
-    ["#cdbf1f", "#171501", "#f7f6ea", "#635700", "#cdbf1f", 1],  # yellow
+    ["#888888", "#141414", "#f5f5f5", "#555555", "#b7b7b7", 1],  # charcoal: no hue, so every chat color is a guest
 ]
 # The ten chat sender colors, hsl(h, 65%, 58%) for h = 210 0 145 280 235 175 300 195 255 100.
 CHAT = ["#4e94da", "#da4e4e", "#4eda88", "#ab4eda", "#4e5ada", "#4edace", "#da4eda", "#4eb7da", "#714eda", "#7dda4e"]
 # Per tint: the chat colors at least 50 degrees of hue away (the "guest"); purple (hsl hue 286) also keeps #4e5ada at 51 degrees.
-GUEST = [[0, 1, 3, 4, 5, 6, 7, 8], [1, 2, 3, 6, 9], [0, 2, 3, 4, 5, 7, 8, 9], [0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 4, 5, 7, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8]]
+GUEST = [[0, 1, 3, 4, 5, 6, 7, 8], [1, 2, 3, 6, 9], [0, 2, 3, 4, 5, 7, 8, 9], [0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 4, 5, 7, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
 
 SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
 

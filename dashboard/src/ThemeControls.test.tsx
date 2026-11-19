@@ -53,13 +53,13 @@ describe("the theme control", () => {
     expect(onTheme).toHaveBeenCalledWith("theme-dark");
   });
 
-  it("the tint circle goes to the next tint, wrapping to green after orange", () => {
+  it("the tint circle goes to the next tint, wrapping to green after charcoal", () => {
     const a = setup("theme-light", "theme-light", "tint-green");
     fireEvent.click(screen.getByLabelText("Accent colour: Green, click to cycle"));
     expect(a.onTint).toHaveBeenCalledWith("tint-blue");
     cleanup();
-    const b = setup("theme-light", "theme-light", "tint-orange");
-    fireEvent.click(screen.getByLabelText("Accent colour: Orange, click to cycle"));
+    const b = setup("theme-light", "theme-light", "tint-charcoal");
+    fireEvent.click(screen.getByLabelText("Accent colour: Charcoal, click to cycle"));
     expect(b.onTint).toHaveBeenCalledWith("tint-green");
   });
 

@@ -20,6 +20,9 @@
 .e-badge-panel.theme-light {
   --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);
 }
+.e-badge-panel.theme-light.tint-charcoal {
+  --p-bg: #e6e6e6; --p-panel: #d9d9d9; --p-line: #b8b8b8;
+}
 .e-badge-panel.theme-dark {
   --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);
 }
@@ -133,7 +136,8 @@
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
-.e-badge-panel.theme-vivid.tint-orange { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-badge-panel.theme-vivid.tint-orange,
+.e-badge-panel.theme-vivid.tint-charcoal { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }

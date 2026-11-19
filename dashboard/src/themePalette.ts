@@ -33,7 +33,9 @@ const hex = hexToRgb;
 /** Tints whose vivid ink is white (the tint is too dark for a dark ink). */
 export const WHITE_INK: readonly Tint[] = ["tint-blue", "tint-red", "tint-purple"];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
-export const LIGHT_PANEL: readonly Tint[] = ["tint-orange"];
+export const LIGHT_PANEL: readonly Tint[] = ["tint-orange", "tint-charcoal"];
+/** Light-theme canvas and panel for the neutral tint: gray, not near-white (the others derive theirs from the tint). */
+export const LIGHT_NEUTRAL: Partial<Record<Tint, { bg: string; panel: string }>> = { "tint-charcoal": { bg: "#e6e6e6", panel: "#d9d9d9" } };
 export const LIGHT_PANEL_WHITE = 0.2;
 
 export function vividPalette(tint: Tint, gamut: Gamut = "css"): Palette {

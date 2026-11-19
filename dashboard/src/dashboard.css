@@ -2704,6 +2704,15 @@ body.e-look.theme-light {
   --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);
   --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
 }
+/* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). Mirrored in themePalette.ts. */
+body.e-look.theme-light.tint-charcoal {
+  --theme-background: #e6e6e6;
+  --theme-background-modal: #d9d9d9;
+  --theme-background-input: #e6e6e6;
+  --theme-border: #b8b8b8;
+  --theme-border-subdued: #c8c8c8;
+  --theme-button-text: #e6e6e6;
+}
 
 /* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
    L .192 with 24 % of its chroma, the panel a step up, the border and text likewise; green is pinned to the
@@ -2774,7 +2783,8 @@ body.e-look.theme-vivid {
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
-body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+body.e-look.theme-vivid.tint-orange,
+body.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
