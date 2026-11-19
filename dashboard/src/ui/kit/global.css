@@ -427,15 +427,15 @@ body.theme-light.tint-charcoal {
 
 /* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). */
 body.theme-light.tint-charcoal {
-  --theme-background: #e6e6e6;
-  --theme-background-modal: #d9d9d9;
-  --theme-background-modal-footer: #cfcfcf;
-  --theme-background-input: #e6e6e6;
+  --theme-background: #ececec;
+  --theme-background-modal: #e0e0e0;
+  --theme-background-modal-footer: #d4d4d4;
+  --theme-background-input: #ececec;
   --theme-border: #b8b8b8;
   --theme-border-subdued: #c8c8c8;
-  --theme-button-text: #e6e6e6;
-  --theme-button-background: #d9d9d9;
-  --theme-window-background: #d9d9d9;
+  --theme-button-text: #ececec;
+  --theme-button-background: #e0e0e0;
+  --theme-window-background: #e0e0e0;
 }
 
 /*

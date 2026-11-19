@@ -21,7 +21,7 @@
   --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);
 }
 .e-badge-panel.theme-light.tint-charcoal {
-  --p-bg: #e6e6e6; --p-panel: #d9d9d9; --p-line: #b8b8b8;
+  --p-bg: #ececec; --p-panel: #e0e0e0; --p-line: #b8b8b8;
 }
 .e-badge-panel.theme-dark {
   --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);

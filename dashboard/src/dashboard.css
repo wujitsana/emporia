@@ -2706,12 +2706,12 @@ body.e-look.theme-light {
 }
 /* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). Mirrored in themePalette.ts. */
 body.e-look.theme-light.tint-charcoal {
-  --theme-background: #e6e6e6;
-  --theme-background-modal: #d9d9d9;
-  --theme-background-input: #e6e6e6;
+  --theme-background: #ececec;
+  --theme-background-modal: #e0e0e0;
+  --theme-background-input: #ececec;
   --theme-border: #b8b8b8;
   --theme-border-subdued: #c8c8c8;
-  --theme-button-text: #e6e6e6;
+  --theme-button-text: #ececec;
 }
 
 /* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
