@@ -300,6 +300,9 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
                 tunnels.pop(url).cancel()
             if tunnels[home].done():
                 return
+            if _parent_gone():
+                logger.info("the gateway that started this bridge is gone; stopping")
+                return
             wake_mode, listed = await _reread_wake(watch, wake_mode, listed, out)
             if auto is not None and not (looking and not looking[0].done()):
                 looking[:] = [asyncio.create_task(asyncio.to_thread(auto.look))]   # finishes what a restart cut off
@@ -367,7 +370,18 @@ def _check_local_relay(relay_url: str) -> str:
     return what
 
 
+_started_by = {"ppid": None}
+
+
+def _parent_gone() -> bool:
+    """The gateway that started this bridge died: the bridge was handed to init or a subreaper (a new parent).
+    Its stdin is /dev/null and it writes only when a frame comes, so without this check it lived on unseen, one
+    orphan per agent for every gateway crash. Only `main` records the parent; a bridge run in-process never stops."""
+    return _started_by["ppid"] is not None and os.getppid() != _started_by["ppid"]
+
+
 def main(argv: list[str] | None = None) -> int:
+    _started_by["ppid"] = os.getppid()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--relay-url", required=True)
     parser.add_argument("--agent-id", required=True)

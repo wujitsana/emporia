@@ -630,3 +630,19 @@ def test_the_bridge_log_folder_is_not_in_the_key_directory_and_an_old_one_is_mov
     assert not (keys / "bridge-logs").exists(), "nothing is left among the keys"
     assert bridge.log_dir(keys, str(home)) == got                         # again: nothing to move, no error
     assert bridge.log_dir(keys, "") == tmp_path / "emporia-bridge-logs"   # no profile: beside the keys, never inside
+
+
+def test_the_bridge_stops_when_the_gateway_that_started_it_is_gone(monkeypatch):
+    """A gateway crash left one orphan bridge per agent; the loop now sees the new parent and returns."""
+    import os
+
+    async def tunnel_forever(url, agent_id, on_frame, profile_id=None):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(bridge, "maintain_relay_tunnel", tunnel_forever)
+    monkeypatch.setattr(bridge, "_check_local_relay", lambda url: "up")
+    monkeypatch.setitem(bridge._started_by, "ppid", os.getppid() + 1)     # as if re-parented after a crash
+    asyncio.run(asyncio.wait_for(bridge.run("http://relay.test", "alice", None, out=io.StringIO(),
+                                            poll_seconds=0.01, auto=None), timeout=5))
+    monkeypatch.setitem(bridge._started_by, "ppid", None)                 # in-process: never stops for this
+    assert not bridge._parent_gone()
