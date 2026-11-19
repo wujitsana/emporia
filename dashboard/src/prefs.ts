@@ -37,3 +37,11 @@ export function writePref(key: string, value: string | null): void {
     /* best effort: a preference that is not kept is only a preference */
   }
 }
+
+/** Keys of switches that were removed (the font, the list/cards view mode); an old browser may still hold them. */
+export const REMOVED_PREFS = ["emporia_font", "emporia_view_mode"] as const;
+
+/** Drops the removed switches' saved values. Nothing reads them any more; this only tidies the store. */
+export function clearRemovedPrefs(): void {
+  for (const k of REMOVED_PREFS) if (readPref(k) !== null) writePref(k, null);
+}

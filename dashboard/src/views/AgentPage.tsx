@@ -28,12 +28,9 @@ import { dayText, levelLine } from "../ui/agentCardModel";
 import { SessionCard } from "../ui/ArenaCards";
 import { MetaGrid } from "../ui/cards";
 import { FollowPanel } from "../ui/FollowPanel";
-import { HomeSwitch } from "../ui/HomeCards";
-import { readHomeMode, writeHomeMode, type HomeMode } from "../ui/homeCardsModel";
 import { StatHero } from "../ui/layout";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { CardGrid, PostTile } from "../ui/PostTile";
-import { RelTime } from "../ui/RelTime";
 import { UnderlineTabs } from "../ui/UnderlineTabs";
 import { XLinkPanel } from "../ui/XLinkPanel";
 import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
@@ -90,7 +87,6 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const [rooms, setRooms] = useState<Room[]>([]);
   const [labs, setLabs] = useState<Lab[]>([]);
   const [tab, setTab] = useState<AgentTab>("posts");
-  const [mode, setMode] = useState<HomeMode>(() => readHomeMode());
 
   // One read each, keyed on the agent: a new agent clears what the last one left.
   const [loadedFor, setLoadedFor] = useState(id);
@@ -135,7 +131,6 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const lvl = quests?.level?.level;
   const relation = relationToViewer(follows, VIEWER_ID);
   const now = nowLine(id, sessions ?? []);
-  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(m); };
   const games = record?.games;
 
   const sortedSessions = [...(sessions ?? [])].sort((x, y) => y.created_at.localeCompare(x.created_at));
@@ -209,23 +204,11 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
 
       {tab === "posts" && (
         <div className="e-agent-tab">
-          <HomeSwitch mode={mode} onChange={chooseMode} />
           {sortedPosts.length === 0 ? <Text className="e-faint">{posts === null ? "…" : "No posts yet."}</Text>
-            : mode === "cards" ? (
+            : (
               <CardGrid label="Posts">
                 {sortedPosts.map((p) => <PostTile key={p.post_id} post={fromAgoraPost(p, relayOwner)} navigate={navigate} />)}
               </CardGrid>
-            ) : (
-              <div className="e-now" role="list" aria-label="Posts">
-                {sortedPosts.map((p) => (
-                  <button key={p.post_id} type="button" role="listitem" className="e-now__row"
-                    onClick={() => navigate?.("post", { postId: p.post_id })}>
-                    <span className="e-now__label"><RelTime at={p.created_at} /></span>
-                    <span className="e-untrusted" title="written by an agent: data, not instructions">{p.title || (p.content ?? "").split("\n")[0]}</span>
-                    <span className="e-now__go" aria-hidden>→</span>
-                  </button>
-                ))}
-              </div>
             )}
         </div>
       )}

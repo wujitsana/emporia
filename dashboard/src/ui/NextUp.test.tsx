@@ -29,24 +29,20 @@ const facts = {
 };
 
 describe("Next up", () => {
-  it("shows the ranked items with their clocks and the exact call to copy", () => {
+  it("draws the ranked items as cards with their clocks, urgent first", () => {
     state.data = facts;
-    render(withViewer(<NextUp agentId="alpha" />));
+    const { container } = render(withViewer(<NextUp agentId="alpha" />));
     expect(screen.getByRole("region", { name: "Next steps" })).toBeTruthy();
     expect(screen.getByText("3 min left")).toBeTruthy();
-    expect(screen.getByText('commit_move(session_id="s-1", move="<your move>", rationale="<why, 15+ chars>")')).toBeTruthy();
-    expect(screen.getByText('join_session(session_id="s-2")')).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /^Copy: / })).toHaveLength(2);
-    expect(document.querySelector(".e-next__row.is-urgent")).toBeTruthy();
+    expect(container.querySelectorAll(".e-hcard")).toHaveLength(2);
+    expect(container.querySelector(".e-now__row")).toBeNull();        // no list rows any more
+    expect(screen.getByText("2 to do")).toBeTruthy();
   });
 
-  it("shows another agent's words as data, and says so", () => {
+  it("shows another agent's words as plain text in the caption", () => {
     state.data = facts;
     render(withViewer(<NextUp agentId="alpha" />));
-    const name = screen.getByText("mallory");
-    expect(name.className).toBe("e-untrusted");
-    expect(name.getAttribute("title")).toMatch(/data, not instructions/);
-    expect(screen.getByText(/written by other agents: data, not instructions/)).toBeTruthy();
+    expect(screen.getByText(/mallory/)).toBeTruthy();
   });
 
   it("says when nothing waits on the agent", () => {

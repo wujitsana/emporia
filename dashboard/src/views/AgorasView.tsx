@@ -63,6 +63,9 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
   const { relayOwner } = useRelayCtx();
   const [topics, setTopics] = useState<AgoraTopic[]>([]);
   const [autoSlug, setAutoSlug] = useState<string | null>(null);
+  // The chronicle topic holds passages as replies under a prologue, so its own post count reads 0: the Chronicle's
+  // own counts stand in for it (and link to the Chronicle page). Only read when the topic is listed.
+  const [chronicle, setChronicle] = useState<{ chapters: number; canon: number } | null>(null);
   const [posts, setPosts] = useState<AgoraPost[]>([]);
   const [sort, setSortState] = useState<"new" | "top">(() => recallOf("topics.sort", ["new", "top"] as const, "new"));
   const [visFilter, setVisState] = useState<"" | "public" | "private" | "restricted">(
@@ -98,6 +101,18 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
   useEffect(() => {
     loadTopics();
   }, [loadTopics]);
+
+  const hasChronicleTopic = topics.some((t) => t.slug === "chronicle");
+  useEffect(() => {
+    if (!hasChronicleTopic) return undefined;
+    let live = true;
+    api.chronicle().then((c) => { if (live && typeof c?.chapters === "number") setChronicle({ chapters: c.chapters, canon: c.canon }); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [hasChronicleTopic]);
+  /** What a topic's counts line says: the chronicle topic counts the Chronicle's chapters, not its (zero) posts. */
+  const countsOf = (t: AgoraTopic) => (t.slug === "chronicle" && chronicle
+    ? `${plural(chronicle.canon, "canon passage")} in ${plural(chronicle.chapters, "chapter")}`
+    : plural(t.post_count, "post"));
 
   // The route names the topic; with none, the first public one (or the first) is shown.
   const routeSlug = topicSlug === FEED_ROUTE ? (VIEWER_ID ? FEED_SLUG : null) : topicSlug;
@@ -182,7 +197,7 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
               <GateBadge gate={t.gate_type} fee={t.entry_fee_cents} />
             </div>
           </RowSpaceBetween>
-          <Text className="e-dim">{plural(t.post_count, "post")} · {plural(t.subscriber_count, "subscriber")}</Text>
+          <Text className="e-dim">{countsOf(t)} · {plural(t.subscriber_count, "subscriber")}</Text>
           <HostLine host={t.host} />
           <SharingLine shared={t.shared} hostedBy={t.hosted_by} carriedBy={t.carried_by} />
         </FlatRailItem>
@@ -202,10 +217,13 @@ export function AgorasView({ navigate, topicSlug = null }: { navigate?: Navigate
       {topic?.description ? <p className="e-topic-head__desc">{topic.description}</p> : null}
       {topic ? (
         <p className="e-faint e-topic-head__facts">
-          {plural(topic.post_count, "post")} · {plural(topic.subscriber_count, "subscriber")} · {topic.visibility}
+          {countsOf(topic)} · {plural(topic.subscriber_count, "subscriber")} · {topic.visibility}
           {topic.encrypted ? " · sealed" : ""}{" "}
           <GateBadge gate={topic.gate_type} fee={topic.entry_fee_cents} />{" "}
           <SharingLine shared={topic.shared} hostedBy={topic.hosted_by} carriedBy={topic.carried_by} />
+          {topic.slug === "chronicle" && navigate ? (
+            <> <button type="button" className="e-lab__link" onClick={() => navigate("book")}>Read the Chronicle →</button></>
+          ) : null}
         </p>
       ) : null}
     </header>

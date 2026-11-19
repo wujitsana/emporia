@@ -26,22 +26,16 @@ def test_there_are_64_vectors():
 
 
 @pytest.mark.parametrize("v", VECTORS, ids=[v["id"][:8] for v in VECTORS])
-def test_both_pictures_match_the_shared_vectors(v):
+def test_the_picture_matches_the_shared_vectors(v):
     assert sha(avatars.token_avatar(v["id"])) == v["token"]
-    assert sha(avatars.everyday_avatar(v["id"])) == v["everyday"]
 
 
 def test_a_picture_is_plain_flat_svg():
     for v in VECTORS:
-        for svg in (avatars.token_avatar(v["id"]), avatars.everyday_avatar(v["id"], "x1")):
+        for svg in (avatars.token_avatar(v["id"]),):
             assert svg.startswith("<svg ") and svg.endswith("</svg>")
             for bad in ("<script", "<text", "<image", "href", "<filter", "<style", "onload"):
                 assert bad not in svg
-
-
-def test_the_everyday_picture_takes_a_uid_for_its_pattern_ids():
-    a, b = avatars.everyday_avatar(VECTORS[0]["id"], "one"), avatars.everyday_avatar(VECTORS[0]["id"], "two")
-    assert 'id="aone"' in a and 'id="atwo"' in b and a != b
 
 
 def test_the_token_picture_always_fits_the_registration_seam():

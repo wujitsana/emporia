@@ -11,9 +11,6 @@ import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { Leaderboard } from "../ui/Leaderboard";
-import { HomeSwitch } from "../ui/HomeCards";
-import { readHomeMode, writeHomeMode, type HomeMode } from "../ui/homeCardsModel";
-import { CardGrid } from "../ui/PostTile";
 import { bioLine } from "../xlink";
 import { dayText } from "../ui/agentCardModel";
 import { VIEWER_ID } from "../relayEnv";
@@ -35,7 +32,7 @@ function agentStub(id: string): AgentProfile {
 }
 
 /** One agent in the directory: its glyph, name, bio line, level and when it was last active. A click opens its page. */
-function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfile; level?: number; mode: HomeMode; onOpen: () => void }) {
+function DirectoryEntry({ a, level: boardLevel, onOpen }: { a: AgentProfile; level?: number; onOpen: () => void }) {
   // The list row carries its level and last-active day (a relay that sends them needs no request here); an older
   // relay's row without them is read for itself, and the season board's level covers the top few.
   const [own, setOwn] = React.useState<{ level?: number; last?: string }>({});
@@ -68,16 +65,6 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfil
       {bio ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bio}</Text> : null}
     </span>
   );
-  const meta = [visit, typeof level === "number" ? `level ${level}` : "", last ? `active ${last}` : ""].filter(Boolean).join(" · ");
-  if (mode === "cards") {
-    return (
-      <button type="button" role="listitem" className="e-agent-card-tile" onClick={onOpen}>
-        <AgentMoireAvatar agentId={a.agent_id} stableId={a.stable_id} size={40} />
-        {who}
-        {meta ? <span className="e-faint e-agent-dir__meta">{meta}</span> : null}
-      </button>
-    );
-  }
   return (
     <button type="button" role="listitem" className="e-agent-dir__row" onClick={onOpen}>
       <AgentMoireAvatar agentId={a.agent_id} stableId={a.stable_id} size={32} />
@@ -89,7 +76,7 @@ function DirectoryEntry({ a, level: boardLevel, mode, onOpen }: { a: AgentProfil
 }
 
 /**
- * Agora › Agents: the directory (search, list or cards) of the agents on this relay. Picking one opens its page
+ * Agora › Agents: the directory (search, a list) of the agents on this relay. Picking one opens its page
  * (`#/agora/agent/<id>`, AgentPage); with `agentId` set, this is that page. Standings stay one click away.
  */
 export function AgentsView({
@@ -108,8 +95,6 @@ export function AgentsView({
   const [board] = useInterval(() => api.seasonBoard().catch(() => null), 60_000, []);
   const levels = React.useMemo(() => new Map((board?.standings ?? []).map((r) => [r.agent_id, r.level])), [board]);
   const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
-  const [mode, setMode] = React.useState<HomeMode>(() => readHomeMode());
-  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(m); };
   const [standings, setStandings] = React.useState(false);
 
   // The search filters what is loaded as the person types. Only when the loaded list is a cut of a longer
@@ -161,7 +146,6 @@ export function AgentsView({
             />
             {search ? <button type="button" className="e-list-filter__clear" aria-label="Clear search" onClick={() => setSearch("")}>×</button> : null}
           </div>
-          <HomeSwitch mode={mode} onChange={chooseMode} />
           <button type="button" className="e-entity-chip e-entity-chip--agent" aria-pressed={standings} onClick={() => setStandings((v) => !v)}>
             {standings ? "‹ Agents" : "Standings: who wins most →"}
           </button>
@@ -175,13 +159,9 @@ export function AgentsView({
           </div>
         ) : ordered.length === 0 && agentsErr ? null : ordered.length === 0 && !agentsLoading ? (
           <Text className="e-faint">{query ? `No agent matches “${query}”.` : "No agents registered"}</Text>
-        ) : mode === "cards" ? (
-          <CardGrid label="Agents">
-            {ordered.map((a) => <DirectoryEntry key={a.agent_id} a={a} level={levels.get(a.agent_id)} mode={mode} onOpen={() => open(a.agent_id)} />)}
-          </CardGrid>
         ) : (
           <div role="list" aria-label="Agents">
-            {ordered.map((a) => <DirectoryEntry key={a.agent_id} a={a} level={levels.get(a.agent_id)} mode={mode} onOpen={() => open(a.agent_id)} />)}
+            {ordered.map((a) => <DirectoryEntry key={a.agent_id} a={a} level={levels.get(a.agent_id)} onOpen={() => open(a.agent_id)} />)}
           </div>
         )}
       </div>

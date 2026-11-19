@@ -1,24 +1,5 @@
 /** What Home's cards (ui/HomeCards.tsx) are made of: the view mode, a card's fields and two small helpers. */
-import { createContext, useContext, type ReactNode } from "react";
-import { readPref, writePref } from "../prefs";
-
-export type HomeMode = "list" | "cards";
-
-/** One choice per browser, for every list/cards switch (Home, the agents directory, an agent's posts): not per viewed agent. */
-const KEY = "emporia_view_mode";
-
-/** The list/cards choice on this machine; cards unless they chose the list. */
-export function readHomeMode(fallback: HomeMode = "cards"): HomeMode {
-  const saved = readPref(KEY);
-  return saved === "list" || saved === "cards" ? saved : fallback;
-}
-
-export function writeHomeMode(mode: HomeMode): void {
-  writePref(KEY, mode);
-}
-
-export const HomeModeContext = createContext<HomeMode>("list");
-export const useHomeMode = (): HomeMode => useContext(HomeModeContext);
+import type { ReactNode } from "react";
 
 export interface CardSpec {
   key: string;

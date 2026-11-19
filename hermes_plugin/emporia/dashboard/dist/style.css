@@ -373,19 +373,15 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 
 .e-host-body.tint-yellow {
-  --tint: var(--ansi-true-brand);
+  --tint: #cdbf1f;   /* deeper yellow, as the user picked (11-19) */
 }
 
 .e-host-body.tint-purple {
-  --tint: #8000ff;
+  --tint: #7d3c98;   /* plum purple, as the user picked (11-19) */
 }
 
 .e-host-body.tint-orange {
   --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
-}
-
-.e-host-body.tint-pink {
-  --tint: #ff00ff;
 }
 
 .e-host-body.theme-light.tint-green,
@@ -393,8 +389,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-host-body.theme-light.tint-red,
 .e-host-body.theme-light.tint-yellow,
 .e-host-body.theme-light.tint-purple,
-.e-host-body.theme-light.tint-orange,
-.e-host-body.theme-light.tint-pink {
+.e-host-body.theme-light.tint-orange {
   /*
   NOTE(jimmylee):
   Light tint ramp is anchored to the ANSI light grays:
@@ -444,8 +439,7 @@ BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit r
 .e-host-body.theme-dark.tint-red,
 .e-host-body.theme-dark.tint-yellow,
 .e-host-body.theme-dark.tint-purple,
-.e-host-body.theme-dark.tint-orange,
-.e-host-body.theme-dark.tint-pink {
+.e-host-body.theme-dark.tint-orange {
   --theme-overlay: var(--color-black-alpha-40);
   --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
@@ -484,7 +478,7 @@ BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit r
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-red and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 .e-host-body.theme-vivid.tint-green,
@@ -492,8 +486,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 .e-host-body.theme-vivid.tint-red,
 .e-host-body.theme-vivid.tint-yellow,
 .e-host-body.theme-vivid.tint-purple,
-.e-host-body.theme-vivid.tint-orange,
-.e-host-body.theme-vivid.tint-pink {
+.e-host-body.theme-vivid.tint-orange {
   --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);
   --theme-overlay: var(--color-black-alpha-40);
@@ -513,8 +506,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
-.e-host-body.theme-vivid.tint-orange,
-.e-host-body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-host-body.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-host-body.theme-vivid.tint-blue,
 .e-host-body.theme-vivid.tint-red,
 .e-host-body.theme-vivid.tint-purple { --vv-ink: #fff; }
@@ -1573,6 +1565,21 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 /* The vivid circle: the tint with a ring of its ink (colour set inline); the ring fills in when vivid is on. */
 .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
 .e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
+/* The text switch: a real toggle (track and knob), not a circle. */
+.e-switch {
+  position: relative; width: 28px; height: 16px; padding: 0; flex-shrink: 0; cursor: pointer;
+  border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit;
+}
+.e-switch__knob {
+  position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%;
+  background: currentColor; transition: transform 0.12s ease;
+}
+.e-switch[data-on="true"] { background: color-mix(in srgb, currentColor 22%, transparent); }
+.e-switch[data-on="true"] .e-switch__knob { transform: translateX(12px); }
+.e-switch:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: 2px; }
+.e-switch:disabled { opacity: 0.4; cursor: not-allowed; }
+.e-capture .e-switch__knob { transition: none; }
+@media (prefers-reduced-motion: reduce) { .e-switch__knob { transition: none; } }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -3225,6 +3232,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
      text/button oklch(from tint 0.94 calc(c * 0.12) h)   button-text = bg   line 0.72 c
      chip fill oklch(from tint max(l, 0.86) c h) with ink oklch(from tint 0.18 calc(c * 0.4) h) */
 .e-host-body.e-look.theme-dark {
+  --e-panel: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);   /* the shell flattens --theme-background-modal; cards read this */
   --theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);
   --theme-background-input: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);
@@ -3240,9 +3248,11 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
 }
 .e-host-body.e-look.theme-dark.tint-blue,
+.e-host-body.e-look.theme-dark.tint-red,
 .e-host-body.e-look.theme-dark.tint-purple { --anim-ink: #fff; }
 /* Green is the video's, exact. */
 .e-host-body.e-look.theme-dark.tint-green {
+  --e-panel: #0b2a0b;
   --theme-background: #001b00;
   --theme-background-modal: #0b2a0b;
   --theme-background-input: #0b2a0b;
@@ -3256,7 +3266,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 }
 
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
-   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the
+   The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
    text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
 .e-host-body.e-look.theme-vivid {
@@ -3276,16 +3286,29 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   --anim-fill: var(--vv-ink);
   --anim-ink: var(--anim-tint);
   /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1
-     on blue, red, purple and pink. Every "text N %" mix above adds this and caps at 100 %. */
+     on blue, red and purple. Every "text N %" mix above adds this and caps at 100 %. */
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
-.e-host-body.e-look.theme-vivid.tint-orange,
-.e-host-body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+.e-host-body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 .e-host-body.e-look.theme-vivid.tint-blue,
 .e-host-body.e-look.theme-vivid.tint-red,
 .e-host-body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
 .e-host-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
+
+/* TEXT SWITCH (inkSwitch.ts): pure black or white text over the whole page, set at the token level so every
+   component that reads a token follows (text, headings, nav, cards, tables, inputs, links, the wordmark).
+   --e-pure-ink is set on this root by themeConfig.applyTheme, only where it reaches 4.5:1. The doubled
+   class outranks the per-tint rules above (the green one is pinned exactly). Vivid's ink is also its
+   border, rule and chip fill, so it takes the pure ink at --vv-ink; light and dark take it at the text,
+   button and accent-as-text tokens. Graphics (--anim-line, the fills) keep the tint. */
+.e-host-body.e-look.e-ink-pure.e-ink-pure.e-ink-pure {
+  --theme-text: var(--e-pure-ink);
+  --theme-button: var(--e-pure-ink);
+  --theme-focused-foreground: var(--e-pure-ink);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--e-pure-ink) 50%, transparent);
+}
+.e-host-body.e-look.theme-vivid.e-ink-pure.e-ink-pure.e-ink-pure { --vv-ink: var(--e-pure-ink); }
 
 .e-look .e-dashboard-shell {
   --e-rule: var(--theme-border-subdued);
@@ -3293,7 +3316,8 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   --e-accent-wash: var(--anim-wash);
 }
 /* On the dark canvas a strong wash would sit under light text: keep it faint. */
-.e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+/* Dark cards and hover rows are the deep panel (the video's #0b2a0b in green), not a mix of the tint over the canvas. */
+.e-look.theme-dark .e-dashboard-shell { --anim-wash: var(--e-panel); }
 /* The hover / selected wash in vivid is the panel colour: text on it clears 4.5:1 in every tint. */
 .e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }
 
@@ -3774,8 +3798,13 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   border: 1px solid var(--e-rule); border-radius: 0;
 }
 .e-arena-card:hover, .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
-.e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }
-.e-arena-card__game { font-weight: 600; }
+.e-arena-card { min-width: 0; box-sizing: border-box; }
+/* The game and its time (or live mark) never overlap: the game takes the room that is left and wraps, the time keeps
+   its own width and drops to the next line when the card is too narrow for both. */
+.e-arena-card__top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.e-arena-card__game { font-weight: 600; flex: 0 1 auto; min-width: 0; max-width: 100%; overflow-wrap: break-word; }
+.e-arena-card__game .e-game-tag { white-space: normal; max-width: 100%; }
+.e-arena-card__top > :not(.e-arena-card__game) { flex: 0 0 auto; white-space: nowrap; margin-left: auto; }
 .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }
 .e-arena-card__result { font-size: 0.85rem; }
 .e-arena-card__models { font-size: 0.7rem; }
@@ -3858,13 +3887,6 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 /* ─── HOME AS CARDS ─────────────────────────────────────────────────────────
    The animatic's information cards (ui/HomeCards.tsx): brackets (§ 30), a status line, a chip, a pixel headline,
    one line of detail, a tint-filled caption bar and a footer; a section is one horizontal, snapping row. */
-.e-home-switch { display: inline-flex; margin: 0 0 10px; border: 1px solid var(--theme-border); }
-.e-home-switch__opt {
-  padding: 3px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 0.74rem;
-  letter-spacing: 0.06em; cursor: pointer; opacity: 0.75;
-}
-.e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }
-.e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }
 .e-cards-section { margin: 0 0 2px; min-width: 0; }
 .e-cards-section__head { margin-bottom: 2px; }
 .e-cardrow {
@@ -3879,6 +3901,9 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   border: 0; border-radius: 0; color: inherit; font: inherit;
   background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);
 }
+/* Dark: a card is the deep panel (the video's #0b2a0b in green), a step up on hover. */
+.e-look.theme-dark .e-hcard { background-color: var(--e-panel); }
+.e-look.theme-dark .e-hcard.is-link:hover, .e-look.theme-dark .e-hcard.is-link:focus-visible { background-color: color-mix(in srgb, var(--theme-text) 6%, var(--e-panel)); }
 .e-hcard.is-link { cursor: pointer; }
 .e-hcard.is-link:hover, .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }
 .e-hcard.is-link:hover, .e-hcard.is-link:focus-visible { --anim-line: var(--theme-focused-foreground); }
@@ -4147,11 +4172,10 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   .e-agent-hero__name { font-size: 1.2rem; }
 }
 
-/* The agents directory: a list or cards of the agents on this relay; a row opens the agent's page. */
+/* The agents directory: a list of the agents on this relay; a row opens the agent's page. */
 .e-agent-dir { padding: 8px 16px 24px; min-width: 0; }
 .e-agent-dir__bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
 .e-agent-dir__bar .e-list-filter { flex: 1; min-width: 160px; }
-.e-agent-dir__bar .e-home-switch { margin: 0; }
 .e-agent-dir__row {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%;
   padding: 8px 10px; text-align: left; font: inherit; color: inherit; background: transparent; border: 0;
@@ -4164,9 +4188,6 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   .e-agent-dir__row { grid-template-columns: auto minmax(0, 1fr); }
   .e-agent-dir__meta { grid-column: 2; white-space: normal; }
 }
-.e-agent-card-tile { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; font: inherit; color: inherit;
-  background: transparent; border: 1px solid var(--e-rule); padding: 10px 12px; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
-.e-agent-card-tile:hover, .e-agent-card-tile:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
 
 /* An agent's name or glyph that opens its page: looks like what it wraps, shows it is clickable on hover and focus. */
 .e-agent-link { cursor: pointer; }
@@ -4314,128 +4335,31 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-book__practice-sec { margin-top: 28px; }
 @media (max-width: 480px) { .e-book__title { font-size: 1.05rem; } }
 
-/* ─── 31. LOOK SWITCHES ─────────────────────────────────────────────────────
-   The viewer's own font (Pixel, Serif, Type) and text ink (Auto, White, Black), and the playful controls
-   for them. Classes come from themeConfig.applyTheme: look-font-*, look-ink-*, look-body-ink, look-cover.
-   Pixel is the default and is §0 above, untouched. Serif and Type use system font stacks (no font file is
-   fetched, so the no-remote-fonts rule holds). Motion: CSS only, none under prefers-reduced-motion or in
-   capture mode. */
-.e-look.look-font-serif {
-  --anim-pixel: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "DejaVu Serif", serif;
-  --font-family-mono: Charter, "Iowan Old Style", Georgia, "DejaVu Serif", serif;
+/* The Chronicle, made for reading: a Now strip, the story as prose in a text face (a system serif, no font file),
+   cites as numbered footnotes, the decision folded. */
+.e-book__now { margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--theme-border); max-width: 72ch; }
+.e-book__now-lead { margin: 0; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }
+.e-book__now-detail { margin: 4px 0 0; font-size: 0.9rem; line-height: 1.5; }
+.e-book__now-seats { margin: 4px 0 0; font-size: 0.82rem; overflow-wrap: anywhere; }
+.e-book__now-count { margin: 6px 0 0; font-size: 0.74rem; }
+.e-book__what { margin: 0 0 6px; font-size: 0.95rem; line-height: 1.55; }
+.e-book__terms { margin: 0 0 10px; font-size: 0.78rem; }
+.e-book__terms > summary { cursor: pointer; opacity: 0.8; }
+.e-book__arcs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 10px; font-size: 0.78rem; }
+.e-book__arcs .e-book__toc { padding-left: 0; list-style: none; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; font-size: 0.78rem; }
+.e-book__story-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.e-book__prose {
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "DejaVu Serif", serif;
+  font-size: 1.05rem; line-height: 1.7; max-width: 66ch; letter-spacing: 0;
 }
-.e-look.look-font-type {
-  --anim-pixel: "Space Mono", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
-  --font-family-mono: var(--anim-pixel);
-}
-/* Headings and the title: Serif is widely spaced capitals, Type is lowercase. */
-.e-look.look-font-serif :is(.e-brand-title, .e-overview-card__title, .e-now__head > span:last-child, .e-hstrip__figure,
-  .e-thread__h, .e-topic-head__name, .e-talk__head, .e-lab__name, .e-lab__h, .e-agent-hero__name, .e-mobile-top__section) {
-  letter-spacing: 0.2em;
-  font-weight: 400;
-}
-.e-look.look-font-serif .e-section-tab { letter-spacing: 0.08em; text-transform: uppercase; }
-.e-look.look-font-type :is(.e-brand-title, .e-overview-card__title, .e-now__head > span:last-child, .e-hstrip__figure,
-  .e-thread__h, .e-topic-head__name, .e-talk__head, .e-lab__name, .e-lab__h, .e-agent-hero__name, .e-mobile-top__section,
-  .e-section-tab) {
-  text-transform: lowercase;
-  letter-spacing: 0;
-}
-/* The wordmark's letters are typed uppercase and sit in a button, which does not inherit text-transform. */
-.e-look.look-font-type .e-brand { text-transform: lowercase; }
-/* Type: the title reads "emporia.✶". */
-.e-look.look-font-type .e-brand > span:first-child::after { content: "."; }
-.e-look.look-font-type .e-brand__star > svg { display: none; }
-.e-look.look-font-type .e-brand__star::after { content: "✶"; }
-.e-look.look-font-type .e-brand__star { margin-left: 0; }
+.e-book__byline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; font-size: 0.8rem; overflow-wrap: anywhere; }
+.e-book__cites--notes { padding-left: 0; list-style: none; display: block; font-size: 0.74rem; line-height: 1.5; }
+.e-book__cites--notes li { padding-left: 2px; }
+.e-book__fold > summary { padding: 2px 0; }
+.e-book__receipt code { overflow-wrap: anywhere; }
+.e-book__practice-sec > details > summary { cursor: pointer; }
 
-/* Ink: the title always follows White / Black; body text only where it reaches 4.5:1 (look-body-ink). */
-.e-look.look-ink-white :is(.e-brand-title, .e-brand-home, .e-mobile-top__section) { color: #fff; }
-.e-look.look-ink-black :is(.e-brand-title, .e-brand-home, .e-mobile-top__section) { color: #000; }
-.e-look.look-ink-white.look-body-ink { --theme-text: #fff; }
-.e-look.look-ink-black.look-body-ink { --theme-text: #000; }
-.e-lowcontrast {
-  font-size: 0.62rem; line-height: 1; margin-left: 6px; padding: 2px 4px; white-space: nowrap;
-  border: 1px solid currentColor; opacity: 0.85;
-}
-
-/* Cover mode (shift-click the title): the title set the way the chosen font's cover is. */
-.e-look.look-cover .e-brand-title { font-size: 1.5rem !important; }
-.e-look.look-cover.look-font-pixel .e-brand-title { letter-spacing: 0.14em; }
-.e-look.look-cover.look-font-serif .e-brand-title {
-  letter-spacing: 0.5em; padding: 2px 0 2px 0.5em;
-  border-top: 1px solid currentColor; border-bottom: 1px solid currentColor;
-}
-.e-look.look-cover.look-font-type .e-brand-title { letter-spacing: -0.02em; font-weight: 700; text-transform: lowercase; }
-
-/* The controls. */
-.e-sleeve {
-  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 18px; min-width: 18px; padding: 0 6px; border: 1px solid rgba(127,127,127,0.5); border-radius: 0;
-  font: inherit; font-size: 0.66rem; line-height: 1; cursor: pointer; flex-shrink: 0;
-  box-shadow: 2px 2px 0 rgba(0,0,0,0.25);
-  animation: e-sleeve-flip 0.4s ease-out;
-}
-.e-sleeve:focus-visible, .e-inkwell:focus-visible, .e-key:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: 2px; }
-.e-sleeve__name { white-space: nowrap; }
-@keyframes e-sleeve-flip { from { transform: perspective(60px) rotateY(-90deg); } to { transform: perspective(60px) rotateY(0); } }
-
-.e-inkwell {
-  --well: var(--anim-ink, currentColor);
-  position: relative; width: 16px; height: 18px; padding: 0; background: var(--well);
-  border: 1px solid rgba(127,127,127,0.55); border-radius: 3px 3px 8px 8px; cursor: pointer; flex-shrink: 0;
-  box-shadow: inset 0 3px 0 rgba(255,255,255,0.25);
-}
-.e-inkwell[data-ink="auto"] { background: var(--theme-text); }
-.e-inkwell__drip { position: absolute; left: 50%; top: 100%; width: 3px; height: 0; margin-left: -1px; border-radius: 0 0 3px 3px; background: var(--well); }
-.e-inkwell[data-ink="auto"] .e-inkwell__drip { background: var(--theme-text); }
-.e-inkwell:active .e-inkwell__drip { animation: e-ink-drip 0.45s ease-out; }
-@keyframes e-ink-drip { 0% { height: 0; } 60% { height: 6px; } 100% { height: 0; opacity: 0; } }
-/* The new colour runs down into the title. */
-.e-look.look-drip .e-brand-title { animation: e-title-drip 0.7s ease-out; }
-@keyframes e-title-drip { from { clip-path: inset(0 0 100% 0); text-shadow: 0 -0.5em 0 currentColor; } to { clip-path: inset(0 0 0 0); text-shadow: 0 0 0 transparent; } }
-
-.e-keys { display: inline-flex; gap: 3px; }
-.e-key {
-  width: 18px; height: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid currentColor; border-radius: 50%; background: transparent; color: inherit; cursor: pointer;
-  font-size: 0.7rem; line-height: 1; box-shadow: 0 2px 0 currentColor; transform: translateY(0);
-  transition: transform 0.08s ease, box-shadow 0.08s ease;
-}
-.e-key--pixel { font-family: "EmporiaPixel", monospace; }
-.e-key--serif { font-family: Georgia, "DejaVu Serif", serif; }
-.e-key--type { font-family: "Space Mono", ui-monospace, Menlo, Consolas, monospace; }
-.e-key:active, .e-key[aria-pressed="true"] { transform: translateY(2px); box-shadow: 0 0 0 currentColor; }
-.e-key[aria-pressed="true"] { background: var(--theme-text); color: var(--theme-background); }
-
-@media (prefers-reduced-motion: reduce) {
-  .e-sleeve, .e-inkwell__drip, .e-look.look-drip .e-brand-title { animation: none !important; }
-  .e-key { transition: none; }
-}
-.e-capture .e-sleeve, .e-capture .e-inkwell__drip, .e-capture.look-drip .e-brand-title { animation: none !important; }
-.e-capture .e-key { transition: none; }
-
-/* Header tiers (the existing etop container): the swatch's name goes first, then the keys shrink. */
-@container etop (max-width: 1240px) {
-  .e-app-top .e-sleeve__name { display: none; }
-  .e-app-top .e-sleeve { width: 18px; padding: 0; }
-  .e-app-top .e-lowcontrast { font-size: 0; padding: 2px 5px; }
-  .e-app-top .e-lowcontrast::before { content: "!"; font-size: 0.66rem; }
-}
-@container etop (max-width: 940px) {
-  .e-app-top .e-key { width: 15px; height: 15px; font-size: 0.6rem; }
-  .e-app-top .e-inkwell { width: 13px; height: 15px; }
-  .e-app-top .e-sleeve { height: 15px; width: 15px; }
-}
-.e-mobile-drawer .e-theme-duo { flex-wrap: wrap; row-gap: 8px; }
-
-/* Notices area on Home (Hermes only): fixed texts naming a command; the dashboard only shows them. */
-.e-notices { margin: 0 0 12px 0; padding: 8px 12px; border: 1px solid var(--theme-focused-foreground, currentColor); }
-.e-notices__title { margin: 0 0 4px 0; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
-.e-notices__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.e-notices__list li { padding-left: 0; text-indent: 0; line-height: 1.45; }
-.e-notices__list li::before { content: none; display: none; }
-.e-notices code { font-family: ui-monospace, monospace; }
+.e-now__row code { font-family: ui-monospace, monospace; }   /* a command in a notice */
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -4586,9 +4510,9 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
-.e-badge-panel.theme-vivid.tint-red,
-.e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-badge-panel.theme-vivid.tint-orange { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-badge-panel.theme-vivid.tint-blue,
+.e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
 .e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
@@ -4615,55 +4539,6 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);
   padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
   font-weight: 400;
-}
-.AskAgent_root_1tucs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6ch;
-  min-height: 32px;
-  padding: 2px 10px;
-  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.AskAgent_root_1tucs:hover {
-  border-color: var(--theme-focused-foreground);
-  color: var(--theme-focused-foreground);
-}
-
-.AskAgent_row_1tucs {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 0 8px;
-}
-
-.AskAgent_copy_1tucs {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.8ch;
-}
-
-.AskAgent_note_1tucs {
-  font-size: 0.72rem;
-  opacity: 0.7;
-}
-
-.AskAgent_glyph_1tucs {
-  color: var(--theme-focused-foreground);
-}
-
-@media (max-width: 700px) {
-  .AskAgent_root_1tucs {
-    min-height: 40px;
-    padding: 4px 12px;
-  }
 }
 .RowSpaceBetween_row_1rf1p {
   display: flex;
@@ -4789,6 +4664,55 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
     text-transform: uppercase;
     text-align: left;
     cursor: pointer;
+  }
+}
+.AskAgent_root_1tucs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.AskAgent_root_1tucs:hover {
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+
+.AskAgent_row_1tucs {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 8px;
+}
+
+.AskAgent_copy_1tucs {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8ch;
+}
+
+.AskAgent_note_1tucs {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.AskAgent_glyph_1tucs {
+  color: var(--theme-focused-foreground);
+}
+
+@media (max-width: 700px) {
+  .AskAgent_root_1tucs {
+    min-height: 40px;
+    padding: 4px 12px;
   }
 }
 .Chessboard_board_cycky {

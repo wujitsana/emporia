@@ -12,7 +12,7 @@
  * - Vivid and deep (the dark theme) come from ../themePalette.ts, the table the CSS is held to.
  *
  * The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
- * for all three themes and all seven tints, under both gamut treatments.
+ * for all three themes and all six tints, under both gamut treatments.
  */
 
 import { TINT_COLORS, TINT_LABELS, TINTS, DEFAULT_TINT, type Tint } from "../themeConfig.ts";
@@ -53,8 +53,8 @@ export interface ThemeColors {
   fill: { bg: RGB; ink: RGB };
 }
 
-/** Share of the fill laid over the canvas for the selected-row wash (dashboard.css § 30); vivid's wash is the panel. */
-export const WASH = { light: 0.45, dark: 0.14 } as const;
+/** Share of the fill laid over the canvas for the selected-row wash (dashboard.css § 30); vivid's and dark's wash is the panel. */
+export const WASH = { light: 0.45 } as const;
 
 export function themeColors(style: StyleName, theme: ThemeName, tint: Tint, gamut: Gamut = "css"): ThemeColors {
   const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
@@ -71,10 +71,10 @@ export function themeColors(style: StyleName, theme: ThemeName, tint: Tint, gamu
   const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
   return { ...base, accent: p.accent, ink: p.text, fill: { bg: p.fill, ink: p.fillInk }, surfaces: [
     { name: "canvas", rgb: p.bg }, { name: "panel", rgb: p.panel },
-    { name: "wash", rgb: theme === "vivid" ? p.panel : mixOver(p.fill, WASH.dark, p.bg) }] };
+    { name: "wash", rgb: p.panel }] };   // vivid and dark: the hover / selected wash is the panel
 }
 
-/** Every combination the dashboard can show: its one style × 3 themes × 7 tints. */
+/** Every combination the dashboard can show: its one style × 3 themes × 6 tints. */
 export function allThemes(gamut: Gamut = "css"): ThemeColors[] {
   const out: ThemeColors[] = [];
   for (const theme of ["light", "vivid", "dark"] as const) {

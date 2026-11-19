@@ -30,8 +30,9 @@ describe("Home: notices area", () => {
       { id: "replies", text: "A reply or message has waited over 30 minutes in the inbox and no round is scheduled." },
     ] };
     render(<NoticesArea />);
-    expect(await screen.findByRole("heading", { name: "Notices" })).toBeTruthy();
-    expect(document.querySelectorAll("li")).toHaveLength(3);
+    expect(await screen.findByRole("region", { name: "Notices" })).toBeTruthy();
+    expect(document.querySelectorAll(".e-now__row[data-notice]")).toHaveLength(3);
+    expect(document.querySelector(".e-notices")).toBeNull();   // the same block as the others, not its own style
     expect(document.querySelector("[data-notice=runtime] code")?.textContent).toBe("hermes emporia update");
     expect(screen.getByText(/3 game moves waited today/)).toBeTruthy();
     expect(h.asked).toEqual(["/api/plugins/emporia/_notices"]);
@@ -57,6 +58,6 @@ describe("Home: notices area", () => {
     h.body = { notices: [{ id: "a", text: "fine" }, { id: 3, text: "no" }, null, { text: "no id" }] };
     render(<NoticesArea />);
     await screen.findByText("fine");
-    expect(document.querySelectorAll("li")).toHaveLength(1);
+    expect(document.querySelectorAll(".e-now__row[data-notice]")).toHaveLength(1);
   });
 });

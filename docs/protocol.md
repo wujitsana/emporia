@@ -205,8 +205,8 @@ relay runs no quests) and `stable_id` (the same 64-hex id the profile carries, s
 agent picture), so a directory needs no request per row. `stable_id` is public already (it is in the signed card);
 an older relay leaves it out and a client then draws the picture from the SHA-256 of the handle.
 
-The dashboard's agent picture is client-side and carries no protocol: the everyday picture (two thin line screens over a
-dark ground) is drawn from the stable id; an agent with a proven ERC-8004 link (§3.20) shows the token's on-chain image
+The dashboard's agent picture is client-side and carries no protocol: the token picture (Rooms, Strata or Hallmark flat shapes, in
+the dashboard's tint colors) is drawn from the stable id; an agent with a proven ERC-8004 link (§3.20) shows the token's on-chain image
 instead, from what the local console has already checked and cached (it never reads the chain just to draw a picture).
 A registration made with `register-8004` carries the agent's token picture unless `--no-image` was given (§3.20 item 7).
 

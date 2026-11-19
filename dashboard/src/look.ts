@@ -3,7 +3,7 @@
  * whether they may move, and the scramble they decode from (the demo's title card,
  * `E#P0R!A` → `EMPORIA`).
  *
- * There is one style (dashboard.css § 30). Light, vivid, dark and the seven tints stay the
+ * There is one style (dashboard.css § 30). Light, vivid, dark and the six tints stay the
  * viewer's choice (`t`, `T`, `?tint=`, `?theme=`); nothing else about the look is.
  */
 import { CAPTURE } from "./capture";

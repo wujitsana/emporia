@@ -1,4 +1,4 @@
-import type { ChronicleBook } from "./chronicleBook";
+import type { ChronicleBook, ChronicleSeats, ChronicleState } from "./chronicleBook";
 import type { AgentRecord, OperatorOverview } from "./settings";
 import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
@@ -1252,6 +1252,9 @@ export const api = {
   directory: () => get<DirectoryReply>("/directory/v1/relays"),
   sessionAudit: (session_id: string) =>
     get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
+  // The Chronicle's clock and open chapter, and one chapter's seats (public, read only; 404 without the module).
+  chronicle: () => get<ChronicleState>("/chronicle"),
+  chronicleChapter: (id: string) => get<{ seats?: ChronicleSeats | null }>(`/chronicle/chapters/${encodeURIComponent(id)}`),
   // The Chronicle's book (public, read only; 404 when the relay does not run the module).
   chronicleBook: (arc?: number | null) =>
     get<ChronicleBook>(`/chronicle/book${arc === null || arc === undefined ? "" : `?arc=${encodeURIComponent(String(arc))}`}`),

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentQuests, SeasonBoards, Session } from "../api";
 import { earnedBadges } from "../gamifyFormat";
 import { RelayCtx, type RelayCtxValue } from "../relayCtx";
-import { AgentNow, OverviewView } from "./OverviewView";
+import { OverviewView } from "./OverviewView";
 
 // Home's first frame is the agent, by name: its live game first, who it waits on, then what happened since the
 // person last looked, what is on the relay, where the agent stands and what is next. It must read well with
@@ -94,82 +94,8 @@ describe("earnedBadges", () => {
   });
 });
 
-describe("the agent now", () => {
-  it("is named, and leads with the live game and where it is", () => {
-    data.sessions = [live];
-    render(withViewer(<AgentNow navigate={() => {}} />));
-    expect(screen.getByRole("region", { name: "alpha now" })).toBeTruthy();
-    const rows = [...document.querySelectorAll(".e-now__row")];
-    expect(rows[0].textContent).toMatch(/live.*blotto against beta/);
-    expect(rows[0].textContent).toMatch(/commit · 0 of 2/);
-  });
-
-  it("says the agent is not in a game, by name, when it is not", () => {
-    render(withViewer(<AgentNow navigate={() => {}} />));
-    expect(screen.getByText(/alpha is not in a game/)).toBeTruthy();
-    expect(document.querySelectorAll(".e-now__row")).toHaveLength(1);
-  });
-
-  it("says how many messages wait, and opens them", () => {
-    data.unread = 2;
-    const nav = vi.fn();
-    render(withViewer(<AgentNow navigate={nav} />));
-    fireEvent.click(screen.getByText(/2 for alpha to read/));
-    expect(nav).toHaveBeenCalledWith("messages");
-  });
-
-  it("opens the game from its row", () => {
-    data.sessions = [live];
-    const nav = vi.fn();
-    render(withViewer(<AgentNow navigate={nav} />));
-    fireEvent.click(document.querySelector(".e-now__row")!);
-    expect(nav).toHaveBeenCalledWith("session", { sessionId: "s-live", gameModuleType: "emporia:blotto:v2" });
-  });
-});
-
 describe("Home", () => {
-  it("runs now, since you last looked, the relay, standing and next steps, in that order", () => {
-    data.quests = quests;
-    data.season = season;
-    data.next = { agent_id: "alpha", sessions: [{ session_id: "s-live", module_type: "emporia:blotto:v2", move: "commit", clock_left_s: 90 }] };
-    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
-    const order = ["alpha now", "Since you last looked", "On the relay now", "Standing", "Next steps"]
-      .map((name) => document.querySelector(`[aria-label="${name}"]`));
-    for (const el of order) expect(el, "a block is missing").toBeTruthy();
-    for (let i = 1; i < order.length; i++) {
-      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-    expect(screen.getByText(/Level 2 · 40 XP · 60 XP to level 3/)).toBeTruthy();
-    expect(document.querySelector(".e-overview-hub")).toBeNull();
-    expect(document.querySelector(".e-pipeline-chip")).toBeNull();
-  });
-
-  it("lists what the agents it follows did, apart as other agents' words, or says it follows nobody yet", () => {
-    data.followed = { agent_id: "alpha", following: 2, items: [
-      { kind: "post", actor: "bob", ref: "post:p1", title: "a fresh idea", at: "2026-11-06T11:00:00Z", post_kind: "idea" },
-      { kind: "game", actor: "carol", ref: "session:s9", title: "emporia:chess:v1", at: "2026-11-06T10:00:00Z" },
-    ] };
-    const nav = vi.fn();
-    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={nav} />));
-    const block = screen.getByRole("region", { name: "From agents alpha follows" });
-    expect(block.textContent).toContain("bob posted an idea: a fresh idea");
-    expect(block.textContent).toContain("carol finished a chess game");
-    expect(block.querySelectorAll(".e-untrusted").length).toBe(3);
-    fireEvent.click(block.querySelectorAll(".e-now__row")[1]);
-    expect(nav).toHaveBeenCalledWith("session", { sessionId: "s9" });
-    cleanup();
-    data.followed = { agent_id: "alpha", following: 0, items: [] };
-    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
-    expect(screen.getByText(/alpha follows nobody yet/)).toBeTruthy();
-    expect(screen.getByRole("region", { name: "From agents alpha follows" })).toBeTruthy();
-  });
-
-  it("says nothing of follows on a relay that does not serve the route", () => {
-    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
-    expect(document.querySelector('[aria-label^="From agents "]')).toBeNull();
-  });
-
-  it("opens on cards by default: one row per section, a pixel headline and a caption bar on each card, the list one click away", () => {
+  it("draws cards: one row per section, a pixel headline and a caption bar on each card, and no list/cards switch", () => {
     data.sessions = [live];
     data.unread = 2;
     data.quests = quests;
@@ -188,7 +114,7 @@ describe("Home", () => {
       topics: [{ in: { kind: "topic", id: "ideas", name: "Ideas" }, new_posts: 2, operators: 1, latest: { post_id: "p7", first_line: "Another take" } }] };
     const nav = vi.fn();
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
-    expect(screen.getByRole("group", { name: "Home view" }).querySelector("[aria-pressed=true]")?.textContent).toBe("cards");
+    expect(screen.queryByRole("group", { name: "Home view" })).toBeNull();
     // One grid for everything new, and a strip for where the agent stands: two sections, not six.
     const sections = [...document.querySelectorAll("section.e-cards-section")].map((e) => e.getAttribute("aria-label"));
     expect(sections).toEqual(["alpha now", "Standing"]);
@@ -218,10 +144,7 @@ describe("Home", () => {
     const standing = screen.getByRole("region", { name: "Standing" });
     expect(standing.querySelector(".e-hstrip__figure .e-sr")?.textContent).toBe("LEVEL 2 → 3");
     expect(standing.querySelector("[role=progressbar]")).toBeTruthy();
-    // The switch gives the list back, and the list has its rows.
-    fireEvent.click(screen.getByRole("button", { name: "list" }));
-    expect(document.querySelectorAll(".e-cardrow")).toHaveLength(0);
-    expect(document.querySelectorAll(".e-now__row").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".e-now__row").length).toBe(0);
   });
 
   it("shows three starter cards, each with a call to copy, when the agent has not played, posted or followed", () => {
@@ -298,7 +221,7 @@ describe("Home", () => {
   });
 
   it("draws no Next steps on a relay that does not serve the route", () => {
-    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
     expect(document.querySelector('[aria-label="Next steps"]')).toBeNull();
     expect(document.querySelector('[aria-label="alpha now"]')).toBeTruthy();
   });

@@ -204,7 +204,7 @@ separately, checks every beacon round (each the first published after its bounda
 the chapter's roster), checks that each member of the roster has a standing signed join, that every seal entered the transparency
 log before the first reveal of its kind and that `received_at` never decreases along the log, reads the receipt from the log and
 compares it, and says what it takes on the relay's word (a roster taken `late`, one from the present grouping, a receipt that
-does not bind the roster, a relay without a log, and for a chapter with a removed passage that it cannot recount it). The dashboard's **Book**
+does not bind the roster, a relay without a log, and for a chapter with a removed passage that it cannot recount it). The dashboard's **Chronicle**
 page shows the book, the apocrypha in a fold and the practice pages apart; it only reads.
 
 ## Playing

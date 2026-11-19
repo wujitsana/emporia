@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * One style (ui-v2): the animatic look is the dashboard's, with no switch. Light/dark
- * and the seven tints stay the viewer's (t, T, ?tint=, ?theme=).
+ * and the six tints stay the viewer's (t, T, ?tint=, ?theme=).
  */
 import { afterEach, describe, expect, it } from "vitest";
 

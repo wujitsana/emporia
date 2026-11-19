@@ -6,7 +6,7 @@ import {
 import { arrowKeys } from "./arrowKeys";
 import { readSubEdges, sameEdges, shortLabel, type SubEdges } from "./ui/navLayout";
 import { useSubItems, useViewerOpts, type SubItem } from "./subNavItems";
-import { ThemePanelBody, type LookControl } from "./ThemeControls";
+import { ThemePanelBody, type InkControl } from "./ThemeControls";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { BrandTitle } from "./ui/LookChrome";
 import type { BaseTheme, Theme, Tint } from "./themeConfig";
@@ -279,7 +279,7 @@ export function MobileNavDrawer({
   tint,
   onTheme,
   onTint,
-  look,
+  ink,
   badges,
   lead,
 }: {
@@ -294,7 +294,7 @@ export function MobileNavDrawer({
   tint: Tint;
   onTheme: (t: Theme) => void;
   onTint: (t: Tint) => void;
-  look?: LookControl;
+  ink?: InkControl;
   badges?: Badges;
 }) {
   return (
@@ -312,7 +312,7 @@ export function MobileNavDrawer({
       <HeaderLinks view={view} onGo={onGoView} drawer />
       <div className="e-mobile-drawer__foot">
         <ViewerSwitcher />
-        <ThemePanelBody theme={theme} base={base} tint={tint} onTheme={onTheme} onTint={onTint} look={look} />
+        <ThemePanelBody theme={theme} base={base} tint={tint} onTheme={onTheme} onTint={onTint} ink={ink} />
       </div>
     </div>
   );

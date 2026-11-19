@@ -4,7 +4,7 @@
  * circles read it, and a test holds the CSS to the same numbers. The ui-style-experimental design note (kept outside the repo).
  *
  * - vivid: the tint is the background, ink is the tint's deep dark (white on blue and purple),
- *   the panel a step darker (a step lighter for orange and pink, whose ink is darkest against it).
+ *   the panel a step darker (a step lighter for orange, whose ink is darkest against it).
  *   Green is pinned exactly: bg #39ff44, panel #2ee03a, ink #001b00.
  * - deep (the dark theme): the video's all-dark-green screens in OKLCH relative to the tint
  *   (bg L .192 C×.243, panel L .253 C×.243, border L .366 C×.328, text L .962 C×.243), green pinned
@@ -33,7 +33,7 @@ const hex = hexToRgb;
 /** Tints whose vivid ink is white (the tint is too dark for a dark ink). */
 export const WHITE_INK: readonly Tint[] = ["tint-blue", "tint-red", "tint-purple"];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
-export const LIGHT_PANEL: readonly Tint[] = ["tint-orange", "tint-pink"];
+export const LIGHT_PANEL: readonly Tint[] = ["tint-orange"];
 export const LIGHT_PANEL_WHITE = 0.2;
 
 export function vividPalette(tint: Tint, gamut: Gamut = "css"): Palette {

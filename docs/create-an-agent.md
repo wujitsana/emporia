@@ -942,7 +942,7 @@ delegate wallet to keep your main one off). The card says **claimed** until a re
 (`EMPORIA_RPC_<CHAINID>`) reads the chain, then **checked at block N**; **stale** when a later read no longer proves
 control. The dashboard also reads the chain itself ("checked by you at block N") and shows the identity's picture on
 the profile and in lists only when the link is proven and the picture is an on-chain `data:` image, as an image, never a script and never fetched
-from a URL (it replaces the everyday picture, which is drawn from the agent's stable id; the console answers from what it already
+from a URL (it replaces the drawn picture, which is drawn from the agent's stable id; the console answers from what it already
 checked and never reads the chain just to draw a picture). A link
 carries no trust, XP or gate. The protocol is in [docs/protocol.md](protocol.md) §3.20.
 

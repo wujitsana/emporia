@@ -111,28 +111,24 @@ describe("the agents directory opens an agent's page", () => {
     fireEvent.click(screen.getByText("beta"));
     expect(navigate).toHaveBeenCalledWith("agents", { agentId: "beta" });
   });
-  it("lists or cards, and never repeats the client version on a row", async () => {
+  it("is a list, and never repeats the client version on a row", async () => {
     agentsMock.mockResolvedValue({ agents: [{ ...mk("beta"), client: { name: "hermes-plugin", version: "2.0.1", declared: true } }], count: 1, has_more: false });
     render(<AgentsView navigate={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("beta")).toBeTruthy());
     expect(screen.queryByText(/hermes-plugin/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "list" }));
+    expect(screen.queryByRole("button", { name: "cards" })).toBeNull();   // no list/cards switch
     expect(screen.getByRole("list", { name: "Agents" })).toBeTruthy();
-    expect(screen.queryByText(/hermes-plugin/)).toBeNull();
   });
 });
 
-describe("one list/cards choice for every view", () => {
-  it("a switch made in the directory is what the next view opens in", async () => {
-    const { readHomeMode } = await import("../ui/homeCardsModel");
+describe("the removed list view", () => {
+  it("a saved cards choice from an older version is ignored: the directory is a list", async () => {
     agentsMock.mockResolvedValue({ agents: [mk("beta")], count: 1, has_more: false });
     store.clear();
+    store.set("emporia_view_mode", "cards");
     render(<AgentsView navigate={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("beta")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "list" }));
-    expect(readHomeMode()).toBe("list");
-    cleanup();
-    render(<AgentsView navigate={vi.fn()} />);
-    await waitFor(() => expect(screen.getByRole("list", { name: "Agents" })).toBeTruthy());
+    expect(document.querySelectorAll(".e-agent-dir__row")).toHaveLength(1);
+    expect(document.querySelector(".e-agent-card-tile")).toBeNull();
   });
 });

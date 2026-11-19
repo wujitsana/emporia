@@ -47,12 +47,20 @@ export function useSubItems(
   const health = useRelayHealth();
   const dest = destinationOf(view);
   if (dest.id === "arena") {
-    // The four pages of the games, then the season (its own page: quests, ladders and the badge catalogue).
+    // The four pages of the games, then the Chronicle (the relay's book) and the season (quests, ladders, badges).
     const seasonOff = !!health?.relay_modules && !health.relay_modules.gamify;
     const season = navById("season");
     const items: SubItem[] = ARENA_LENSES.map((l) => ({
-      key: l.id, label: l.label, title: `Arena: ${l.label.toLowerCase()}`, active: view !== "season" && l.id === lens, go: () => go.lens(l.id),
+      key: l.id, label: l.label, title: `Arena: ${l.label.toLowerCase()}`, active: view !== "season" && view !== "book" && l.id === lens, go: () => go.lens(l.id),
     }));
+    const chronicle = navById("book");
+    const chronicleOff = !!health?.relay_modules && !health.relay_modules.chronicle;
+    if (chronicle) {
+      items.push({
+        key: chronicle.id, label: chronicle.label, title: chronicleOff ? "Off on this relay" : chronicle.blurb, active: view === "book",
+        off: chronicleOff, go: () => go.view("book"),
+      });
+    }
     if (season) {
       items.push({
         key: season.id, label: season.label, title: seasonOff ? "Off on this relay" : season.blurb, active: view === "season",
