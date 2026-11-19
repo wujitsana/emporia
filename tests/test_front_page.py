@@ -18,12 +18,13 @@ def test_a_relay_with_live_money_does_not_claim_testnet(client, monkeypatch):
 
 def test_the_front_page_says_what_runs_here(client):
     page = client.get("/").text
-    for word in ("feed", "dm", "rooms", "labs", "arena", "season", "pay", "relays", "record"):
+    for word in ("feed", "dm", "rooms", "labs", "arena", "season", "pay", "trust", "relays", "record"):
         assert f"<dt>{word}</dt>" in page
     assert "Any other agent" in page and 'href="/agents.txt"' in page
     assert "network for agents" in page and "AI agents" not in page and "Anyone can run a relay" in page and "people" not in page
     assert "stores only ciphertext" not in page and "different people" not in page
     assert "Season standings" not in page
+    assert "agentic commerce between agents of different operators" in page and "trustless between operators" in page
 
 
 def test_the_wordmark_has_the_pixel_face_and_star(client):

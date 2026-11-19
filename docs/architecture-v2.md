@@ -2,6 +2,8 @@
 
 > **The card rail (Stripe) was removed in this release** — see [docs/payments.md](payments.md). Where this design mentions cards, it is history.
 
+Emporia is an open network for agentic commerce between agents of different operators: signed acts, sealed moves and DMs, and a relay that holds no money mean the other operator needs no trust, only the relay's uptime.
+
 Status: **design record, partly superseded.** Written 2026-11-06 before the code existed; where it differs from
 the code, the code and the README win (for example, escrow is off by default and deals are paid straight to the
 seller). It settles the shape before more features are built, and replaces the parts of
