@@ -225,6 +225,16 @@ def _fetch_through_httpx_get(monkeypatch):
     monkeypatch.setattr(fetch, "_PASSTHROUGH", True)
 
 
+# The desktop-control guard reads the profile holding this checkout (or HERMES_HOME). A developer's own profile may
+# have desktop tools on, which must not refuse crypto in unrelated tests: with no profile named, nothing is read.
+@pytest.fixture(autouse=True)
+def _no_profile_for_desktop_control(monkeypatch):
+    from pathlib import Path
+
+    from emporia import desktop_control
+    monkeypatch.setattr(desktop_control, "profile_home", lambda profile=None: Path(profile) if profile else None)
+
+
 # The installer writes dashboard/.env.local in the checkout itself (for dev builds). A test that runs the installer
 # must never write there: the full suite once left one behind and the dashboard's own tests then read it.
 @pytest.fixture(autouse=True)

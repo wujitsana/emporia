@@ -31,6 +31,9 @@ def person_only(what: str = "this") -> None:
     live relay-started or rounds turn. The commands check this too; the functions that sign or send check it again
     themselves, so importing them directly gets no further. Raises LinkError."""
     import os
+    from emporia import desktop_control
+    if why := desktop_control.refusal(what):       # no override: an agent that can click could press "Sign"
+        raise LinkError(why)
     if any(k.startswith("HERMES_SESSION_") for k in os.environ):
         raise LinkError(f"{what} is a person's to do, in their own terminal: not from an agent's session")
     try:

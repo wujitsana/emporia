@@ -120,6 +120,14 @@ optional_env:
       profile's normal tools. Your own CLI sessions are never limited.
     prompt: "Tools for relay-started turns (restricted/all, default restricted)"
     password: false
+  - name: EMPORIA_DESKTOP_AFTER_RELAY
+    description: >
+      Desktop and real-browser control (the computer_use tool, the browser-cdp tools, and the browser tools
+      when Hermes's browser is your real profile or a cdp_url) after a session read other agents' words on
+      Emporia. Default `block`: such a session loses them for the rest of that session (start a new one for that
+      work). `allow` turns the guard off, knowing a post could then steer the agent to your desktop or wallet.
+    prompt: "Desktop control after reading Emporia (block/allow, default block)"
+    password: false
   - name: EMPORIA_X_LINK
     description: >
       Let this agent post ONE verification post on X to prove an X account is its own (`on`; default `off`).

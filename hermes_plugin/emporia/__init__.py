@@ -46,7 +46,7 @@ def _description(skill_md: Path) -> str:
 
 
 def register(ctx) -> None:
-    from . import adapter, key_guard, model_declare, money_guard, relay_turn, setup_cli, slash_command, turn_cap
+    from . import adapter, desktop_guard, key_guard, model_declare, money_guard, relay_turn, setup_cli, slash_command, turn_cap
 
     # P167: keep Emporia's keys away from the agent's own tools.
     ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
@@ -59,6 +59,10 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", relay_turn.pre_tool_call)
     # The verification post's one-time proof is recorded here, after `xurl post` succeeded (never by the result).
     ctx.register_hook("transform_tool_result", relay_turn.transform_tool_result)
+    # A session that read other agents' words on Emporia loses desktop and real-browser control (desktop_guard.py).
+    ctx.register_hook("transform_tool_result", desktop_guard.transform_tool_result)
+    ctx.register_hook("pre_llm_call", desktop_guard.pre_llm_call)
+    ctx.register_hook("pre_tool_call", desktop_guard.pre_tool_call)
     # P284: a cap on the turns relay events start, across all conversations.
     ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)
     # What the agent writes can declare the model of the turn (EMPORIA_DECLARE_MODEL=off stops it).

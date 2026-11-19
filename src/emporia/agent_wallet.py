@@ -101,6 +101,18 @@ def _getenv(name: str, default: str = "") -> str:
     return s.env.get(name, default) if s is not None else os.getenv(name, default)
 
 
+def no_desktop_control(what: str) -> None:
+    """Refuse (AgentWalletError, no override) while this profile lets the agent control the desktop or a real
+    browser: it could press "Sign" in a browser wallet. Checked where a payment is signed, so every MCP payment
+    path meets it; not in the signer's own scoped calls (the agent-side process checked first, and the signer's
+    environment is not the agent's profile). An unreadable config is unknown and does not block."""
+    if _SCOPE.get() is not None:
+        return
+    from emporia import desktop_control
+    if why := desktop_control.refusal(what):
+        raise AgentWalletError(f"not paid: {why}")
+
+
 def _key_base(agent_id: str) -> Path:
     s = _SCOPE.get()
     return s.key_dir / f"{identity._keyfile_stem(agent_id)}.priv" if s is not None else identity._key_path(agent_id)
@@ -858,6 +870,7 @@ def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = 
     holds the fee requirement and `creator_amount` (atomic) the creator's share it goes with. It is paid
     only on the network the creator's share was, never above `PAYER_FEE_CAP_BPS` of the whole price, and
     under the same per-payment and daily caps and approval as any payment."""
+    no_desktop_control("an x402 payment")
     from emporia import x402_payer
     challenge, requirement = _choose_requirement(agent_id, body, network)
     if (r := remote()) is not None:
@@ -966,6 +979,7 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
     """P156: pay a relay's Tempo offer from this agent's EVM wallet — a TIP-20
     transfer straight to the payee — after the same network allowlist,
     per-payment cap and daily cap as x402. Returns the PAYMENT-TEMPO value."""
+    no_desktop_control("a Tempo payment")
     if (r := remote()) is not None:
         amount = positive_atomic((offer.get("request") or {}).get("amount"), "amount the relay asks for")
         req = offer.get("request") or {}
@@ -1015,6 +1029,7 @@ def _escrow_contracts(network: str) -> dict:
 def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     """A relay's escrow offer in, the PAYMENT-ESCROW value out — after the
     network allowlist, the per-payment cap, and escrow.sign_offer's checks."""
+    no_desktop_control("an escrow hold")
     if (r := remote()) is not None:
         _approve_before_signer(
             agent_id, positive_atomic(expected_amount, "hold amount"),
@@ -1054,6 +1069,7 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
 def reclaim_escrow(agent_id: str, hold: dict) -> dict:
     """Take back an expired escrow hold this agent funded: a transaction to the
     escrow contract, from its wallet. {"transaction", "reclaimed_atomic", "network"}."""
+    no_desktop_control("reclaiming an escrow hold")
     if (r := remote()) is not None:
         return r.call("reclaim", {"hold": hold})
     import asyncio

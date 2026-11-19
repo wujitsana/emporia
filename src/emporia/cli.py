@@ -3935,6 +3935,11 @@ def cmd_features(args: argparse.Namespace) -> int:
         if not asked:
             print(f"features: name what to turn {args.action}: {', '.join(F.OPTIONAL)}")
             return 1
+        if args.action == "on" and "money" in asked and "money" not in now and not args.dir:
+            from emporia import desktop_control
+            if why := desktop_control.refusal("the money feature", profile):
+                print(f"features: {why}")
+                return 1
         new = sorted(set(now) | set(asked) if args.action == "on" else set(now) - set(asked))
         new = [n for n in F.OPTIONAL if n in new]
         for n in asked:
@@ -4319,6 +4324,11 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
                                    declare_model=held.get("EMPORIA_DECLARE_MODEL", "").lower() != "off")
     if picked_features is not None:
         picked_features = F.derive(wallet=wallet, base=picked_features)
+        if "money" in picked_features:
+            from emporia import desktop_control
+            if why := desktop_control.refusal("the money feature", profile):
+                picked_features = [n for n in picked_features if n != "money"]
+                print(localize(f"  Money left off: {why}."))
         merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
         installer().refresh_mcp_references(profile)       # the entry's --features= follows the setting
         print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
@@ -4383,6 +4393,8 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
                                        if (profile / "config.yaml").exists() else {}) else "off",
                                    notices=(_notices_state(profile).get("choice") or "")):
         print(localize(line))
+    from emporia import desktop_control as _dc
+    print("  " + _dc.doctor_line(_dc.detection(profile))[1])        # which desktop-control tools are on, what is refused
     if rounds:
         from emporia import rounds as R
         print("\n  " + localize(f"Rounds are on: the agent takes a model turn every {rounds}, on your account. "
@@ -6605,6 +6617,7 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
         doctor_relay_toolsets(rep, cfg)
     doctor_busy_input(rep, cfg, name)
     doctor_self_review(rep, cfg, name)
+    doctor_desktop_control(rep, profile, dotenv, cfg)
     doctor_hermes_version(rep)
     doctor_confinement(rep, profile, cfg, dotenv)
     n = turns_in_24h(profile)
@@ -6663,6 +6676,40 @@ def doctor_busy_input(rep: Report, cfg: dict, name: str) -> None:
         rep.warn("display.busy_input_mode is not queue: a second event in the same conversation aborts the running "
                  "turn, and the agent's move with it",
                  f"hermes {scope}config set display.busy_input_mode queue (it also applies to this profile's own chats)")
+
+
+def doctor_desktop_control(rep: Report, profile: Path, dotenv: dict[str, str], cfg: dict | None = None) -> None:
+    """Which desktop-control tools this profile gives the agent (computer_use, browser-cdp, a real browser), and what
+    is refused because of them (no crypto of Emporia's own: emporia.desktop_control). With the money feature on
+    that is a danger: payments refuse at use time, and nothing is rewritten here. An unreadable config is unknown."""
+    from emporia import desktop_control as dc, features as F
+    if cfg is None:
+        cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else None
+    found = dc.detect(cfg)
+    level, text = dc.doctor_line(found)
+    if level == "ok":
+        rep.ok(text)
+        if dotenv.get("EMPORIA_DESKTOP_AFTER_RELAY", "").strip().lower() == "allow":
+            rep.warn("EMPORIA_DESKTOP_AFTER_RELAY=allow: a session that read other agents' words may still use "
+                     "desktop and real-browser control, so a post could steer the agent there",
+                     "remove it from its .env")
+        return
+    if level == "warn":
+        rep.warn(text)
+        return
+    try:
+        money = "money" in F.enabled_from(dotenv, Path(dotenv.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys"))
+    except Exception:  # noqa: BLE001 — features unreadable: reported on their own line
+        money = False
+    if money:
+        rep.fail("DANGER: " + text + " The money feature is on and its payments now refuse.",
+                 "turn the desktop or browser tools off for this profile (`hermes tools`), or "
+                 f"`emporia features off money --agent {profile.name}`")
+    else:
+        rep.warn(text, "turn the desktop or browser tools off for this profile (`hermes tools`) before using money")
+    if dotenv.get("EMPORIA_DESKTOP_AFTER_RELAY", "").strip().lower() == "allow":
+        rep.warn("EMPORIA_DESKTOP_AFTER_RELAY=allow: a session that read other agents' words may still use "
+                 "desktop and real-browser control", "remove it from its .env")
 
 
 def doctor_self_review(rep: Report, cfg: dict, name: str) -> None:
