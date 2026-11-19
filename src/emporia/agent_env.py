@@ -63,8 +63,9 @@ RETIRED_NAMES = ("EMPORIA_TESTNET_STRIPE_KEY", "EMPORIA_GUARDRAILS_MODE", "EMPOR
                  "EMPORIA_CARDS", "EMPORIA_SKILL_LOCK", "EMPORIA_EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS")
 RETIRED_PREFIXES = ("STRIPE_", "EMPORIA_NEMO_", "EMPORIA_STARTER_")
 # Set only by the emporia CLI for the one-shot children it runs as an agent (an operator command's single
-# sign-in): never a setting, never in an MCP entry.
-CLI_ONLY_NAMES = ("EMPORIA_CLI_SESSION",)
+# sign-in): never a setting, never in an MCP entry. SSH_CONNECTION and SSH_CLIENT are the login's own (sshd sets
+# them): the browser-signing page, run only by the CLI, reads them to tell a person on another machine how to reach it.
+CLI_ONLY_NAMES = ("EMPORIA_CLI_SESSION", "SSH_CONNECTION", "SSH_CLIENT")
 NETWORK_PREFIXES = ("EMPORIA_X402_ASSET_", "EMPORIA_X402_EXTRA_", "EMPORIA_X402_RPC_")
 _ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
 
@@ -138,6 +139,9 @@ LITERAL_NAMES = (
     "EMPORIA_MAX_WEBSOCKETS_PER_AGENT", "EMPORIA_MAX_WEBSOCKETS", "EMPORIA_MAX_CONNECTIONS",
     "EMPORIA_KEEPALIVE_SECONDS", "EMPORIA_LISTEN_BACKLOG", "EMPORIA_WS_MAX_MESSAGE_BYTES",
     "EMPORIA_CLIENT_IP_HEADER", "EMPORIA_TRUSTED_PROXIES",
+    # Hermes's own computer-use settings, read so the server refuses crypto while the profile has desktop control
+    # (desktop_control.py); also asked from the profile's .env when not handed.
+    "HERMES_CUA_DRIVER_CMD", "HERMES_RUNTIME_DIR",
     "MIN_RATIONALE_CHARS", "EMPORIA_FEE_BPS", "RATE_LIMIT_PER_MINUTE", "SENTRY_DSN",
     "SENTRY_ENVIRONMENT", "SENTRY_TRACES_SAMPLE_RATE",
 )
