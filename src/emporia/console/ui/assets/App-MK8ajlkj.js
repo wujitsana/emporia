@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DAHvTsUQ.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Bty2KmxK.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -2000,26 +2000,26 @@ var TINTS = [
 	"tint-green",
 	"tint-blue",
 	"tint-red",
-	"tint-yellow",
+	"tint-orange",
 	"tint-purple",
-	"tint-orange"
+	"tint-charcoal"
 ];
 var DEFAULT_TINT = "tint-green";
 var TINT_LABELS = {
 	"tint-green": "Green",
 	"tint-blue": "Blue",
 	"tint-red": "Crimson",
-	"tint-yellow": "Yellow",
+	"tint-orange": "Orange",
 	"tint-purple": "Purple",
-	"tint-orange": "Orange"
+	"tint-charcoal": "Charcoal"
 };
 var TINT_COLORS = {
 	"tint-green": "#39ff44",
 	"tint-blue": "#0047ff",
 	"tint-red": "#b00331",
-	"tint-yellow": "#cdbf1f",
+	"tint-orange": "#d57c22",
 	"tint-purple": "#7d3c98",
-	"tint-orange": "#d57c22"
+	"tint-charcoal": "#888888"
 };
 /** A saved or typed tint → a tint. The old default (`""`, "amber") and anything unknown load as green. */
 function normalizeTint(v) {
@@ -2235,7 +2235,12 @@ var WHITE_INK = [
 	"tint-purple"
 ];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
-var LIGHT_PANEL = ["tint-orange"];
+var LIGHT_PANEL = ["tint-orange", "tint-charcoal"];
+/** Light-theme canvas and panel for the neutral tint: gray, not near-white (the others derive theirs from the tint). */
+var LIGHT_NEUTRAL = { "tint-charcoal": {
+	bg: "#e6e6e6",
+	panel: "#d9d9d9"
+} };
 var LIGHT_PANEL_WHITE = .2;
 function vividPalette(tint, gamut = "css") {
 	const t = TINT_COLORS[tint];
@@ -2482,8 +2487,8 @@ function ViewerSelect() {
 *                     hidden, a phone layout scaled so its smallest text is ≥ 13
 *                     CSS px, and faster refreshes so changes appear on cue.
 *   ?tint=green       start on a tint: green (the default; "amber",
-*                     and "default" mean green too), blue, red, yellow,
-*                     purple or orange (pink was removed: it loads green). Not saved: the next plain load is unchanged.
+*                     and "default" mean green too), blue, red, orange,
+*                     purple or charcoal (pink and yellow were removed: they load green). Not saved: the next plain load is unchanged.
 *   ?theme=light|vivid|dark start on a theme.
 *   t / T (hotkeys)   next tint / light ↔ dark (vivid is the middle circle's), instantly (no fade), so a capture
 *                     script can switch on the beat. Never while typing.
@@ -3815,11 +3820,11 @@ var TINT = [
 		0
 	],
 	[
-		"#cdbf1f",
-		"#171501",
-		"#f7f6ea",
-		"#635700",
-		"#cdbf1f",
+		"#888888",
+		"#141414",
+		"#f5f5f5",
+		"#555555",
+		"#b7b7b7",
 		1
 	]
 ];
@@ -3892,7 +3897,8 @@ var GUEST = [
 		5,
 		6,
 		7,
-		8
+		8,
+		9
 	]
 ];
 function idBytes(id) {
@@ -14039,7 +14045,8 @@ function themeColors(style, theme, tint, gamut = "css") {
 	if (theme === "light") {
 		const rel = (L, C) => relativeOklch(hex, L, C, gamut);
 		const fill = rel((l) => Math.max(l, .86), (c) => c);
-		const bg = rel(.97, (c) => c * .1);
+		const neutral = LIGHT_NEUTRAL[tint];
+		const bg = neutral ? relativeOklch(neutral.bg, (l) => l, (c) => c, gamut) : rel(.97, (c) => c * .1);
 		return {
 			...base,
 			accent: accentFor(theme, tint, gamut),
@@ -14055,7 +14062,7 @@ function themeColors(style, theme, tint, gamut = "css") {
 				},
 				{
 					name: "panel",
-					rgb: rel(.92, (c) => c * .18)
+					rgb: neutral ? relativeOklch(neutral.panel, (l) => l, (c) => c, gamut) : rel(.92, (c) => c * .18)
 				},
 				{
 					name: "wash",

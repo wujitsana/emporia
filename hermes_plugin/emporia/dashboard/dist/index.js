@@ -11600,26 +11600,26 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-green",
 			"tint-blue",
 			"tint-red",
-			"tint-yellow",
+			"tint-orange",
 			"tint-purple",
-			"tint-orange"
+			"tint-charcoal"
 		];
 		DEFAULT_TINT = "tint-green";
 		TINT_LABELS = {
 			"tint-green": "Green",
 			"tint-blue": "Blue",
 			"tint-red": "Crimson",
-			"tint-yellow": "Yellow",
+			"tint-orange": "Orange",
 			"tint-purple": "Purple",
-			"tint-orange": "Orange"
+			"tint-charcoal": "Charcoal"
 		};
 		TINT_COLORS = {
 			"tint-green": "#39ff44",
 			"tint-blue": "#0047ff",
 			"tint-red": "#b00331",
-			"tint-yellow": "#cdbf1f",
+			"tint-orange": "#d57c22",
 			"tint-purple": "#7d3c98",
-			"tint-orange": "#d57c22"
+			"tint-charcoal": "#888888"
 		};
 		themeRoot = null;
 		fadeTimers = /* @__PURE__ */ new WeakMap();
@@ -13765,7 +13765,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			fillInk: WHITE_INK.includes(tint) ? WHITE$2 : bg
 		};
 	}
-	var WHITE$2, hex, WHITE_INK, LIGHT_PANEL, LIGHT_PANEL_WHITE, toHex, rgbHex;
+	var WHITE$2, hex, WHITE_INK, LIGHT_PANEL, LIGHT_NEUTRAL, LIGHT_PANEL_WHITE, toHex, rgbHex;
 	var init_themePalette = __esmMin((() => {
 		init_color();
 		init_themeConfig();
@@ -13780,7 +13780,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-red",
 			"tint-purple"
 		];
-		LIGHT_PANEL = ["tint-orange"];
+		LIGHT_PANEL = ["tint-orange", "tint-charcoal"];
+		LIGHT_NEUTRAL = { "tint-charcoal": {
+			bg: "#e6e6e6",
+			panel: "#d9d9d9"
+		} };
 		LIGHT_PANEL_WHITE = .2;
 		toHex = (rgb) => "#" + rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
 		rgbHex = toHex;
@@ -15601,11 +15605,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				0
 			],
 			[
-				"#cdbf1f",
-				"#171501",
-				"#f7f6ea",
-				"#635700",
-				"#cdbf1f",
+				"#888888",
+				"#141414",
+				"#f5f5f5",
+				"#555555",
+				"#b7b7b7",
 				1
 			]
 		];
@@ -15678,7 +15682,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				5,
 				6,
 				7,
-				8
+				8,
+				9
 			]
 		];
 		SVG_OPEN = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\">";
@@ -25546,7 +25551,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (theme === "light") {
 			const rel = (L, C) => relativeOklch(hex, L, C, gamut);
 			const fill = rel((l) => Math.max(l, .86), (c) => c);
-			const bg = rel(.97, (c) => c * .1);
+			const neutral = LIGHT_NEUTRAL[tint];
+			const bg = neutral ? relativeOklch(neutral.bg, (l) => l, (c) => c, gamut) : rel(.97, (c) => c * .1);
 			return {
 				...base,
 				accent: accentFor(theme, tint, gamut),
@@ -25562,7 +25568,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					},
 					{
 						name: "panel",
-						rgb: rel(.92, (c) => c * .18)
+						rgb: neutral ? relativeOklch(neutral.panel, (l) => l, (c) => c, gamut) : rel(.92, (c) => c * .18)
 					},
 					{
 						name: "wash",
