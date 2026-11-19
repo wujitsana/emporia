@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Bty2KmxK.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CRE64ofX.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -2238,8 +2238,8 @@ var WHITE_INK = [
 var LIGHT_PANEL = ["tint-orange", "tint-charcoal"];
 /** Light-theme canvas and panel for the neutral tint: gray, not near-white (the others derive theirs from the tint). */
 var LIGHT_NEUTRAL = { "tint-charcoal": {
-	bg: "#e6e6e6",
-	panel: "#d9d9d9"
+	bg: "#ececec",
+	panel: "#e0e0e0"
 } };
 var LIGHT_PANEL_WHITE = .2;
 function vividPalette(tint, gamut = "css") {
@@ -3913,6 +3913,9 @@ function fill$4(color, d) {
 function ground(color) {
 	return fill$4(color, "M0 0h32v32H0z");
 }
+function close$1(col) {
+	return (col[4] ? "<path fill=\"none\" stroke=\"" + col[3] + "\" stroke-opacity=\".5\" stroke-width=\".5\" d=\"M.25 .25h31.5v31.5h-31.5z\"/>" : "") + "</svg>";
+}
 function palette(b) {
 	const t = b[0] % 6, f = TINT[t], guest = CHAT[GUEST[t][b[2] % GUEST[t].length]];
 	const mode = b[1] % 8, one = f[3] === f[4];
@@ -3932,13 +3935,15 @@ function palette(b) {
 		f[2],
 		f[3],
 		guest,
-		f[1]
+		f[1],
+		1
 	];
 	if (mode === 3) return [
 		f[2],
 		f[1],
 		f[3],
-		guest
+		guest,
+		1
 	];
 	if (mode === 4) return f[5] ? [
 		f[0],
@@ -3972,7 +3977,8 @@ function palette(b) {
 		f[2],
 		f[1],
 		f[0],
-		guest
+		guest,
+		1
 	] : [
 		f[4],
 		f[3],
@@ -3980,7 +3986,6 @@ function palette(b) {
 		f[1]
 	];
 }
-var EDGE = "<path fill=\"none\" stroke=\"#121212\" opacity=\".35\" d=\"M0 0h32v32H0z\"/>";
 var ROOM_WALLS = [
 	[
 		1,
@@ -4055,19 +4060,34 @@ var ROOM_WALLS = [
 		1
 	]
 ];
-function rooms(b, col) {
+function rooms(id) {
+	const b = idBytes(id), col = palette(b);
 	const h = [
 		4,
 		6,
 		8
-	][b[3] % 3], lo = h + 4, hi = 28 - h;
-	const cx = lo + ((hi - lo) * (b[4] % 5) >> 2), cy = lo + ((hi - lo) * (b[5] % 5) >> 2);
+	][b[3] % 3], lo = h + 2, hi = 30 - h;
+	let cx = [
+		8,
+		12,
+		16,
+		20,
+		24
+	][b[4] % 5], cy = [
+		8,
+		12,
+		16,
+		20,
+		24
+	][b[5] % 5];
+	cx = cx < lo ? lo : cx > hi ? hi : cx;
+	cy = cy < lo ? lo : cy > hi ? hi : cy;
 	const x0 = cx - h, y0 = cy - h, x1 = cx + h, y1 = cy + h;
 	const wall = [
-		"M0 0H32L" + x1 + " " + y0 + "H" + x0 + "z",
-		"M32 0V32L" + x1 + " " + y1 + "V" + y0 + "z",
-		"M32 32H0L" + x0 + " " + y1 + "H" + x1 + "z",
-		"M0 32V0L" + x0 + " " + y0 + "V" + y1 + "z"
+		"M0 0L32 0L" + x1 + " " + y0 + "L" + x0 + " " + y0 + "z",
+		"M32 0L32 32L" + x1 + " " + y1 + "L" + x1 + " " + y0 + "z",
+		"M32 32L0 32L" + x0 + " " + y1 + "L" + x1 + " " + y1 + "z",
+		"M0 32L0 0L" + x0 + " " + y0 + "L" + x0 + " " + y1 + "z"
 	];
 	const pat = ROOM_WALLS[b[6] % 12], turn = b[7] % 4;
 	const d = [
@@ -4077,30 +4097,18 @@ function rooms(b, col) {
 		""
 	];
 	for (let i = 0; i < 4; i++) d[pat[(i + turn) % 4]] += wall[i];
-	let far = [
+	d[[
 		2,
 		1,
 		3
-	][b[8] % 3];
-	if (Number(pat[0] === far) + Number(pat[1] === far) + Number(pat[2] === far) + Number(pat[3] === far) > 2) far = far % 3 + 1;
-	d[far] += "M" + x0 + " " + y0 + "H" + x1 + "V" + y1 + "H" + x0 + "z";
+	][b[8] % 3]] += "M" + x0 + " " + y0 + "H" + x1 + "V" + y1 + "H" + x0 + "z";
 	const m = b[9] % 4, r = h / 2;
 	let mark = "";
 	if (m === 1) mark = "<circle cx=\"" + cx + "\" cy=\"" + cy + "\" r=\"" + r + "\" fill=\"" + col[0] + "\"/>";
 	if (m === 2) mark = fill$4(col[0], "M" + cx + " " + (cy - r) + "L" + (cx + r) + " " + cy + "L" + cx + " " + (cy + r) + "L" + (cx - r) + " " + cy + "z");
 	if (m === 3) mark = fill$4(col[0], "M" + (cx - r) + " " + (cy - r) + "h" + h + "v" + h + "h-" + h + "z");
-	return fill$4(col[1], d[1]) + fill$4(col[2], d[2]) + fill$4(col[3], d[3]) + mark;
+	return SVG_OPEN + ground(col[0]) + fill$4(col[1], d[1]) + fill$4(col[2], d[2]) + fill$4(col[3], d[3]) + mark + close$1(palette(b));
 }
-var STRATA_TURN = [
-	"",
-	"rotate(90 16 16)",
-	"rotate(180 16 16)",
-	"rotate(270 16 16)",
-	"matrix(-1 0 0 1 32 0)",
-	"matrix(0 1 1 0 0 0)",
-	"matrix(1 0 0 -1 0 32)",
-	"matrix(0 -1 -1 0 32 32)"
-];
 var STRATA_Y3 = [
 	[
 		7,
@@ -4151,96 +4159,166 @@ var STRATA_ORDER = [
 		1
 	]
 ];
+var AMP = [
+	[],
+	[
+		5,
+		4,
+		3,
+		2
+	],
+	[
+		7,
+		5,
+		4,
+		2
+	],
+	[
+		5,
+		4,
+		3,
+		2
+	],
+	[
+		10,
+		8,
+		6,
+		4
+	],
+	[
+		4,
+		3,
+		2,
+		1
+	],
+	[
+		3,
+		2,
+		1
+	],
+	[
+		8,
+		6,
+		4,
+		2
+	]
+];
 function isqrt(v) {
 	let r = 0;
 	while ((r + 1) * (r + 1) <= v) r++;
 	return r;
 }
-function strataAt(y, kind, s, v, X2) {
+function strataAt(c, X2) {
+	const { y, kind, s, v, a } = c;
 	if (kind === 1) return 4096 * (X2 < 2 * [
 		10,
 		16,
 		22
-	][(v >> 1) % 3] ? y : y + 5 * s);
-	if (kind === 2) return 4096 * y + 448 * s * X2;
-	if (kind === 3) return 4096 * (X2 > 22 && X2 < 42 ? y + 5 * s : y);
-	if (kind === 4) return 4096 * y + 20 * s * X2 * (64 - X2);
-	if (kind === 5) return (X2 >> 4) % 2 ? 4096 * (y - 4 * s) + 1024 * s * (X2 & 15) : 4096 * y - 1024 * s * (X2 & 15);
-	if (kind === 6) return 4096 * (y + 3 * s * (X2 >> 4));
-	if (kind === 7) return X2 > 16 && X2 < 48 ? 4096 * y - s * 2048 * isqrt(256 - (X2 - 32) * (X2 - 32)) : 4096 * y;
+	][(v >> 1) % 3] ? y : y + a * s);
+	if (kind === 2) return 4096 * y + 64 * a * s * X2;
+	if (kind === 3) return 4096 * (X2 > 22 && X2 < 42 ? y + a * s : y);
+	if (kind === 4) return 4096 * y + 2 * a * s * X2 * (64 - X2);
+	if (kind === 5) return (X2 >> 4) % 2 ? 4096 * (y - a * s) + 256 * a * s * (X2 & 15) : 4096 * y - 256 * a * s * (X2 & 15);
+	if (kind === 6) return 4096 * (y + a * s * (X2 >> 4));
+	if (kind === 7) return X2 > 32 - 2 * a && X2 < 32 + 2 * a ? 4096 * y - s * 2048 * isqrt(4 * a * a - (X2 - 32) * (X2 - 32)) : 4096 * y;
 	return 4096 * y;
 }
-function strataFits(y, kind, s, v, above) {
+function strataFits(c, above) {
 	for (let X2 = 1; X2 < 64; X2 += 2) {
-		const p = strataAt(y, kind, s, v, X2);
+		const p = strataAt(c, X2);
 		if (p < 12288 || p > 118784) return false;
-		if (above && p - strataAt(above[0], above[1], above[2], above[3], X2) < 12288) return false;
+		if (above && p - strataAt(above, X2) < 12288) return false;
 	}
 	return true;
 }
-function strataEdge(y, kind, s, v) {
+function strataEdge(c) {
+	const { y, kind, s, v, a } = c;
 	if (kind === 1) return "H" + [
 		10,
 		16,
 		22
-	][(v >> 1) % 3] + "V" + (y + 5 * s) + "H32";
-	if (kind === 2) return "L32 " + (y + 7 * s);
-	if (kind === 3) return "H11v" + 5 * s + "h10v" + -5 * s + "H32";
-	if (kind === 4) return "Q16 " + (y + 10 * s) + " 32 " + y;
-	if (kind === 5) return "l8 " + -4 * s + "l8 " + 4 * s + "l8 " + -4 * s + "l8 " + 4 * s;
-	if (kind === 6) return "h8v" + 3 * s + "h8v" + 3 * s + "h8v" + 3 * s + "h8";
-	if (kind === 7) return "H8a8 8 0 0 " + (s > 0 ? 1 : 0) + " 16 0H32";
+	][(v >> 1) % 3] + "V" + (y + a * s) + "H32";
+	if (kind === 2) return "L32 " + (y + a * s);
+	if (kind === 3) return "H11v" + a * s + "h10v" + -a * s + "H32";
+	if (kind === 4) return "Q16 " + (y + a * s) + " 32 " + y;
+	if (kind === 5) return "l8 " + -a * s + "l8 " + a * s + "l8 " + -a * s + "l8 " + a * s;
+	if (kind === 6) return "h8v" + a * s + "h8v" + a * s + "h8v" + a * s + "h8";
+	if (kind === 7) return "H" + (16 - a) + "a" + a + " " + a + " 0 0 " + (s > 0 ? 1 : 0) + " " + 2 * a + " 0H32";
 	return "H32";
 }
-function strata(b, col) {
-	const n = 2 + b[4] % 2;
-	const ys = (n === 3 ? STRATA_Y3 : STRATA_Y2)[b[5] % 4], order = STRATA_ORDER[b[6] % 4];
-	let out = "", above = null, first = [
-		0,
-		0,
-		1,
-		0
-	];
-	for (let i = 0; i < n; i++) {
-		const y = ys[i], v = b[10 + i], s = v % 2 ? -1 : 1;
-		let kind = b[7 + i] % 8, c = [
+function strataPlan(kinds, ys, vs) {
+	const n = ys.length;
+	const options = (i) => {
+		const kind = kinds[i], y = ys[i], v = vs[i], s = v % 2 ? -1 : 1;
+		return kind ? AMP[kind].map((a, lv) => ({
 			y,
 			kind,
 			s,
-			v
-		];
-		if (!strataFits(y, kind, s, v, above)) {
-			if (strataFits(y, kind, -s, v, above)) c = [
-				y,
-				kind,
-				-s,
-				v
-			];
-			else if (above && strataFits(y, above[1], above[2], above[3], above)) c = [
-				y,
-				above[1],
-				above[2],
-				above[3]
-			];
-			else c = [
-				y,
-				0,
-				1,
-				0
-			];
+			v,
+			a,
+			lv
+		})) : [{
+			y,
+			kind: 0,
+			s: 1,
+			v: 0,
+			a: 0,
+			lv: 0
+		}];
+	};
+	const solve = (i, above) => {
+		if (i === n) return [];
+		for (const c of options(i)) {
+			if (!strataFits(c, above)) continue;
+			const rest = solve(i + 1, c);
+			if (rest) return [c].concat(rest);
 		}
-		out += fill$4(col[order[i]], "M0 " + y + strataEdge(y, c[1], c[2], c[3]) + "V32H0z");
+		return null;
+	};
+	const sol = solve(0, null);
+	if (sol) return sol;
+	const out = [];
+	let above = null;
+	for (let i = 0; i < n; i++) {
+		let c = {
+			y: ys[i],
+			kind: 0,
+			s: 1,
+			v: 0,
+			a: 0,
+			lv: 0,
+			flat: !!kinds[i]
+		};
+		if (kinds[i]) {
+			for (const t of options(i)) if (strataFits(t, above)) {
+				c = t;
+				break;
+			}
+		}
+		out.push(c);
 		above = c;
-		if (i === 0) first = c;
 	}
-	const fx = [
+	return out;
+}
+function strata(id) {
+	const b = idBytes(id), col = palette(b);
+	const n = 2 + b[4] % 2;
+	const ys = (n === 3 ? STRATA_Y3 : STRATA_Y2)[b[5] % 4].slice(0, n), order = STRATA_ORDER[b[6] % 4];
+	const kinds = [], vs = [];
+	for (let i = 0; i < n; i++) {
+		kinds.push(b[7 + i] % 8);
+		vs.push(b[10 + i]);
+	}
+	const plan = strataPlan(kinds, ys, vs);
+	let out = "";
+	for (let i = 0; i < n; i++) out += fill$4(col[order[i]], "M0 " + ys[i] + strataEdge(plan[i]) + "V32H0z");
+	if (b[13] % 3 === 0) out += "<circle cx=\"" + [
 		8,
 		16,
 		24
-	][b[14] % 3];
-	if (b[13] % 3 === 0 && ys[0] > 7 && strataAt(first[0], first[1], first[2], first[3], 2 * fx + 1) >= 4096 * (ys[0] - 2)) out += "<circle cx=\"" + fx + "\" cy=\"" + (ys[0] - 5) + "\" r=\"2\" fill=\"" + col[order[1]] + "\"/>";
-	const turn = STRATA_TURN[b[3] % 8];
-	return turn ? "<g transform=\"" + turn + "\">" + out + "</g>" : out;
+	][b[14] % 3] + "\" cy=\"" + (ys[0] - 5) + "\" r=\"2\" fill=\"" + col[order[1]] + "\"/>";
+	const turn = b[3] % 4 * 90;
+	return SVG_OPEN + ground(col[0]) + (turn ? "<g transform=\"rotate(" + turn + " 16 16)\">" + out + "</g>" : out) + close$1(palette(b));
 }
 var PLATES = [
 	"M3 16a13 13 0 1 0 26 0a13 13 0 1 0-26 0z",
@@ -4258,7 +4336,7 @@ var PLATES = [
 	"M6 0h20v32H6z",
 	"M-2 16a18 18 0 1 0 36 0a18 18 0 1 0-36 0z",
 	"M0 0h32v19L19 32H0z",
-	"M8 4h16q0 4 4 4v16q-4 0-4 4H8q0-4-4-4V8q4 0 4-4z",
+	"M8 4h16a4 4 0 0 0 4 4v16a4 4 0 0 0-4 4H8a4 4 0 0 0-4-4V8a4 4 0 0 0 4-4z",
 	"M11 4h17v24H4V11z",
 	"M4 4h24v17l-7 7H4z",
 	"M0 0h19L32 13v19H0z",
@@ -4268,27 +4346,17 @@ var PLATES = [
 	"M28 4H15L3 16l12 12h13z",
 	"M16 -4L36 32H-4z"
 ];
-var PLATE_TIGHT = [
-	2,
-	4,
-	5,
-	8,
-	9,
-	21,
-	22,
-	23
-];
 var MARK_PARTS = [
 	"M10 10H22M10 22H22",
 	"M10 10V22M22 10V22",
 	"M16 10V22",
 	"M10 16H22",
-	"M10 10l12 12m0-12L10 22",
-	"M16 10l6 6-6 6-6-6z",
-	"M10 10l12 6-12 6m12-12-12 6 12 6",
-	"M10 10l6 12 6-12m-12 12 6-12 6 12",
+	"M10 10L22 22M22 10L10 22",
+	"M16 10L22 16L16 22L10 16z",
+	"M10 10L22 16L10 22M22 10L10 16L22 22",
+	"M10 10L16 22L22 10M10 22L16 10L22 22",
 	"M13 13h6v6h-6z",
-	"M10 13v-3h3m6 0h3v3m0 6v3h-3m-6 0h-3v-3"
+	"M10 13V10h3M19 10h3v3M22 19v3h-3M13 22h-3v-3"
 ];
 var MARK_WIDEN = [
 	4,
@@ -4355,82 +4423,18 @@ var MARK_WIDEN = [
 	772,
 	776
 ];
-var MARK_KEEP = [
-	35,
-	48,
-	49,
-	50,
-	51,
-	52,
-	53,
-	54,
-	55,
-	56,
-	58,
-	59,
-	60,
-	61,
-	62,
-	96,
-	100,
-	104,
-	112,
-	113,
-	114,
-	118,
-	122,
-	160,
-	164,
-	168,
-	176,
-	177,
-	178,
-	182,
-	186,
-	192,
-	196,
-	200,
-	304,
-	305,
-	306,
-	307,
-	308,
-	309,
-	310,
-	312,
-	314,
-	544,
-	560,
-	561,
-	562,
-	563,
-	564,
-	565,
-	566,
-	569,
-	570,
-	572,
-	816,
-	817,
-	818,
-	820,
-	824
-];
-function hallmark(b, col) {
+function hallmark(id) {
+	const b = idBytes(id), col = palette(b);
 	let m = 1 << b[5] % 10 | 1 << b[6] % 10;
 	if (b[4] % 2) m |= 1 << b[7] % 4;
 	if (MARK_WIDEN.indexOf(m) >= 0) m |= 48;
-	if (MARK_KEEP.indexOf(m) < 0) m = MARK_KEEP[(b[5] + b[6]) % 59];
 	let d = "", parts = 0;
 	for (let i = 0; i < 10; i++) if (m & 1 << i) {
 		d += MARK_PARTS[i];
 		parts++;
 	}
-	const plate = b[3] % 24, node = b[14] % 9, fr = b[17] % 3;
-	let fc = fr + 1;
-	if (col[fc] === TINT[b[0] % 6][2]) fc = 5 - fc;
-	const mark = "<path fill=\"none\" stroke=\"" + col[0] + "\" stroke-width=\"" + (parts > 2 ? 2 : 3) + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"" + d + "\"/><circle cx=\"" + (10 + 6 * (node % 3)) + "\" cy=\"" + (10 + 6 * (node / 3 | 0)) + "\" r=\"" + (3 + b[16] % 2) + "\" fill=\"" + col[2] + "\"/>";
-	return fill$4(col[b[15] % 3 ? 1 : 3], PLATES[plate]) + (PLATE_TIGHT.indexOf(plate) < 0 ? mark : "<g transform=\"matrix(.75 0 0 .75 4 4)\">" + mark + "</g>") + (fr ? "<path fill=\"none\" stroke=\"" + col[fc] + "\" stroke-width=\"2\" d=\"M1 1h30v30H1z\"/>" : "");
+	const node = b[14] % 9, fr = b[17] % 3;
+	return SVG_OPEN + ground(col[0]) + fill$4(col[b[15] % 3 ? 1 : 3], PLATES[b[3] % 24]) + "<path fill=\"none\" stroke=\"" + col[0] + "\" stroke-width=\"" + (parts > 2 ? 2 : 3) + "\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"" + d + "\"/><circle cx=\"" + (10 + 6 * (node % 3)) + "\" cy=\"" + (10 + 6 * (node / 3 | 0)) + "\" r=\"" + (3 + b[16] % 2) + "\" fill=\"" + col[2] + "\"/>" + (fr ? "<path fill=\"none\" stroke=\"" + col[fr + 1] + "\" stroke-width=\"2\" d=\"M1 1h30v30H1z\"/></svg>" : close$1(palette(b)));
 }
 var FAMILY = [
 	rooms,
@@ -4443,9 +4447,7 @@ var FAMILY = [
 	hallmark
 ];
 function tokenAvatar(id) {
-	const b = idBytes(id), col = palette(b);
-	const body = FAMILY[b[31] % 8](b, col);
-	return SVG_OPEN + ground(col[0]) + body + (body.indexOf("d=\"M1 1h30") < 0 ? EDGE : "") + "</svg>";
+	return FAMILY[idBytes(id)[31] % 8](id);
 }
 // ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();

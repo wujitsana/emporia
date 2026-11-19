@@ -427,15 +427,15 @@ body.theme-light.tint-charcoal {
 
 /* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). */
 body.theme-light.tint-charcoal {
-  --theme-background: #e6e6e6;
-  --theme-background-modal: #d9d9d9;
-  --theme-background-modal-footer: #cfcfcf;
-  --theme-background-input: #e6e6e6;
+  --theme-background: #ececec;
+  --theme-background-modal: #e0e0e0;
+  --theme-background-modal-footer: #d4d4d4;
+  --theme-background-input: #ececec;
   --theme-border: #b8b8b8;
   --theme-border-subdued: #c8c8c8;
-  --theme-button-text: #e6e6e6;
-  --theme-button-background: #d9d9d9;
-  --theme-window-background: #d9d9d9;
+  --theme-button-text: #ececec;
+  --theme-button-background: #e0e0e0;
+  --theme-window-background: #e0e0e0;
 }
 
 /*
@@ -3236,12 +3236,12 @@ body.e-look.theme-light {
 }
 /* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). Mirrored in themePalette.ts. */
 body.e-look.theme-light.tint-charcoal {
-  --theme-background: #e6e6e6;
-  --theme-background-modal: #d9d9d9;
-  --theme-background-input: #e6e6e6;
+  --theme-background: #ececec;
+  --theme-background-modal: #e0e0e0;
+  --theme-background-input: #ececec;
   --theme-border: #b8b8b8;
   --theme-border-subdued: #c8c8c8;
-  --theme-button-text: #e6e6e6;
+  --theme-button-text: #ececec;
 }
 
 /* The dark theme is the DEEP palette (the demo video's all-dark-green screens): the canvas is the tint at
@@ -4423,7 +4423,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);
 }
 .e-badge-panel.theme-light.tint-charcoal {
-  --p-bg: #e6e6e6; --p-panel: #d9d9d9; --p-line: #b8b8b8;
+  --p-bg: #ececec; --p-panel: #e0e0e0; --p-line: #b8b8b8;
 }
 .e-badge-panel.theme-dark {
   --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);
