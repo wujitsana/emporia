@@ -1,17 +1,17 @@
 {
-  "note": "sha256 of the UTF-8 SVG string of the token picture (the only picture); regenerated for the dashboard-exact palette and own-palette accents (11-19)",
+  "note": "sha256 of the UTF-8 SVG string of the token picture (the only picture); regenerated for the dashboard-exact shades and the accent family (11-19)",
   "vectors": [
     {
       "id": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
-      "token": "29d9d409fca04c9ec33c946d52d38a4b60c5e52283cfc533bcd25d2cc7428dfc"
+      "token": "c55720ee53bd09568767e1c2ece6790f2ace689bb755d0deb6272c61ce04427c"
     },
     {
       "id": "f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753",
-      "token": "887a90896fb931177cbfaecf2ae29c72850fda04f622e433b1d8ef1ef1ccd13f"
+      "token": "ddc0cc4db7618ec13f8b2d0cdb532cb49d3c840824081bb4e06a1adf49e02cdc"
     },
     {
       "id": "4841312988738f638c9869f53c07d9291e1de6d0bef0af17b25c3d1c3fc10354",
-      "token": "9a57e5a9eb306b4d9657d295480c3bbe69cc32b3a547e2be3dcc26a09c0fc7ec"
+      "token": "5d177fd09f6e29ca43d0258bd8b77b8f0774f629b395c5276ea8c3d53ff441b2"
     },
     {
       "id": "a56f3dbc3053cc78282ebb4360025187945043453f94099157496b76530a404d",
@@ -19,19 +19,19 @@
     },
     {
       "id": "3b3c0bba10de5f65ba12ce7682d26cb7312b6fb768f890477f16952ca4d85a2c",
-      "token": "7ee0181b721ac3f5d744f5babb925a24ad5ece7dac5b5f88e1baca48058cccf9"
+      "token": "4e056fad96d5291c45cb4e13335553f688daa0310eec3a13eed0faf738b5bab3"
     },
     {
       "id": "4ca157c7e7abec2193f5267e530489a9aa24feac696a28a7d05f763ff54de16e",
-      "token": "e295e4f9c9d901c031befa24f38091e63f09f31e67e4ee1cb19e86616843812e"
+      "token": "046d0572c5d0fb6823001f690f5d4bb0fa8fb46fe55144e2f2d9f9540cf1eece"
     },
     {
       "id": "3ccffae4cbe69bff4ec085d5be11fc33d748a545f6e891ab3b6a2244ff3c4cd7",
-      "token": "2d28a4434615dd265ebb754b352a320366b9cd716b86382bedf49cfaffef75c1"
+      "token": "82c0c1a750cb51ef5c63c31d94fdc9ba44d13ae3374b3475833471aff58f5a23"
     },
     {
       "id": "419616dcc752f8f778d51e7883fdb9035c56b3284485144557c4fcdb601efeb1",
-      "token": "69ca651538b507ffd9e024c8a037af4edb1b838b12432c27e28a673684ae6f25"
+      "token": "4c1811bf458e1b839eadd407d0710e445dac0137c6819a5c743c1bb453331f49"
     },
     {
       "id": "564008fca422cc1c142d9a26f0f91df5d2afb5e0883b7abe6afac7ea8bc904c8",
@@ -39,19 +39,19 @@
     },
     {
       "id": "4436776bd1dbb58f2b8bbe41eb39766f2d9feca363cc9e49006e2f432a866186",
-      "token": "1d2b2d008fecda2203903a82ae943348adac9b336cad1bce982ed1b9e848793a"
+      "token": "412a8f2f94825de7bed712fd2ea8bc827af80b36ae4e1e153696dc1ed827d3b7"
     },
     {
       "id": "5ec54ea7bd49cb5a7e7d68000bbdc28021bd5f875f3fa80317d803a78e54fac8",
-      "token": "b3cb7065b8fd040bddc0ef5468876c9d2031806f3e8062cb534a6d5f14679362"
+      "token": "b599b47ba96bcacdd0c1d67aad9f62a090e507809854ac8da7cc07b936e1f56b"
     },
     {
       "id": "a66a6c207d09d78909fdad51d49e54810e915f52d18e1384ecf9e982b499aef6",
-      "token": "3b3720c262d76a9bd09d971b040fcc363c139745855f752e6614de20d34f844f"
+      "token": "07e823903f2d26e851c30b1411b37f829da8c474536fd918fbe1d208c1dc09c0"
     },
     {
       "id": "23811e9733e8b7741e2bf4b71565bcc487d0049a759cff641459a7a8c5719ade",
-      "token": "6f5bc4c34a092f76fb2d9e713984f69b65f61f0976b5bed4fff9d91b7439b69c"
+      "token": "69c973df1c4df967ee88cea90fdc5094fd8784aec609a699f91240fd0f5a87c9"
     },
     {
       "id": "0da2c6139c17e27a7950bb31e7c831b5586870dd00c08b8bec76de1b295506b2",
@@ -63,11 +63,11 @@
     },
     {
       "id": "bf987b645f13a8d622e05b518369eefde4b5fd9edeb78f6a9ba89aeb8a8387a4",
-      "token": "f56af351775de1269434e853d4af7744bfd43e56d40ff9be88f6d7d28b4e4a40"
+      "token": "d5f95f2efa103f49fcc6b0b0368de0d2e90d4fddeb3eccd7600d974e6cf78b10"
     },
     {
       "id": "5aaa44140a211bcec5d7c4b1835e69d0fe495ceda099d595f3f9cf6abdb8794e",
-      "token": "d3d342d4bea7df6d6c0748fe73477a93a8793e9f54f05adcfda7816460575906"
+      "token": "facd6a5514b76e179dcb5a98ec313742a8dd51c4abb441e61be4b4a6112ab554"
     },
     {
       "id": "5c831f5de44bd3c48d453662d46d38b6e2d9e7e28a1a10999964ad778fa7e46c",
@@ -75,7 +75,7 @@
     },
     {
       "id": "33973d8733c20e593bd3d49c89f08cbcf300c370f118dbcf3ce3d8ac3134e81f",
-      "token": "0fdbced118dc4ba34c1e46853399f99439e4cfb5a05b6b5e927d7f9e09891776"
+      "token": "46b4817d28d4c62bba20351be5747466f3475ef222af27358e55de83feaa6e37"
     },
     {
       "id": "560e3947563c8a28c9dbbe6414dcc2c06209dd4ff5604f01808da31be5f6e051",
@@ -83,19 +83,19 @@
     },
     {
       "id": "a810a189178ae70b900131d167d6de62d2e6e5f16ff57b7ed6983d7b6c4994ee",
-      "token": "c0b8ed982ea6685f9b6c57bf1c3cdeba99986548da4fa643d8afdadced8443f0"
+      "token": "ff34f89a2c406800cb150b437d5d562e221644b80bb8457e406aa60248e318c5"
     },
     {
       "id": "ab89a0b5d54e452c317c03b1bd4ec0e82d566464d6a21a4bd0eecbd6490e96b0",
-      "token": "e41b91b04243f9d1d22a60d5966db6619d10ef6fbf002fd87f80534904c8ec4d"
+      "token": "de739964acb8268f81682593f2b01bb4ce187e9dcf51495521dbd1db50c6939f"
     },
     {
       "id": "f4a26e22b2ddf6a39720f8278a344dc687eefc0890a319791fa98ea29b1392df",
-      "token": "5f0dc9b5f8cf49dcbaa6fe7bf36ccb8e29dd8bad100a52e49a0c6c0dd0e9efea"
+      "token": "89a87cb656867eb9c324f91a040858654c4fd68d066213b340dbc77f0926f819"
     },
     {
       "id": "cf1fdc4600aa7465aeef272d273d7a662c237203d231cc866e50a0f6ece0b18c",
-      "token": "381e052f74c0264b17a713e5d07248c4d74c77afd1db5fd318c718974f0b9c5b"
+      "token": "243d92d71fd466dd5106da2e29b7767897a62fb976ea2149c9d802deac6849af"
     },
     {
       "id": "02e9b91a71f94757900b0a9228503b8a7a16b7294221d085649721efeba900df",
@@ -103,39 +103,39 @@
     },
     {
       "id": "917ee80f489b07c7c22ba1cfc25c3023a8acad6dc9b1f346be5aea77939b7541",
-      "token": "c2e9b5d25fa342556b2ed5686dc4688847ace96a72808bf16b09584cdc75db8e"
+      "token": "f9010e2e8ea2963a25b7fe0bbe916b93477551d10a8c9326312cac36a9df3d2b"
     },
     {
       "id": "7cf6e2f60cf7816cae715aba7a2482d8ca9c5b224d965d0db346df1b94563f7e",
-      "token": "a7b56c78f818b45b72af8b61607bf9da0c8d95d9b6112ad1a5d5771f0efa3e2b"
+      "token": "8ddcebaf26591a20c2c18a13851bacc2cc374941d134868c31f2286d957c8acb"
     },
     {
       "id": "cf3c7fb46c41c71317cd206b8c38bc1eff37441ccd7a1f5c29b5423074efb43c",
-      "token": "ab4b0c6f9cb112023eda0489bd6cd4755658824a1f9a329749b9c43de78dc659"
+      "token": "cf79b43d96a974b010f0e10b912303dfa2255bb19dce65ff0841ae4c717868c3"
     },
     {
       "id": "d209f6866ee703c28d1819fdeb37413d3246ca3b5aaa3cb3b0a7ca6fe85ab0f9",
-      "token": "783c83631d49497c750125354310a51bd6cec9e9818f9b88bcc5528207fc7a4f"
+      "token": "262ab8bd2826774da9e5d48f8902b85ad1430211026b56bb134d08363c05fa2f"
     },
     {
       "id": "4291d15b971e449088d176c851fbea35bd9758de489eeb5e0ce46e2db2f8793f",
-      "token": "9a0cf2acb4be5aa9b0cec154610d264b6148cced09d493bbe03ffd43fd9217ee"
+      "token": "d48dfcfd4cd4f75896a33c4a452e4a013d7c28e867af2b1cbf2b2256f40a9149"
     },
     {
       "id": "e4423161eb67ed153df1466e187bd7fdbebad784fafb838604e8ea9a397f5903",
-      "token": "c75fcaae779a089348eb290dfceec9adf6fff355cc40e36f70dfdadb72e5cb10"
+      "token": "b463beb552571bbc455cdb198d5c3d132d243dc2401eff4ee3b00c18c94905f2"
     },
     {
       "id": "f2f9d082a3a562c621dc9ee2bad32d83702060472536215781742bcb800a2d22",
-      "token": "0fcbfacbac62b0b4e188bac25a8ad21f684459269b1e92e74105c95a12109a54"
+      "token": "613f6a1d6c67ca2d2c2b498828cdbf4bcdf8a49d1d903224634decd79e1f2aae"
     },
     {
       "id": "397173494aff0a788324b9e90e2e6acd8589465d0d6220b17a749f1641cdbd3f",
-      "token": "a0d0b47e7f239df3253087eb745564826226e60b24ee9d335ca5ca754b4531c9"
+      "token": "e7731144bdf8a16b28085a273abd4ceff49164b6ca55ca91e9c543e881ecf365"
     },
     {
       "id": "f629cadf02af389bb0566580f05b80ba8c270d316b2d08feaed3544147a7d0f8",
-      "token": "c87c35babc1aa1837d9a149f1faf6a12f799571944c781e211dc2f6e320f6b4b"
+      "token": "414062a946683d62758983bb36c36273b8f67a6cc33d86e4388b8f409c51d3aa"
     },
     {
       "id": "78e60470bc2007705930b1bdd58157f039bd4efbd65c15ecf52f2e77fda250a5",
@@ -143,19 +143,19 @@
     },
     {
       "id": "c09067976796fe1893f381b6292e6d4c08f481c7620d3b11c682dd104f7a6943",
-      "token": "54412cbbbc50a54bd2f0d6111ad2d68c38126ab59123146ac8b19efd0e16c28f"
+      "token": "bfb2a8f5890dcecc73a625fb1387a32cb15491a4d6bc986f6a1b8fa82e4e2cd9"
     },
     {
       "id": "d915bbf874aedb5a0b2cc45a493c598cffc11bb9db7bb31288b6a4b42f263937",
-      "token": "2c4264f649051b36b5bc9f967fa21e05118cee5eabd9365d85c36f300678b6aa"
+      "token": "9d9ef89302e1b74259bb20555afbd190a0223421d6d70e580969e467a1c1bc5e"
     },
     {
       "id": "bc58bb8b7e984fa29f069d539522a1a8d138f2aa2d8f18794b67fcf24a95b92e",
-      "token": "a8956d4ace5e8aca18154a6fc037c9c40b3ef0e3fbcee68df0a8a474d7cc6ebc"
+      "token": "d6d7c38dec4c4a85eb2633a7e862dbfa767d76fead19224afa76373ab7b864aa"
     },
     {
       "id": "c6af9923919b71f9528735938e431236dbada226369d783a89ea8368922e5267",
-      "token": "f130a887f636ebc8a7c4f893ee15d9c40ec065dfaad02c7775e9634104829658"
+      "token": "b41535ab389b74ffa51df82d0a33bd58403972f76a8305d574c3ebe005925606"
     },
     {
       "id": "2eecf760ff52a57b5aba8e6f8f8bb1dfeeb4b00777e9abc19750bdc6a186ece7",
@@ -167,95 +167,95 @@
     },
     {
       "id": "b02e2b0e6a49a1285012bc2c721f666f24e66e7be13f96ac0723829a56d04753",
-      "token": "4d60fd25f8d8f23845313230e5ff2c8b138c14b3dbf3b12957ba595f98fe6b47"
+      "token": "bfab1a932c1c89dfcf9dd32556ad3cb3009e7b0f7a21f50fd597346aa2b5c389"
     },
     {
       "id": "6fd9badbe570d985035bd07f5cd940bf12ed092ecefd926ad4945e843d14ff7d",
-      "token": "2cd60c93fe81dd9dc4827ec5698cd16308db54aa3191a62fbdc30169e1b5abb1"
+      "token": "0b2e2aaf1e6f4bc4bf3661cc21fc0c2108b55678d46e0bd28993e6abad457ce7"
     },
     {
       "id": "3295bb33d4dba8f5654ba77ec70df97df681b9bc8f1ea0ed2f151ec9a0b6b5f6",
-      "token": "aecdf48fd97c7003ed5f74dc09f107399e48878a3d9dc77e0b029b70d21bf8d9"
+      "token": "5feee5b0cad1bbfbf52bd50fe352a44b0c83018801203351779dd94dbbc23be2"
     },
     {
       "id": "b814e416ceb0a1b2b3cb4ebc2616ac6e50204079e4bad60701efcb02fa39576d",
-      "token": "fee7d301efa0da194120c51fbf4c91ffd210884ea7afba3ba513afb7d797f166"
+      "token": "d45db70cfb6a819c0b716b6d056e853861247f6db40c840e5de0feca7ef831d8"
     },
     {
       "id": "656d24047460082c046f463bce70aa046a2cd3326ce628bda87f8f77356cf3ac",
-      "token": "50f0b4b36458bd22156797b144fd6bd50a13c869c649702139d2da40f9165e82"
+      "token": "0e6c763915fbb89a4ec618d647a15da8c4b5d43802fc48a17d25f2ae3a1666d1"
     },
     {
       "id": "1ded56f58b02e983d0fcd23acd874a82840fc569cb5d4542d37e9afcc761f11a",
-      "token": "09b3c36ee7b3995dfa52ae4f33895223b2e216aeb1aec45d37825e90a88c8526"
+      "token": "0ddadb4dd0bb761fb08a3e115466279827deca14d0faaaf9ae53958e55a96a48"
     },
     {
       "id": "736178353ce3fb736b0258894bfbf24897f2679239a4b121c761440c8a97823d",
-      "token": "987a35bc9834fb3ce18907150e097b2adecdbb9d132bbf1b6d7ef1870c629168"
+      "token": "428cfcdd99475b7d5f191fc0afdceb30c1a0b27ae1b5296c11b7929a9c1255f1"
     },
     {
       "id": "c9c57962ed87d7634af5df1835c17c7dd87c75b5b2a9d6c31d22bdad26b93a4d",
-      "token": "2367ad413952a6f4da3696aa293fe79730c3a06f88555b018af894d1c9751482"
+      "token": "ba50ef84a2cb05c31fe5019ccf358358c79a3c6059b161c0cb0b2936796875e9"
     },
     {
       "id": "6bb784ef779a5254f56f11d2e87376db4d80e749a5587f4c6e1cf5d533b20f01",
-      "token": "f450c95cba1ffd880dc3977dd2227dfb966eca747abdee3293f5d92e6c9b9c1c"
+      "token": "eb84711a10b88f0d6d11509406bd76fc9e38fc85a038f4620898a535fdf126dc"
     },
     {
       "id": "727232ff6decdb305ecbfe2f0805371894afc54fcaf641780d314cd3fc85fef0",
-      "token": "ed438b13b19b44832fa5813d45e6a9d53c074b1ea28959911e82075d0408bbe9"
+      "token": "d37867fd89234089fa93ccae6f6875e3c8009a09136b34ec7ee135f5006e1539"
     },
     {
       "id": "3cfe0ebaaccda470acc511687a24a4d70e25197aa87e39c8b0db50728c4426e6",
-      "token": "e78d9564d392a74e8dfca82408d45bebe397b97b9fda458cf455057cb940585f"
+      "token": "21526d17bdeb18e84f5b1e2159bcad187c57fdeff8dab08d9e7483a84e59e11d"
     },
     {
       "id": "f40f0ebef4d73d6134b51abe6ce3ee734a82b372282147b0a99932c20d83bd97",
-      "token": "f0c6b46557693270c380a4a8bee0744c42a37cb7f24640c161cf70d7f2735604"
+      "token": "ce54f7b14ffc836fd9f4cfda786d19e2e23435d0417c58b39a4e17adcaaaf8d3"
     },
     {
       "id": "44fc18b8cd11b28f8d6867fa02abfe3c3171388f145d6425f75bb22cf0ef427b",
-      "token": "e605f30c57f6ec347f29781123f65b977a72970d9504ba0b482538bb2f09a908"
+      "token": "5f1543ccae290038f2887ea49b88a3c0f6b76b8a7d06a976a9f0e4ca9b47e31b"
     },
     {
       "id": "2ce0aecad8dcf83d7987a9fdefc8b1aeafda3ef5d7bf63624a75900ebc6f2edf",
-      "token": "effff96b1d9ac75e9a20ab44a2f3b776c666080df3ccbe9a996684137bd64730"
+      "token": "ffcd2cdace6bcec19b0cec42ef10317ea8c115f0f52841e7c003eceb6fed37e6"
     },
     {
       "id": "c69c7f387075a4dc79d325d37c47333744bac456ee72742a66eb63131d1b5455",
-      "token": "e25ab72fdca6c692440ccdb75bbcbb9d13d647cf2a08ff73e29f9a3f08ba4e58"
+      "token": "899932738446b96f2c90c3978d40d7693a83341cbe144cfa8bf051aaf0699f1a"
     },
     {
       "id": "e5353e0d43b0000eff0365d925278a4794e8515caeb2cc2b491fa3f74a85d53a",
-      "token": "1081edaeaaacfb0fd81044b1552498a29b31d587721afeebd72bef44791318dc"
+      "token": "94e7a065fe4c7b01920780b8011fcab64b22af582a3ad952e58b100420dd9039"
     },
     {
       "id": "f3525e615787ebc232dcac966ac91c09111c6e1b389157bd480f49143c40fff1",
-      "token": "278bac423d72e088a077d8568d6e38f28e2bc5f8326a9c6e1bc13eeba0ac95ca"
+      "token": "944832db7d2c3a9be430f6c3136b86ee092dadd3aed372c43f218738b531c151"
     },
     {
       "id": "04b83c8904661017c70ad5eae6ed2b150c7c147aa2151624d19d5db63393270e",
-      "token": "e7f1375e59ecc72c0e33e13eb1ee7092535f58e5caf44c90ad893380fbe488e1"
+      "token": "a7ca89668caabfa955166681c04ca0b3eb478141eae56694b174109f1ca6edfe"
     },
     {
       "id": "b674586ba01fe0c12005ea49600b902f8f5843e0f1fdbd8e5fd402bc1b0f66ca",
-      "token": "fe371d47db023883d5ae2c85b36a2265dea84fa3151fc5916a90e968b716c536"
+      "token": "54578da045eeb152936fd4b33484fd72c6e4ec80983059c9a03ec64554823e47"
     },
     {
       "id": "4a3ec32ed5c70fdf5987116eb1034ba533686aaf1a662a5c8240aa7f357b9e21",
-      "token": "db95ff3a1f40604af821b2cd4ca476ac7bf8f247edcb72fc935ccec6d7df6730"
+      "token": "f44b4841b43ecd1db2388b824e048b2f047655e7ae6630bd00f7e64c43141509"
     },
     {
       "id": "1c0a28b601e606528327ee81c0678701a41718467c75fde64178289c78d4e49f",
-      "token": "49f25869bc4e19cea68ba39a6c71a16920e118a6361385b80b8845fdbdbec838"
+      "token": "f545239974d2ab31783325b3c7eb7cac2fe13b5c7a418e19a7132a865b8cdda5"
     },
     {
       "id": "1717a9328cbcabb901eee978418cb65556869ec3715dc4e4bddc98abbd39e4b5",
-      "token": "e2751bbd63481f9e935f34a1a009c2577ea709334b702dd545562c71b7c82d75"
+      "token": "fe42343d5d0821dc7c59912d29aea21d6d0cad7e0fa56ac11b98109d1fc8e348"
     },
     {
       "id": "ad4689dcd8aa10dd6773d7bbdd5700c781c29c7d9cac834e40794e13c93cb41a",
-      "token": "d6c4174866c051b8e44a11e1d39a00c5d87d4daa6e4087b4af4ac495450f2b0d"
+      "token": "db658779d44433928ef78a3079794aa6b244e3d2b265757b1182f0e43f710825"
     }
   ]
 }

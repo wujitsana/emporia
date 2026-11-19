@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it } from "vitest";
-import { TINT, tokenAvatar } from "./avatars";
+import { FAMILY, TINT, tokenAvatar } from "./avatars";
 import { TINTS, TINT_COLORS } from "./themeConfig";
 import { themeColors } from "./badges/tokens";
 import { rgbHex } from "./themePalette";
@@ -17,6 +17,17 @@ describe("the picture palette is the dashboard's", () => {
       const light = themeColors("animatic", "light", t), dark = themeColors("animatic", "dark", t);
       expect(TINT[i].slice(0, 5), t).toEqual([TINT_COLORS[t], rgbHex(dark.surfaces[0].rgb), rgbHex(light.surfaces[0].rgb), rgbHex(light.accent), rgbHex(dark.accent)]);
     });
+  });
+});
+
+describe("the picture colors", () => {
+  it("every color in a picture is a tint shade or an accent-family tone, and the family sits inside the palette", () => {
+    const allowed = new Set<string>([...TINT.flatMap((r) => r.slice(0, 5) as string[]), ...FAMILY.flat()]);
+    expect(FAMILY.map((p) => p.length)).toEqual([2, 2, 2, 2, 2]);
+    for (let i = 0; i < 1500; i++) {
+      const id = bytesToHex(sha256(new TextEncoder().encode("accent-" + i)));
+      for (const c of tokenAvatar(id).match(/#[0-9a-f]{6}/g) ?? []) expect(allowed.has(c), c).toBe(true);
+    }
   });
 });
 

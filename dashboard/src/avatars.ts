@@ -35,21 +35,40 @@ function close(col: (string | number)[]): string {
 
 // The color's luma, 2126 R + 7152 G + 722 B on the 0-255 values (integer: avatars.py does the same).
 function luma(h: string): number { return 2126 * parseInt(h.slice(1, 3), 16) + 7152 * parseInt(h.slice(3, 5), 16) + 722 * parseInt(h.slice(5, 7), 16); }
-const GUEST_GAP = 892500;   // the accent's luma must differ from the picture's ground by 35% of the full range (2,550,000)
-// The accent: a bright or paper shade of one of the OTHER five tints, never the picture's own, picked by b[2] from those whose
-// luma sits at least GUEST_GAP from the ground it is drawn against (the ink on the guest-ground mode).
+const GUEST_GAP = 765000;   // the accent's luma must differ from the ground by 30% of the full range (2,550,000)
+const GUEST_GAP2 = 382500;  // and from every other color of the picture by 15%
+const MID = 1275000;        // the ground's luma at the 50% midpoint: above it the ground is light
+// The accent family, two tones per hue: [pastel for dark and mid grounds, deep partner for light grounds].
+export const FAMILY: string[][] = [["#69cdff", "#005e8b"], ["#72e072", "#006c00"], ["#ffad33", "#814400"], ["#ffbeff", "#743c76"], ["#888888", "#555555"]]; // blue green orange pink charcoal
+// Per tint (green blue crimson orange purple charcoal): the family hue to skip (crimson and purple skip pink).
+const OWN = [1, 0, 3, 2, 3, 4];
+// The accent. Ground light (luma over MID) -> the deep tone, else the pastel. Of the four hues but the picture's own (charcoal
+// aside), those clear of the ground by GUEST_GAP and of every other color by GUEST_GAP2, picked by b[2]; else charcoal if clear;
+// else a hue clear of the ground only; else the tint's own deep or bright shade clear of the ground; else the candidate with the
+// largest smallest gap.
 function guestColor(b: number[]): string {
   const t = b[0] % 6, mode = b[1] % 8, f = TINT[t] as string[];
-  const ref = mode < 2 || mode === 5 ? f[1] : mode < 4 ? f[2] : mode === 4 ? f[0] : mode === 6 ? f[3] : f[4];
-  const cands: string[] = [];
-  for (let u = 0; u < 6; u++) if (u !== t) cands.push((TINT[u] as string[])[4], (TINT[u] as string[])[2]);
-  let ok = cands.filter((c) => Math.abs(luma(c) - luma(ref)) >= GUEST_GAP);
-  if (!ok.length) {
-    let best = cands[0];
-    for (const c of cands) if (Math.abs(luma(c) - luma(ref)) > Math.abs(luma(best) - luma(ref))) best = c;
-    ok = [best];
+  const others = [[f[1], f[4], f[2]], [f[1], f[4], f[2]], [f[2], f[3], f[1]], [f[2], f[1], f[3]],
+    f[5] ? [f[0], f[1], f[2]] : [f[0], f[2], f[1]], [f[1], f[2], f[4]], [f[3], f[4], f[1]], [f[4], f[3], f[1]]][mode];
+  const tone = luma(others[0]) >= MID ? 1 : 0;
+  const gap = (c: string, r: string) => Math.abs(luma(c) - luma(r));
+  const clear = (c: string) => gap(c, others[0]) >= GUEST_GAP && others.slice(1).every((r) => gap(c, r) >= GUEST_GAP2);
+  const hues: string[] = [];
+  for (let i = 0; i < 4; i++) if (i !== OWN[t]) hues.push(FAMILY[i][tone]);
+  let ok = hues.filter(clear);
+  if (ok.length) return ok[b[2] % ok.length];
+  const gray = FAMILY[4][tone];
+  if (OWN[t] !== 4 && clear(gray)) return gray;
+  ok = hues.filter((c) => gap(c, others[0]) >= GUEST_GAP);
+  if (ok.length) return ok[b[2] % ok.length];
+  ok = [f[3], f[4]].filter((c) => gap(c, others[0]) >= GUEST_GAP);
+  if (ok.length) return ok[b[2] % ok.length];
+  let best = "", bestGap = -1;   // the first of the largest smallest gap, as Python's max() takes it
+  for (const c of hues.concat([gray, f[3], f[4]])) {
+    const m = Math.min(...others.map((r) => gap(c, r)));
+    if (m > bestGap) { best = c; bestGap = m; }
   }
-  return ok[b[2] % ok.length];
+  return best;
 }
 // -> [ground, lead, second, third, outline?]; eight ground-and-lead modes.
 export function palette(b: number[]): (string | number)[] {
@@ -208,7 +227,7 @@ export function hallmark(id: string): string {
 }
 
 // Of 8 agents, 3 draw Rooms, 3 Strata and 2 Hallmark.
-const FAMILY = [rooms, strata, rooms, strata, hallmark, rooms, strata, hallmark];
+const DRAWERS = [rooms, strata, rooms, strata, hallmark, rooms, strata, hallmark];
 export function tokenAvatar(id: string): string {
-  return FAMILY[idBytes(id)[31] % 8](id);
+  return DRAWERS[idBytes(id)[31] % 8](id);
 }

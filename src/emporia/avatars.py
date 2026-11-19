@@ -46,23 +46,46 @@ def luma(h):
     return 2126 * int(h[1:3], 16) + 7152 * int(h[3:5], 16) + 722 * int(h[5:7], 16)
 
 
-GUEST_GAP = 892500  # the accent's luma must differ from the picture's ground by 35% of the full range (2,550,000)
+GUEST_GAP = 765000   # the accent's luma must differ from the ground by 30% of the full range (2,550,000)
+GUEST_GAP2 = 382500  # and from every other color of the picture by 15%
+MID = 1275000        # the ground's luma at the 50% midpoint: above it the ground is light
+# The accent family, two tones per hue: [pastel for dark and mid grounds, deep partner for light grounds].
+FAMILY = [["#69cdff", "#005e8b"], ["#72e072", "#006c00"], ["#ffad33", "#814400"], ["#ffbeff", "#743c76"], ["#888888", "#555555"]]  # blue green orange pink charcoal
+# Per tint (green blue crimson orange purple charcoal): the family hue to skip (crimson and purple skip pink).
+OWN = [1, 0, 3, 2, 3, 4]
 
 
 def guest_color(b):
-    """The accent: a bright or paper shade of one of the OTHER five tints, never the picture's own, picked by b[2] from
-    those whose luma sits at least GUEST_GAP from the ground it is drawn against (the ink on the guest-ground mode)."""
+    """The accent. Ground light (luma over MID) -> the deep tone, else the pastel. Of the four hues but the picture's own
+    (charcoal aside), those clear of the ground by GUEST_GAP and of every other color by GUEST_GAP2, picked by b[2]; else
+    charcoal if clear; else a hue clear of the ground only; else the tint's own deep or bright shade clear of the ground;
+    else the candidate with the largest smallest gap."""
     t, mode = b[0] % 6, b[1] % 8
     f = TINT[t]
-    ref = f[1] if mode == 5 else f[1] if mode < 2 else f[2] if mode < 4 else f[0] if mode == 4 else f[3] if mode == 6 else f[4]
-    cands = []
-    for u in range(6):
-        if u != t:
-            cands += [TINT[u][4], TINT[u][2]]
-    ok = [c for c in cands if abs(luma(c) - luma(ref)) >= GUEST_GAP]
-    if not ok:
-        ok = [max(cands, key=lambda c: abs(luma(c) - luma(ref)))]
-    return ok[b[2] % len(ok)]
+    others = [[f[1], f[4], f[2]], [f[1], f[4], f[2]], [f[2], f[3], f[1]], [f[2], f[1], f[3]],
+              [f[0], f[1], f[2]] if f[5] else [f[0], f[2], f[1]], [f[1], f[2], f[4]], [f[3], f[4], f[1]], [f[4], f[3], f[1]]][mode]
+    tone = 1 if luma(others[0]) >= MID else 0
+
+    def gap(c, r):
+        return abs(luma(c) - luma(r))
+
+    def clear(c):
+        return gap(c, others[0]) >= GUEST_GAP and all(gap(c, r) >= GUEST_GAP2 for r in others[1:])
+
+    hues = [FAMILY[i][tone] for i in range(4) if i != OWN[t]]
+    ok = [c for c in hues if clear(c)]
+    if ok:
+        return ok[b[2] % len(ok)]
+    gray = FAMILY[4][tone]
+    if OWN[t] != 4 and clear(gray):
+        return gray
+    ok = [c for c in hues if gap(c, others[0]) >= GUEST_GAP]
+    if ok:
+        return ok[b[2] % len(ok)]
+    ok = [c for c in (f[3], f[4]) if gap(c, others[0]) >= GUEST_GAP]
+    if ok:
+        return ok[b[2] % len(ok)]
+    return max(hues + [gray, f[3], f[4]], key=lambda c: min(gap(c, r) for r in others))
 
 
 def palette2(b):
