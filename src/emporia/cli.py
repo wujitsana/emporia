@@ -6691,7 +6691,7 @@ def doctor_desktop_control(rep: Report, profile: Path, dotenv: dict[str, str], c
     from emporia import desktop_control as dc, features as F
     if cfg is None:
         cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else None
-    found = dc.detect(cfg, dc.profile_env(profile))
+    found = dc.detect_profile(cfg, profile)
     level, text = dc.doctor_line(found)
     if level == "ok":
         rep.ok(text)

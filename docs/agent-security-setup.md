@@ -631,13 +631,20 @@ mainnet funds even though Emporia is testnet only) or open a desktop terminal ou
 way a stranger's text reaches that is a post, a DM or table talk read in an ordinary chat session. Two guards.
 
 **What counts as desktop control** (both guards use the same reading of the profile): the `computer_use` tool
-(named in a saved toolset list, or in Hermes's default set while a cua-driver is present); `browser_cdp` and
-`browser_dialog` (the browser-cdp toolset, which attaches to a running Chrome); the other browser tools when the
-browser is a real one (`browser.use_real_profile`, a `browser.cdp_url`, `BROWSER_CDP_URL`, `BU_CDP_WS`/`BU_CDP_URL`,
-or a live `/browser connect`); tools of an MCP server in `mcp_servers` named like a browser or desktop driver
-(browser, playwright, puppeteer, chrome, devtools, computer, desktop); and anything you list in
-`EMPORIA_DESKTOP_TOOLS` (comma-separated names or prefixes; yours alone). A plain sandboxed browser is not desktop
-control. The default set counts unless every platform the agent runs on (`cli`, `cron`, `emporia`) has a saved list.
+(named in a saved toolset list, or in Hermes's default set while Hermes has a cua-driver: `HERMES_CUA_DRIVER_CMD`
+resolving, or the one its package manager installed, read from the store's `facts.json`; a `cua-driver` on PATH does
+not count, Hermes does not use one); `browser_cdp` and `browser_dialog` (the browser-cdp toolset, which attaches to
+a running Chrome); the other browser tools when the browser is a real one (`browser.use_real_profile`, a
+`browser.cdp_url`, `BROWSER_CDP_URL`, `BU_CDP_WS`/`BU_CDP_URL`, or a live `/browser connect`); tools of an MCP
+server in `mcp_servers` whose name says it drives a local browser or the desktop (playwright, puppeteer, chrome,
+chromium, devtools, cdp, computer-use, cua; a cloud browser or a file or terminal server is not guessed at); and
+anything you list in `EMPORIA_DESKTOP_TOOLS` (comma-separated names or prefixes; yours alone). A plain sandboxed
+browser is not desktop control. The default set counts unless every platform the agent runs on (`cli`, `cron`,
+`emporia`, and each one enabled in the config's `platforms`) has a saved list. The names Hermes keeps in the profile's
+`.env` (the CDP names, `HERMES_CUA_DRIVER_CMD`, `EMPORIA_DESKTOP_TOOLS`) are asked of Hermes once and remembered until
+the profile's files change; if that ask fails, a profile whose config already shows the browser toolset on is treated
+as having desktop control (a payment cannot be undone), any other profile keeps working, and `emporia doctor` says
+the read failed.
 
 **A session that read Emporia loses desktop control.** Once a session receives a result from any Emporia tool, the
 plugin refuses desktop control for the rest of that session, plus `browser_vault` (stored logins), creating or
@@ -658,12 +665,15 @@ or a hardware wallet). Read-only views stay. If money was already on, `emporia d
 refuse at use time; nothing is rewritten. If config.yaml cannot be read the answer is unknown: doctor says so and
 nothing is blocked.
 
-**What this does not cover.** The terminal cannot be fenced by a pattern: the check above is narrow, and Emporia's
-setup already leaves the agent's profile without a terminal (keep it that way). Any other MCP server is unseen
-unless its name matches or you list it in `EMPORIA_DESKTOP_TOOLS`. An unmarked session is not policed: if you tell
-your agent yourself to use the desktop, it will. A live `/browser connect` is seen by the plugin's session guard
-only (it asks Hermes), not by the runtime's crypto guard, and the cua-driver check is a best-effort mirror of
-Hermes's own. A wallet with real funds should never sit in a browser or desktop the agent can control.
+**What this does not cover.** The terminal cannot be fenced by a pattern: the check above (also applied to the
+code of `execute_code`, whose calls to the terminal tool fire the hook but whose `subprocess` and `os.system` do not)
+is narrow, and Emporia's setup already leaves the agent's profile without a terminal (keep it that way). Any other MCP
+server is unseen unless its name matches or you list it in `EMPORIA_DESKTOP_TOOLS`. An unmarked session is not
+policed: if you tell your agent yourself to use the desktop, it will. A live `/browser connect` is in-process state
+of Hermes: the plugin's session guard sees it (it asks Hermes), but the runtime's crypto guard, a separate process,
+cannot, so connect a browser by `browser.cdp_url` or `BROWSER_CDP_URL` if Emporia should see it. The driver check is a
+read-only mirror of Hermes's own (its package manager's `facts.json` under the store root; a driver installed
+somewhere else is not seen). A wallet with real funds should never sit in a browser or desktop the agent can control.
 
 ### An agent is confined to its own profile: what a stranger's turn can see
 

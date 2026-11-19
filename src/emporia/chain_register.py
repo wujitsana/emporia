@@ -118,7 +118,7 @@ def own_wallet() -> Any:
     """The agent's own EVM signer (`.address`, `.sign_transaction`, `.sign_typed_data`), or a LinkError saying what is
     missing. Behind the operator signer the keys are not here, and its limits and approvals are the way to spend."""
     from emporia import agent_wallet, mcp_server as m
-    chain_link.person_only("using the agent's own wallet")
+    chain_link.person_only("using the agent's own wallet", chain_link.agent_profile())
     if agent_wallet.remote() is not None:
         raise LinkError("this agent's wallet keys are held by the operator signer, which sends nothing for the "
                         "ERC-8004 commands: use your own wallet (print the call, or --browser)")
@@ -162,7 +162,7 @@ def send_register(chain: str, max_gas: Any, expect_digest: str, confirmed: dict[
     from the agent's own wallet, signed with the gas limit and max fee the person confirmed (`confirmed` is the quote
     they were shown). The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
-    chain_link.person_only("sending from the agent's own wallet")
+    chain_link.person_only("sending from the agent's own wallet", chain_link.agent_profile())
     wallet = signer or own_wallet()
     q = quote_register(chain, max_gas, read=read, signer=wallet, stable=stable, about=about, relay=relay, x402=x402,
                        image=image, no_image=no_image)

@@ -82,8 +82,8 @@ REFUSED_TERMINAL = ("Blocked by Emporia: this session read other agents' words o
                     "asked for it as an attack.")
 
 #: A terminal command that drives the desktop or opens a browser's debugging port. A narrow check, not a fence.
-DRIVER_COMMAND = re.compile(r"(?<![\w-])(?:osascript|xdotool|ydotool|cua-driver)(?![\w-])|/json/version|"
-                            r"devtools/browser|--remote-debugging", re.I)
+DRIVER_COMMAND = re.compile(r"(?<![\w-])(?:osascript|xdotool|ydotool|cua-driver)(?![\w-])|/json/version|/json/list|"
+                            r"devtools/browser|remote-debugging|:9222(?!\d)", re.I)
 JOB_ACTIONS = frozenset({"create", "update", "run", "trigger"})
 JOB_TOOLS = frozenset({"cronjob_manage", "cronjob"})
 
@@ -92,8 +92,9 @@ CDP_TOOLS = ("browser_cdp", "browser_dialog")
 BROWSER_TOOLS = CDP_TOOLS + ("browser_exec", "browser_vault")
 #: Platforms Hermes serves an Emporia agent on: each needs a saved toolset list, or its default set counts.
 PLATFORMS_IN_USE = ("cli", "cron", "emporia")
-#: An MCP server whose name says it drives a browser or the desktop.
-MCP_DESKTOP = re.compile(r"browser|playwright|puppeteer|chrome|devtools|computer|desktop", re.I)
+#: An MCP server whose name says it drives a local browser or the desktop (not a cloud browser, not a file or
+#: terminal server: "browser" and "desktop" alone are too loose; a person adds the rest in EMPORIA_DESKTOP_TOOLS).
+MCP_DESKTOP = re.compile(r"playwright|puppeteer|chrome|chromium|devtools|cdp|computer[-_]?use|cua", re.I)
 CDP_ENV_NAMES = ("BROWSER_CDP_URL", "BU_CDP_WS", "BU_CDP_URL")
 EXTRA_SETTING = "EMPORIA_DESKTOP_TOOLS"
 
@@ -140,43 +141,93 @@ def extra_names(value: Any) -> list[str]:
     return [n.strip().lower() for n in str(value or "").replace(";", ",").split(",") if n.strip()]
 
 
+_CUA_BINARIES = ("cua-driver", "cua-driver.exe", "CuaDriver.app/Contents/MacOS/cua-driver")
+_cua_entries: dict[str, tuple[float, list[str]]] = {}
+
+
+def _cua_store_roots(env: Mapping[str, str]) -> list[Path]:
+    """Where Hermes's package manager keeps its store: `HERMES_RUNTIME_DIR`, else `<hermes root>/tools` (the root is
+    the folder above `profiles/`, or the home itself)."""
+    roots: list[Path] = []
+    runtime = str(env.get("HERMES_RUNTIME_DIR") or "").strip()
+    if runtime:
+        roots.append(Path(runtime))
+    home = str(env.get("HERMES_HOME") or "").strip()
+    for base in ([Path(home)] if home else []) + [Path.home() / ".hermes"]:
+        roots.append(base / "tools")
+        roots += [p.parent / "tools" for p in base.parents if p.name == "profiles"]
+    return roots
+
+
+def _cua_entries_of(root: Path) -> list[str]:
+    """The store entries `facts.json` lists for cua-driver (read once per change of the file)."""
+    facts = root / "facts.json"
+    try:
+        stamp = facts.stat().st_mtime
+    except OSError:
+        return []
+    hit = _cua_entries.get(str(facts))
+    if hit is None or hit[0] != stamp:
+        found: list[str] = []
+        try:
+            packages = (json.loads(facts.read_text(encoding="utf-8")) or {}).get("packages") or {}
+            rows = packages.get("cua-driver")
+            for row in (rows if isinstance(rows, list) else [rows]):
+                entry = row.get("entry") if isinstance(row, dict) else None
+                if isinstance(entry, str) and entry and "/" not in entry and "\\" not in entry and entry != "..":
+                    found.append(entry)
+        except (OSError, ValueError, AttributeError, TypeError):
+            found = []
+        hit = _cua_entries[str(facts)] = (stamp, found)
+    return hit[1]
+
+
 def cua_driver_present(env: Mapping[str, str] | None = None) -> bool:
-    """Whether a cua-driver is there for the `computer_use` tool: `HERMES_CUA_DRIVER_CMD`, else `cua-driver` on
-    PATH, else a copy in Hermes's own install folder (a bounded look). Mirrors the tool's `check_fn` without
-    importing Hermes; best effort, and a miss means "not seen", never an error."""
+    """Whether Hermes's `computer_use` tool has a driver, the way Hermes finds it (`resolve_cua_driver_cmd`):
+    `HERMES_CUA_DRIVER_CMD` when set (it must resolve), else the cua-driver its package manager installed (an entry
+    in `<store>/facts.json` whose binary is there). Never a bare `cua-driver` on PATH: Hermes does not use one.
+    Read-only, without importing Hermes; a miss means "not seen", never an error."""
     env = os.environ if env is None else env
     cmd = str(env.get("HERMES_CUA_DRIVER_CMD") or "").strip()
     if cmd:
         return shutil.which(os.path.expanduser(cmd)) is not None
-    if shutil.which("cua-driver"):
-        return True
-    roots: list[Path] = []
-    home = str(env.get("HERMES_HOME") or "").strip()
-    for base in ([Path(home)] if home else []) + [Path.home() / ".hermes"]:
-        roots.append(base / "installs")
-        for parent in base.parents:
-            if parent.name == "profiles":
-                roots.append(parent.parent / "installs")
-    seen = 0
-    for root in roots:
-        if not root.is_dir():
-            continue
-        base_depth = len(root.parts)
-        for here, dirs, files in os.walk(root):
-            seen += 1
-            if len(Path(here).parts) - base_depth >= 7 or seen > 4000:
-                dirs[:] = []
-            if any(f in ("cua-driver", "cua-driver.exe") for f in files):
+    for root in _cua_store_roots(env):
+        for entry in _cua_entries_of(root):
+            if any((root / entry / rel).is_file() for rel in _CUA_BINARIES):
                 return True
     return False
 
 
-def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None = None) -> dict:
+def _platforms(config: dict) -> list[str]:
+    """Every platform the agent runs on: cli, cron, emporia, those named in `platform_toolsets`, and each enabled
+    one in the config's `platforms` (a mapping by name, or a list of `{platform: name}`) and `gateway.platforms`."""
+    names = list(PLATFORMS_IN_USE)
+    sections = [config.get("platforms")]
+    gateway = config.get("gateway")
+    if isinstance(gateway, dict):
+        sections.append(gateway.get("platforms"))
+    for section in sections:
+        rows = [(k, v) for k, v in section.items()] if isinstance(section, dict) else (
+            [(r.get("platform") or r.get("name"), r) for r in section if isinstance(r, dict)]
+            if isinstance(section, list) else [])
+        for name, row in rows:
+            if name and not (isinstance(row, dict) and row.get("enabled") is False):
+                names.append(str(name))
+    return list(dict.fromkeys(names))
+
+
+def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None = None,
+           env_known: bool = True) -> dict:
     """What a profile's config (and environment) says: ``{"known": bool, "tools": [names], "real_browser": bool,
-    "why": [lines]}``. ``config`` None (unreadable) or not a mapping is unknown: no tools, ``known`` False.
-    ``cua``: whether a cua-driver is present (None: looked up when needed)."""
+    "why": [lines], "mcp_servers": [names], "env_known": bool}``. ``config`` None (unreadable) or not a mapping is
+    unknown: no tools, ``known`` False. ``cua``: whether a cua-driver is present (None: looked up when needed).
+    ``env_known`` False: the profile's `.env` could not be asked, so the CDP names and
+    EMPORIA_DESKTOP_TOOLS in `env` are only what the process had. Then a profile whose config already shows the
+    browser toolset on is treated as having desktop control (fail closed: the unseen names may make that browser
+    real, and a payment is the one thing that cannot be undone); any other profile keeps working and doctor says
+    the read failed."""
     if not isinstance(config, dict):
-        return {"known": False, "tools": [], "real_browser": False, "why": []}
+        return {"known": False, "tools": [], "real_browser": False, "why": [], "mcp_servers": [], "env_known": True}
     env = os.environ if env is None else env
     raw = config.get("platform_toolsets")
     saved: dict[str, list[str]] = {}
@@ -189,7 +240,7 @@ def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None =
     on.update(_names(config.get("toolsets")))
     agent = config.get("agent") if isinstance(config.get("agent"), dict) else {}
     off = set(_names(agent.get("disabled_toolsets")))
-    composite = any(p not in saved for p in PLATFORMS_IN_USE) or any(n.startswith("hermes") for n in on)
+    composite = any(p not in saved for p in _platforms(config)) or any(n.startswith("hermes") for n in on)
     browser_on = ("browser" in on or composite) and "browser" not in off
     browser = config.get("browser") if isinstance(config.get("browser"), dict) else {}
     cdp_url = str(browser.get("cdp_url") or "").strip() or next(
@@ -218,6 +269,10 @@ def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None =
         tools += [t for t in BROWSER_TOOLS if t not in tools]
         why.append("the browser toolset is on and Hermes's browser is a real one "
                    + ("(browser.use_real_profile)" if profile_real else "(a cdp_url)"))
+    if browser_on and not real and not env_known:
+        tools.append("browser (real or not: the profile's .env could not be read)")
+        why.append("the browser toolset is on and the profile's .env could not be read, so a real browser "
+                   "(BROWSER_CDP_URL, BU_CDP_WS, BU_CDP_URL) cannot be ruled out")
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
         for name, cfg in servers.items():
@@ -228,7 +283,8 @@ def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None =
         if name not in tools:
             tools.append(name)
             why.append(f"{EXTRA_SETTING} names {name}")
-    return {"known": True, "tools": tools, "real_browser": real, "why": why}
+    return {"known": True, "tools": tools, "real_browser": real, "why": why,
+            "mcp_servers": [str(n) for n in servers] if isinstance(servers, dict) else [], "env_known": env_known}
 
 
 _lock = threading.Lock()
@@ -296,8 +352,23 @@ def _real_browser() -> bool:
 
 
 def _mcp_server(name: str) -> str:
-    parts = name.split("__")
-    return parts[1] if name.startswith("mcp__") and len(parts) > 2 else ""
+    """The MCP server a tool name belongs to. Hermes names a tool `mcp__<server>__<tool>` with every character
+    of the server outside [A-Za-z0-9_] turned into `_`, so a server name can itself hold `__` and splitting the
+    name misreads it. The servers in this profile's config (and Emporia's own) are tried, the longest match wins;
+    a server not in the config falls back to the first segment. Returns the config's spelling of the name."""
+    if not name.startswith("mcp__"):
+        return ""
+    rest = name[5:]
+    try:
+        known = list(profile_detection().get("mcp_servers") or [])
+    except Exception:  # noqa: BLE001
+        known = []
+    best = ""
+    for raw in [*known, "emporia"]:
+        sane = re.sub(r"[^A-Za-z0-9_]", "_", str(raw))
+        if rest.lower().startswith(sane.lower() + "__") and len(sane) > len(re.sub(r"[^A-Za-z0-9_]", "_", best)):
+            best = str(raw)
+    return best or rest.split("__")[0]
 
 
 def _extra() -> list[str]:
@@ -460,10 +531,12 @@ def _job_change(name: str, args: Any) -> bool:
 
 
 def _driver_command(name: str, args: Any) -> bool:
-    if name != "terminal" or not isinstance(args, dict):
+    """A terminal command, or the code of `execute_code` (its calls to the terminal tool fire this hook too, but
+    `subprocess` and `os.system` in the code do not), that names a desktop driver or a debugging port."""
+    if name not in ("terminal", "execute_code") or not isinstance(args, dict):
         return False
     return any(isinstance(v, str) and DRIVER_COMMAND.search(v) for k, v in args.items()
-               if k in ("command", "cmd", "script"))
+               if k in ("command", "cmd", "script", "code"))
 
 
 def pre_tool_call(tool_name: str = "", session_id: str = "", task_id: str = "", conversation_id: str = "",
@@ -471,7 +544,7 @@ def pre_tool_call(tool_name: str = "", session_id: str = "", task_id: str = "", 
     """Refuse desktop control (and what reaches around it) in a session that read relay content, or a
     relay-started or rounds turn."""
     name = (tool_name or "").lower()
-    if name.startswith(relay_turn.EMPORIA_TOOL_PREFIXES):
+    if _mcp_server(name) == "emporia":
         return None
     if is_desktop_tool(name):
         message, why = REFUSED, "desktop or real-browser control after reading relay content"

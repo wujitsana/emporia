@@ -35,9 +35,11 @@ a config.yaml, else the profile holding this checkout, else none (unknown).
 from __future__ import annotations
 
 import ast
+import json
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -46,8 +48,9 @@ CDP_TOOLS = ("browser_cdp", "browser_dialog")
 BROWSER_TOOLS = CDP_TOOLS + ("browser_exec", "browser_vault")
 #: Platforms Hermes serves an Emporia agent on: each needs a saved toolset list, or its default set counts.
 PLATFORMS_IN_USE = ("cli", "cron", "emporia")
-#: An MCP server whose name says it drives a browser or the desktop.
-MCP_DESKTOP = re.compile(r"browser|playwright|puppeteer|chrome|devtools|computer|desktop", re.I)
+#: An MCP server whose name says it drives a local browser or the desktop (not a cloud browser, not a file or
+#: terminal server: "browser" and "desktop" alone are too loose; a person adds the rest in EMPORIA_DESKTOP_TOOLS).
+MCP_DESKTOP = re.compile(r"playwright|puppeteer|chrome|chromium|devtools|cdp|computer[-_]?use|cua", re.I)
 CDP_ENV_NAMES = ("BROWSER_CDP_URL", "BU_CDP_WS", "BU_CDP_URL")
 EXTRA_SETTING = "EMPORIA_DESKTOP_TOOLS"
 
@@ -99,43 +102,93 @@ def extra_names(value: Any) -> list[str]:
     return [n.strip().lower() for n in str(value or "").replace(";", ",").split(",") if n.strip()]
 
 
+_CUA_BINARIES = ("cua-driver", "cua-driver.exe", "CuaDriver.app/Contents/MacOS/cua-driver")
+_cua_entries: dict[str, tuple[float, list[str]]] = {}
+
+
+def _cua_store_roots(env: Mapping[str, str]) -> list[Path]:
+    """Where Hermes's package manager keeps its store: `HERMES_RUNTIME_DIR`, else `<hermes root>/tools` (the root is
+    the folder above `profiles/`, or the home itself)."""
+    roots: list[Path] = []
+    runtime = str(env.get("HERMES_RUNTIME_DIR") or "").strip()
+    if runtime:
+        roots.append(Path(runtime))
+    home = str(env.get("HERMES_HOME") or "").strip()
+    for base in ([Path(home)] if home else []) + [Path.home() / ".hermes"]:
+        roots.append(base / "tools")
+        roots += [p.parent / "tools" for p in base.parents if p.name == "profiles"]
+    return roots
+
+
+def _cua_entries_of(root: Path) -> list[str]:
+    """The store entries `facts.json` lists for cua-driver (read once per change of the file)."""
+    facts = root / "facts.json"
+    try:
+        stamp = facts.stat().st_mtime
+    except OSError:
+        return []
+    hit = _cua_entries.get(str(facts))
+    if hit is None or hit[0] != stamp:
+        found: list[str] = []
+        try:
+            packages = (json.loads(facts.read_text(encoding="utf-8")) or {}).get("packages") or {}
+            rows = packages.get("cua-driver")
+            for row in (rows if isinstance(rows, list) else [rows]):
+                entry = row.get("entry") if isinstance(row, dict) else None
+                if isinstance(entry, str) and entry and "/" not in entry and "\\" not in entry and entry != "..":
+                    found.append(entry)
+        except (OSError, ValueError, AttributeError, TypeError):
+            found = []
+        hit = _cua_entries[str(facts)] = (stamp, found)
+    return hit[1]
+
+
 def cua_driver_present(env: Mapping[str, str] | None = None) -> bool:
-    """Whether a cua-driver is there for the `computer_use` tool: `HERMES_CUA_DRIVER_CMD`, else `cua-driver` on
-    PATH, else a copy in Hermes's own install folder (a bounded look). Mirrors the tool's `check_fn` without
-    importing Hermes; best effort, and a miss means "not seen", never an error."""
+    """Whether Hermes's `computer_use` tool has a driver, the way Hermes finds it (`resolve_cua_driver_cmd`):
+    `HERMES_CUA_DRIVER_CMD` when set (it must resolve), else the cua-driver its package manager installed (an entry
+    in `<store>/facts.json` whose binary is there). Never a bare `cua-driver` on PATH: Hermes does not use one.
+    Read-only, without importing Hermes; a miss means "not seen", never an error."""
     env = os.environ if env is None else env
     cmd = str(env.get("HERMES_CUA_DRIVER_CMD") or "").strip()
     if cmd:
         return shutil.which(os.path.expanduser(cmd)) is not None
-    if shutil.which("cua-driver"):
-        return True
-    roots: list[Path] = []
-    home = str(env.get("HERMES_HOME") or "").strip()
-    for base in ([Path(home)] if home else []) + [Path.home() / ".hermes"]:
-        roots.append(base / "installs")
-        for parent in base.parents:
-            if parent.name == "profiles":
-                roots.append(parent.parent / "installs")
-    seen = 0
-    for root in roots:
-        if not root.is_dir():
-            continue
-        base_depth = len(root.parts)
-        for here, dirs, files in os.walk(root):
-            seen += 1
-            if len(Path(here).parts) - base_depth >= 7 or seen > 4000:
-                dirs[:] = []
-            if any(f in ("cua-driver", "cua-driver.exe") for f in files):
+    for root in _cua_store_roots(env):
+        for entry in _cua_entries_of(root):
+            if any((root / entry / rel).is_file() for rel in _CUA_BINARIES):
                 return True
     return False
 
 
-def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None = None) -> dict:
+def _platforms(config: dict) -> list[str]:
+    """Every platform the agent runs on: cli, cron, emporia, those named in `platform_toolsets`, and each enabled
+    one in the config's `platforms` (a mapping by name, or a list of `{platform: name}`) and `gateway.platforms`."""
+    names = list(PLATFORMS_IN_USE)
+    sections = [config.get("platforms")]
+    gateway = config.get("gateway")
+    if isinstance(gateway, dict):
+        sections.append(gateway.get("platforms"))
+    for section in sections:
+        rows = [(k, v) for k, v in section.items()] if isinstance(section, dict) else (
+            [(r.get("platform") or r.get("name"), r) for r in section if isinstance(r, dict)]
+            if isinstance(section, list) else [])
+        for name, row in rows:
+            if name and not (isinstance(row, dict) and row.get("enabled") is False):
+                names.append(str(name))
+    return list(dict.fromkeys(names))
+
+
+def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None = None,
+           env_known: bool = True) -> dict:
     """What a profile's config (and environment) says: ``{"known": bool, "tools": [names], "real_browser": bool,
-    "why": [lines]}``. ``config`` None (unreadable) or not a mapping is unknown: no tools, ``known`` False.
-    ``cua``: whether a cua-driver is present (None: looked up when needed)."""
+    "why": [lines], "mcp_servers": [names], "env_known": bool}``. ``config`` None (unreadable) or not a mapping is
+    unknown: no tools, ``known`` False. ``cua``: whether a cua-driver is present (None: looked up when needed).
+    ``env_known`` False: the profile's `.env` could not be asked, so the CDP names and
+    EMPORIA_DESKTOP_TOOLS in `env` are only what the process had. Then a profile whose config already shows the
+    browser toolset on is treated as having desktop control (fail closed: the unseen names may make that browser
+    real, and a payment is the one thing that cannot be undone); any other profile keeps working and doctor says
+    the read failed."""
     if not isinstance(config, dict):
-        return {"known": False, "tools": [], "real_browser": False, "why": []}
+        return {"known": False, "tools": [], "real_browser": False, "why": [], "mcp_servers": [], "env_known": True}
     env = os.environ if env is None else env
     raw = config.get("platform_toolsets")
     saved: dict[str, list[str]] = {}
@@ -148,7 +201,7 @@ def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None =
     on.update(_names(config.get("toolsets")))
     agent = config.get("agent") if isinstance(config.get("agent"), dict) else {}
     off = set(_names(agent.get("disabled_toolsets")))
-    composite = any(p not in saved for p in PLATFORMS_IN_USE) or any(n.startswith("hermes") for n in on)
+    composite = any(p not in saved for p in _platforms(config)) or any(n.startswith("hermes") for n in on)
     browser_on = ("browser" in on or composite) and "browser" not in off
     browser = config.get("browser") if isinstance(config.get("browser"), dict) else {}
     cdp_url = str(browser.get("cdp_url") or "").strip() or next(
@@ -177,6 +230,10 @@ def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None =
         tools += [t for t in BROWSER_TOOLS if t not in tools]
         why.append("the browser toolset is on and Hermes's browser is a real one "
                    + ("(browser.use_real_profile)" if profile_real else "(a cdp_url)"))
+    if browser_on and not real and not env_known:
+        tools.append("browser (real or not: the profile's .env could not be read)")
+        why.append("the browser toolset is on and the profile's .env could not be read, so a real browser "
+                   "(BROWSER_CDP_URL, BU_CDP_WS, BU_CDP_URL) cannot be ruled out")
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
         for name, cfg in servers.items():
@@ -187,7 +244,8 @@ def detect(config: Any, env: Mapping[str, str] | None = None, cua: bool | None =
         if name not in tools:
             tools.append(name)
             why.append(f"{EXTRA_SETTING} names {name}")
-    return {"known": True, "tools": tools, "real_browser": real, "why": why}
+    return {"known": True, "tools": tools, "real_browser": real, "why": why,
+            "mcp_servers": [str(n) for n in servers] if isinstance(servers, dict) else [], "env_known": env_known}
 
 
 def profile_home(profile: Path | str | None = None) -> Path | None:
@@ -209,53 +267,102 @@ def profile_home(profile: Path | str | None = None) -> Path | None:
         return None
 
 
+_config_cache: dict[str, tuple[float, Any]] = {}
+
+
 def read_config(profile: Path | str | None = None) -> Any:
-    """The profile's config.yaml as a dict, or None (unreadable, missing, not yaml)."""
+    """The profile's config.yaml as a dict, or None (unreadable, missing, not yaml). Parsed once per change of the
+    file."""
     home = profile_home(profile)
     if home is None:
         return None
+    path = home / "config.yaml"
     try:
-        import yaml
-        return yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001 — unknown, never an error here
+        stamp = path.stat().st_mtime
+    except OSError:
         return None
+    hit = _config_cache.get(str(path))
+    if hit is None or hit[0] != stamp:
+        try:
+            import yaml
+            parsed = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001 — unknown, never an error here
+            parsed = None
+        hit = _config_cache[str(path)] = (stamp, parsed)
+    return hit[1]
 
 
-def profile_env(profile: Path | str | None = None) -> dict[str, str]:
-    """The environment detection reads: the process's own, plus, from the profile's `.env`, whether the CDP names
-    are set (a yes, never the value: through Hermes where the profile is Hermes's) and EMPORIA_DESKTOP_TOOLS (a
-    list of tool names). An MCP server's process environment is filtered by Hermes, so the `.env` is asked."""
-    env = {k: v for k, v in os.environ.items() if k in CDP_ENV_NAMES + (EXTRA_SETTING, "HERMES_CUA_DRIVER_CMD",
-                                                                      "HERMES_HOME")}
-    home = profile_home(profile)
-    if home is None:
-        return env
-    held, extra = _env_names(home)
-    for name in held:
-        env[name] = "set"
-    if extra:
-        env[EXTRA_SETTING] = (env.get(EXTRA_SETTING, "") + "," + extra).strip(",")
-    return env
-
-
-def read_profile_env_names(home: Path) -> tuple[list[str], str]:
-    """From the profile's `.env`, by name only: which of the CDP names are set (a yes, never a value; asked of
-    Hermes where the profile is Hermes's) and the value of EMPORIA_DESKTOP_TOOLS. ([], "") when it cannot be
-    asked."""
+def read_profile_env_names(home: Path) -> dict | None:
+    """ONE ask of the profile's `.env` (through Hermes where the profile is Hermes's: a subprocess, so it is asked
+    once and cached): the CDP names, EMPORIA_DESKTOP_TOOLS and HERMES_CUA_DRIVER_CMD, by name. What comes back is
+    reduced at once: the CDP names to a yes (a URL may carry a credential and is never kept); the other two are
+    a list of tool names and a path. ``None`` when it could not be asked."""
     try:
         from emporia import profile_env as pe
-        held = [n for n, yes in pe.present(Path(home) / ".env", list(CDP_ENV_NAMES)).items() if yes]
-        extra = pe.read_names(Path(home) / ".env", [EXTRA_SETTING]).get(EXTRA_SETTING, "")
-        return held, str(extra or "")
-    except Exception:  # noqa: BLE001 — the .env could not be asked: what the config and process say stands
-        return [], ""
+        got = pe.read_names(Path(home) / ".env", [*CDP_ENV_NAMES, EXTRA_SETTING, "HERMES_CUA_DRIVER_CMD"])
+        return {"held": [n for n in CDP_ENV_NAMES if str(got.get(n) or "").strip()],
+                "extra": str(got.get(EXTRA_SETTING) or ""), "cua": str(got.get("HERMES_CUA_DRIVER_CMD") or "")}
+    except Exception:  # noqa: BLE001 — Hermes did not answer: the caller treats the env as unknown
+        return None
 
 
 _env_names = read_profile_env_names
+_env_cache: dict[str, tuple[Any, float, dict | None]] = {}
+ENV_TTL = 300.0           # a good answer is reused this long when neither file changed
+ENV_FAIL_TTL = 60.0       # a failed ask is not repeated for this long (each one can cost a subprocess timeout)
+
+
+def _stamp(home: Path) -> tuple:
+    out = []
+    for name in (".env", "config.yaml"):
+        try:
+            out.append((home / name).stat().st_mtime)
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def environment(profile: Path | str | None = None) -> tuple[dict[str, str], bool]:
+    """(env, known): what detection reads of the environment, and whether the profile's `.env` could be asked.
+    The process's own CDP names and settings, plus the profile `.env`'s (one cached ask: an MCP server's own
+    environment is filtered by Hermes, so the process alone would miss them). With no profile found there is
+    nothing to ask, which is known: the process environment is all there is."""
+    env = {k: v for k, v in os.environ.items() if k in CDP_ENV_NAMES + (EXTRA_SETTING, "HERMES_CUA_DRIVER_CMD",
+                                                                      "HERMES_HOME", "HERMES_RUNTIME_DIR")}
+    home = profile_home(profile)
+    if home is None:
+        return env, True
+    env["HERMES_HOME"] = str(home)
+    stamp, now = _stamp(home), time.monotonic()
+    hit = _env_cache.get(str(home))
+    if hit is not None and hit[0] == stamp and now - hit[1] < (ENV_TTL if hit[2] is not None else ENV_FAIL_TTL):
+        info = hit[2]
+    else:
+        info = _env_names(home)
+        _env_cache[str(home)] = (stamp, now, info)
+    if info is None:
+        return env, False
+    for name in info["held"]:
+        env[name] = "set"
+    if info["extra"]:
+        env[EXTRA_SETTING] = (env.get(EXTRA_SETTING, "") + "," + info["extra"]).strip(",")
+    if info["cua"]:
+        env["HERMES_CUA_DRIVER_CMD"] = info["cua"]
+    return env, True
+
+
+def profile_env(profile: Path | str | None = None) -> dict[str, str]:
+    return environment(profile)[0]
+
+
+def detect_profile(config: Any, profile: Path | str | None = None) -> dict:
+    """`detect` with the profile's environment (and whether it could be read)."""
+    env, known = environment(profile)
+    return detect(config, env, env_known=known)
 
 
 def detection(profile: Path | str | None = None) -> dict:
-    return detect(read_config(profile), profile_env(profile))
+    return detect_profile(read_config(profile), profile)
 
 
 def refusal(what: str, profile: Path | str | None = None) -> str:
@@ -280,6 +387,10 @@ def doctor_line(found: dict | None = None) -> tuple[str, str]:
         return "warn", ("desktop control: unknown (this profile's config.yaml could not be read); "
                         + WALLET_WARNING)
     if not found["tools"]:
+        if not found.get("env_known", True):
+            return "warn", ("desktop control: none seen, but the profile's .env could not be read, so a real "
+                            "browser (BROWSER_CDP_URL, BU_CDP_WS, BU_CDP_URL) and EMPORIA_DESKTOP_TOOLS could not "
+                            "be checked; " + WALLET_WARNING)
         return "ok", f"desktop control: none on; {WALLET_WARNING}"
     return "danger", (f"desktop control on here: {', '.join(found['tools'])}. Refused now: the money feature, "
                       f"payments, sends and signs from the agent's own wallet, and ERC-8004 `--browser`. "

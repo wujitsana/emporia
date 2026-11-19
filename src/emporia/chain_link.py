@@ -26,13 +26,23 @@ class LinkError(Exception):
     """Said to the person as it is."""
 
 
+def agent_profile() -> Any:
+    """The Hermes profile of the agent this process runs as: the folder of the `.env` it was handed
+    (`EMPORIA_DOTENV`), else None (the desktop-control check then falls back to HERMES_HOME or the checkout)."""
+    import os
+    from pathlib import Path
+    dotenv = os.environ.get("EMPORIA_DOTENV")
+    folder = Path(dotenv).expanduser().parent if dotenv else None
+    return folder if folder is not None and (folder / "config.yaml").exists() else None
+
+
 def person_only(what: str = "this", profile: Any = None) -> None:
     """Refuse unless a person is running this: not an agent's terminal (Hermes marks those with HERMES_SESSION_*), not a
     live relay-started or rounds turn. The commands check this too; the functions that sign or send check it again
     themselves, so importing them directly gets no further. Raises LinkError."""
     import os
     from emporia import desktop_control
-    if why := desktop_control.refusal(what, profile):       # no override: an agent that can click could press "Sign"
+    if why := desktop_control.refusal(what, profile or agent_profile()):       # no override: an agent that can click could press "Sign"
         raise LinkError(why)
     if any(k.startswith("HERMES_SESSION_") for k in os.environ):
         raise LinkError(f"{what} is a person's to do, in their own terminal: not from an agent's session")
@@ -180,7 +190,7 @@ def own_wallet_ask(chain: str, agent_id: Any, *, read: Any = None, signer: Any =
     the signer. The answer is `ask`'s, plus `signature`; `tier` says what the chain backs ('' when the wallet does
     not control the identity)."""
     from emporia import chain_register
-    person_only("signing with the agent's own wallet")
+    person_only("signing with the agent's own wallet", agent_profile())
     wallet = signer or chain_register.own_wallet()
     out = ask(chain, agent_id, wallet.address, read=read, stable=stable, now=now)
     if not out["tier"]:
@@ -196,7 +206,7 @@ def link_own_wallet(chain: str, agent_id: Any, *, read: Any = None, signer: Any 
                     now: float | None = None, post: Callable[..., Any] | None = None) -> dict[str, Any]:
     """Sign the link statement with the agent's own wallet and record it (`record` checks the signature and the chain
     again first): the link of an identity the agent's own wallet owns, without a browser wallet."""
-    person_only("linking with the agent's own wallet")
+    person_only("linking with the agent's own wallet", agent_profile())
     out = own_wallet_ask(chain, agent_id, read=read, signer=signer, stable=stable, now=now)
     if not out["tier"]:
         raise LinkError(f"the chain does not back this wallet as controlling it ({out.get('reason') or 'not proven'}): "

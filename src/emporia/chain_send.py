@@ -126,8 +126,8 @@ def send(reader: Any, signer: Any, q: dict[str, Any], data: bytes) -> str:
     kind of error is said, and the hash computed here, in case the node did get it."""
     from eth_utils import keccak
 
-    from emporia.chain_link import person_only
-    person_only("sending from the agent's own wallet")
+    from emporia.chain_link import agent_profile, person_only
+    person_only("sending from the agent's own wallet", agent_profile())
     if f"eip155:{q['chain_id']}" not in SEND_CHAINS:
         raise LinkError("an agent's own wallet sends on Base Sepolia (testnet) only for now")
     tx = {"type": 2, "chainId": q["chain_id"], "nonce": q["nonce"], "to": q["to"], "value": 0, "data": "0x" + data.hex(),

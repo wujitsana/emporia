@@ -58,7 +58,7 @@ def build(chain: str, agent_id: Any, *, read: Any = None, signer: Any = None, no
     if not erc8004.available():
         raise LinkError("these checks need eth-account (the x402 extra): pip install 'emporia[x402]'")
     caip2, aid, registry = _target(chain, agent_id)
-    chain_link.person_only("signing the consent with the agent's own wallet")
+    chain_link.person_only("signing the consent with the agent's own wallet", chain_link.agent_profile())
     me, _ = chain_link._me(None)
     wallet = signer or chain_register.own_wallet()
     reader = chain_register._reader(caip2, read, "safe")
@@ -113,7 +113,7 @@ def send(chain: str, agent_id: Any, max_gas: Any, expect_owner: str, confirmed: 
     transaction from the agent's own wallet, signed with the gas limit and max fee the person confirmed (`confirmed`
     is the quote they were shown). The answer is the hash; `confirm` takes it from there."""
     from emporia import chain_send
-    chain_link.person_only("sending from the agent's own wallet")
+    chain_link.person_only("sending from the agent's own wallet", chain_link.agent_profile())
     wallet = signer or chain_register.own_wallet()
     q = quote(chain, agent_id, max_gas, read=read, signer=wallet, now=now)
     pinned = chain_send.pin_to_confirmed(q["quote"], confirmed)

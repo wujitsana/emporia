@@ -5,6 +5,7 @@ tools and, with a real browser configured, the other browser tools. Guard B (run
 profile with those tools gets no crypto of Emporia's own, with no override.
 """
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -197,7 +198,8 @@ def test_detection_edge_cases():
     assert dc.detect({"platform_toolsets": _all(["terminal"])}, {"BROWSER_CDP_URL": "ws://x"}, cua=True)["tools"] == []
     assert dc.detect({"platform_toolsets": _all(["browser"])}, {"BROWSER_CDP_URL": "ws://x"})["real_browser"]
     for unknown in (None, "not a mapping", []):
-        assert dc.detect(unknown) == {"known": False, "tools": [], "real_browser": False, "why": []}
+        assert dc.detect(unknown) == {"known": False, "tools": [], "real_browser": False, "why": [],
+                                      "mcp_servers": [], "env_known": True}
 
 
 @pytest.mark.parametrize("key", sorted(CONFIGS))
@@ -445,36 +447,36 @@ def test_cdp_environment_names_make_the_browser_real(name):
 
 
 def test_the_runtime_asks_the_profiles_env_by_name_and_only_those(tmp_path, monkeypatch):
-    """An MCP server's own environment is filtered, so the .env is asked: booleans for the CDP names, the one
-    list setting by value, nothing else."""
+    """An MCP server's own environment is filtered, so the .env is asked: ONE ask for the CDP names, the list
+    setting and the driver override, reduced at once (a CDP URL is kept as a yes, never as a value)."""
     from emporia import profile_env as pe
-    asked = {}
-
-    def present(path, names):
-        asked["present"] = list(names)
-        return {n: n == "BU_CDP_WS" for n in names}
+    asked = []
 
     def read_names(path, names):
-        asked["read"] = list(names)
-        return {"EMPORIA_DESKTOP_TOOLS": "mcp__mydriver__"}
+        asked.append(list(names))
+        return {"BU_CDP_WS": "ws://user:secret@host", "EMPORIA_DESKTOP_TOOLS": "mcp__mydriver__",
+                "HERMES_CUA_DRIVER_CMD": "/opt/cua"}
 
-    monkeypatch.setattr(pe, "present", present)
     monkeypatch.setattr(pe, "read_names", read_names)
-    assert dc.read_profile_env_names(tmp_path) == (["BU_CDP_WS"], "mcp__mydriver__")
-    assert asked == {"present": ["BROWSER_CDP_URL", "BU_CDP_WS", "BU_CDP_URL"], "read": ["EMPORIA_DESKTOP_TOOLS"]}
+    got = dc.read_profile_env_names(tmp_path)
+    assert got == {"held": ["BU_CDP_WS"], "extra": "mcp__mydriver__", "cua": "/opt/cua"}
+    assert "secret" not in repr(got)
+    assert asked == [["BROWSER_CDP_URL", "BU_CDP_WS", "BU_CDP_URL", "EMPORIA_DESKTOP_TOOLS", "HERMES_CUA_DRIVER_CMD"]]
     monkeypatch.setattr(dc, "_env_names", dc.read_profile_env_names)
     monkeypatch.setattr(dc, "profile_home", lambda profile=None: tmp_path)
-    env = dc.profile_env(tmp_path)
-    assert env["BU_CDP_WS"] == "set" and env["EMPORIA_DESKTOP_TOOLS"].endswith("mcp__mydriver__")
-    monkeypatch.setattr(pe, "present", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no hermes")))
-    assert dc.read_profile_env_names(tmp_path) == ([], "")
+    env, known = dc.environment(tmp_path)
+    assert known and env["BU_CDP_WS"] == "set" and env["EMPORIA_DESKTOP_TOOLS"].endswith("mcp__mydriver__")
+    assert env["HERMES_CUA_DRIVER_CMD"] == "/opt/cua"
+    monkeypatch.setattr(pe, "read_names", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no hermes")))
+    assert dc.read_profile_env_names(tmp_path) is None
 
 
 def test_a_cdp_name_in_the_profile_env_flows_into_detection(tmp_path, monkeypatch):
     folder = _profile(tmp_path, {"platform_toolsets": _all(["browser"])}, "agent")
     monkeypatch.setattr(dc, "profile_home", lambda profile=None: folder)
     assert dc.refusal("x") == ""
-    monkeypatch.setattr(dc, "_env_names", lambda home: (["BROWSER_CDP_URL"], ""))
+    monkeypatch.setattr(dc, "_env_names", lambda home: {"held": ["BROWSER_CDP_URL"], "extra": "", "cua": ""})
+    dc._env_cache.clear()
     assert "browser_exec" in dc.refusal("x")
 
 
@@ -546,8 +548,8 @@ def test_features_on_money_for_a_key_dir_agent_follows_its_own_declared_tools(tm
 
 def test_mcp_servers_named_like_drivers_and_the_persons_list_count():
     cfg = {"platform_toolsets": _all(["web"]), "mcp_servers": {"playwright": {}, "notes": {}, "chrome-devtools": {
-        "enabled": False}, "Desktop_Commander": {}}}
-    assert dc.detect(cfg, {}, cua=False)["tools"] == ["mcp__playwright__*", "mcp__Desktop_Commander__*"]
+        "enabled": False}, "Desktop_Commander": {}, "browserbase": {}, "cua-driver": {}, "computer_use": {}}}
+    assert dc.detect(cfg, {}, cua=False)["tools"] == ["mcp__playwright__*", "mcp__cua-driver__*", "mcp__computer_use__*"]
     assert dc.detect({"platform_toolsets": _all(["web"])}, {"EMPORIA_DESKTOP_TOOLS": "mcp__x__, my_tool"},
                      cua=False)["tools"] == ["mcp__x__", "my_tool"]
     assert dg.detect(cfg, {}, cua=False) == dc.detect(cfg, {}, cua=False)
@@ -681,14 +683,16 @@ def test_the_live_override_is_asked_of_the_module_hermes_loaded_never_imported(m
 
 def test_mcp_driver_servers_and_the_persons_list_are_desktop_control_in_a_marked_session(monkeypatch):
     ids = {"session_id": "s1", "task_id": "s1"}
-    drivers = ("mcp__playwright__browser_click", "mcp__Chrome_DevTools__evaluate", "mcp__desktop_commander__run",
-               "mcp__computer__screenshot", "mcp__puppeteer__goto")
+    drivers = ("mcp__playwright__browser_click", "mcp__Chrome_DevTools__evaluate", "mcp__chromium__run",
+               "mcp__computer_use__screenshot", "mcp__puppeteer__goto", "mcp__cdp__send", "mcp__cua__click")
     for tool in drivers:
         assert dg.pre_tool_call(tool_name=tool, **ids) is None, "unmarked"
     _read()
     for tool in drivers:
         assert dg.pre_tool_call(tool_name=tool, **ids)["action"] == "block", tool
     assert dg.pre_tool_call(tool_name="mcp__notes__add", **ids) is None
+    assert dg.pre_tool_call(tool_name="mcp__browserbase__open", **ids) is None, "a cloud browser is not local control"
+    assert dg.pre_tool_call(tool_name="mcp__desktop_commander__run", **ids) is None, "too loose to guess at"
     assert dg.pre_tool_call(tool_name="mcp__emporia__post", **ids) is None
     assert dg.pre_tool_call(tool_name="mcp__mydriver__click", **ids) is None
     monkeypatch.setattr(rt, "_setting", lambda name: "mcp__mydriver__, odd_tool" if name == "EMPORIA_DESKTOP_TOOLS" else "")
@@ -709,3 +713,194 @@ def test_the_new_hooks_and_the_new_setting_are_declared_registered_and_a_persons
     kg.loader.exec_module(mod)
     out = mod.pre_tool_call(tool_name="terminal", args={"command": "echo EMPORIA_DESKTOP_TOOLS=x >> .env"})
     assert out and out["action"] == "block"
+
+
+# ── the second review round ───────────────────────────────────────────────────────────
+
+@pytest.fixture
+def no_home_tools(tmp_path, monkeypatch):
+    """The machine's own ~/.hermes may hold a real cua-driver: not for these tests."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "nohome"))
+
+
+def _spec_real(name, rel):
+    spec_ = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / rel)
+    mod = importlib.util.module_from_spec(spec_)
+    spec_.loader.exec_module(mod)
+    return mod
+
+
+def test_n1_one_ask_per_change_of_the_profile_files_not_one_per_payment(tmp_path, monkeypatch):
+    folder = _profile(tmp_path, CONFIGS["none"], "agent")
+    monkeypatch.setattr(dc, "profile_home", lambda profile=None: folder)
+    asks = []
+    monkeypatch.setattr(dc, "_env_names", lambda home: asks.append(home) or {"held": [], "extra": "", "cua": ""})
+    dc._env_cache.clear()
+    for _ in range(5):
+        dc.refusal("a payment")
+    assert len(asks) == 1
+    (folder / ".env").write_text("X=1\n")                  # the .env changed: asked again
+    dc.refusal("a payment")
+    assert len(asks) == 2
+
+
+def test_n1_a_failed_ask_is_not_repeated_at_once_and_is_shown_as_unknown(tmp_path, monkeypatch):
+    folder = _profile(tmp_path, CONFIGS["none"], "agent")
+    monkeypatch.setattr(dc, "profile_home", lambda profile=None: folder)
+    asks = []
+    monkeypatch.setattr(dc, "_env_names", lambda home: asks.append(1))        # None: could not be asked
+    dc._env_cache.clear()
+    for _ in range(3):
+        assert dc.environment()[1] is False
+    assert len(asks) == 1
+    found = dc.detection()
+    assert found["env_known"] is False and found["tools"] == [], "no browser on in the config: payments keep working"
+    level, text = dc.doctor_line(found)
+    assert level == "warn" and "could not be read" in text
+
+
+def test_n1_an_unreadable_env_fails_closed_when_the_config_already_shows_the_browser():
+    cfg = {"platform_toolsets": _all(["browser"])}
+    found = dc.detect(cfg, {}, cua=False, env_known=False)
+    assert found["tools"] and "could not be read" in found["tools"][0]
+    assert dc.detect(cfg, {}, cua=False, env_known=True)["tools"] == []
+    other = {"platform_toolsets": _all(["terminal"])}
+    assert dc.detect(other, {}, cua=False, env_known=False)["tools"] == []
+    real = dc.detect({**cfg, "browser": {"use_real_profile": True}}, {}, cua=False, env_known=False)
+    assert "browser_exec" in real["tools"] and len(real["tools"]) == 4, "already real: no extra line"
+    assert dg.detect(cfg, {}, cua=False, env_known=False) == found
+
+
+def test_n1_a_payment_with_the_browser_on_and_the_env_unreadable_is_refused(tmp_path, monkeypatch):
+    folder = _profile(tmp_path, CONFIGS["real_profile"] | {"browser": {}}, "agent")
+    monkeypatch.setattr(dc, "profile_home", lambda profile=None: folder)
+    monkeypatch.setattr(dc, "_env_names", lambda home: None)
+    dc._env_cache.clear()
+    with pytest.raises(agent_wallet.AgentWalletError, match="does no crypto here"):
+        agent_wallet.sign_exact("a", {})
+
+
+def test_n2_a_cua_driver_on_path_is_not_what_hermes_uses(tmp_path, monkeypatch, no_home_tools):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda cmd, *a, **k: "/usr/bin/" + cmd if cmd == "cua-driver" else None)
+    real = _spec_real("emporia_dc_real2", "src/emporia/desktop_control.py")
+    assert real.cua_driver_present({"HERMES_HOME": str(tmp_path / "none")}) is False
+    assert real.detect({"toolsets": ["hermes-cli"]}, {"HERMES_HOME": str(tmp_path / "none")})["tools"] == []
+
+
+def test_n2_the_package_managers_install_is_read_from_its_facts(tmp_path, monkeypatch, no_home_tools):
+    real = _spec_real("emporia_dc_real3", "src/emporia/desktop_control.py")
+    root = tmp_path / "root"
+    store = root / "tools"
+    (store / "cua-driver-0.21.0-linux-x64").mkdir(parents=True)
+    (store / "facts.json").write_text(json.dumps({"packages": {"cua-driver": {
+        "entry": "cua-driver-0.21.0-linux-x64", "version": "0.21.0", "target": "linux-x64"}}}))
+    profile = root / "profiles" / "agent"
+    profile.mkdir(parents=True)
+    env = {"HERMES_HOME": str(profile)}
+    assert real.cua_driver_present(env) is False, "facts, but no binary"
+    (store / "cua-driver-0.21.0-linux-x64" / "cua-driver").write_text("#!/bin/sh\n")
+    assert real.cua_driver_present(env) is True
+    assert real.detect({"toolsets": ["hermes-cli"]}, env)["tools"] == ["computer_use"]
+    assert real.cua_driver_present({"HERMES_HOME": str(tmp_path / "elsewhere"), "HERMES_RUNTIME_DIR": str(store)})
+    (store / "facts.json").write_text(json.dumps({"packages": {"cua-driver": [{"entry": "../escape"}]}}))
+    assert real.cua_driver_present({"HERMES_RUNTIME_DIR": str(store), "HERMES_HOME": str(tmp_path / "x")}) is False
+    (store / "facts.json").write_text("not json")
+    assert real.cua_driver_present({"HERMES_RUNTIME_DIR": str(store), "HERMES_HOME": str(tmp_path / "x")}) is False
+
+
+def test_n2_the_override_must_resolve_and_comes_from_the_env_ask(tmp_path, no_home_tools):
+    real = _spec_real("emporia_dc_real4", "src/emporia/desktop_control.py")
+    exe = tmp_path / "mydriver"
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    assert real.cua_driver_present({"HERMES_CUA_DRIVER_CMD": str(exe)}) is True
+    assert real.cua_driver_present({"HERMES_CUA_DRIVER_CMD": str(tmp_path / "missing")}) is False
+
+
+def test_n2_the_driver_override_in_the_profile_env_reaches_detection(tmp_path, monkeypatch):
+    folder = _profile(tmp_path, {"toolsets": ["hermes-cli"]}, "agent")
+    monkeypatch.setattr(dc, "profile_home", lambda profile=None: folder)
+    monkeypatch.setattr(dc, "_env_names", lambda home: {"held": [], "extra": "", "cua": "/the/driver"})
+    seen = []
+    monkeypatch.setattr(dc, "cua_driver_present", lambda env=None: seen.append(dict(env or {})) or True)
+    dc._env_cache.clear()
+    assert dc.detection()["tools"] == ["computer_use"]
+    assert seen[0]["HERMES_CUA_DRIVER_CMD"] == "/the/driver"
+
+
+def test_item7_every_person_only_caller_passes_the_agents_profile(tmp_path, monkeypatch):
+    repo = Path(__file__).resolve().parents[1] / "src" / "emporia"
+    for name in ("chain_link", "chain_wallet", "chain_register", "chain_send"):
+        text = (repo / f"{name}.py").read_text()
+        calls = [ln for ln in text.splitlines() if "person_only(" in ln and "def person_only" not in ln]
+        assert calls and all("agent_profile()" in ln for ln in calls), (name, calls)
+    folder = _profile(tmp_path, CONFIGS["computer_use"], "agent")
+    monkeypatch.setenv("EMPORIA_DOTENV", str(folder / ".env"))
+    assert chain_link.agent_profile() == folder
+    monkeypatch.setenv("EMPORIA_DOTENV", str(tmp_path / "nowhere" / ".env"))
+    assert chain_link.agent_profile() is None
+    monkeypatch.setenv("EMPORIA_DOTENV", str(folder / ".env"))
+    monkeypatch.setattr(dc, "profile_home", lambda profile=None: Path(profile) if profile else None)
+    with pytest.raises(chain_link.LinkError, match="does no crypto here"):
+        chain_link.person_only("sending")           # no profile given: the agent's own, from its handed .env
+
+
+def test_item6_every_platform_in_the_config_needs_its_own_saved_list():
+    base = {"platform_toolsets": _all(["web"])}
+    assert dc.detect(base, {}, cua=True)["tools"] == []
+    for extra in ({"platforms": [{"platform": "telegram"}]}, {"platforms": {"discord": {"enabled": True}}},
+                  {"gateway": {"platforms": {"slack": {}}}}):
+        assert dc.detect({**base, **extra}, {}, cua=True)["tools"] == ["computer_use"], extra
+    assert dc.detect({**base, "platforms": {"discord": {"enabled": False}}}, {}, cua=True)["tools"] == []
+    saved = {"platform_toolsets": {**_all(["web"]), "telegram": ["web"]}, "platforms": [{"platform": "telegram"}]}
+    assert dc.detect(saved, {}, cua=True)["tools"] == []
+    assert dg.detect({**base, "platforms": [{"platform": "telegram"}]}, {}, cua=True) == dc.detect(
+        {**base, "platforms": [{"platform": "telegram"}]}, {}, cua=True)
+
+
+def test_mcp_names_with_a_double_underscore_in_the_server_are_read_from_the_known_servers(tmp_path, monkeypatch):
+    _use_profile(tmp_path, monkeypatch, {"platform_toolsets": _all(["web"]),
+                                         "mcp_servers": {"my__playwright": {}, "emporia__tools": {}, "notes": {}}})
+    assert dg._mcp_server("mcp__my__playwright__click") == "my__playwright"
+    assert dg._mcp_server("mcp__emporia__post") == "emporia"
+    assert dg._mcp_server("mcp__emporia__tools__run") == "emporia__tools"
+    assert dg._mcp_server("mcp__unknown_one__x__y") == "unknown_one"
+    _read()
+    ids = {"session_id": "s1", "task_id": "s1"}
+    assert dg.pre_tool_call(tool_name="mcp__my__playwright__click", **ids)["action"] == "block"
+    assert dg.pre_tool_call(tool_name="mcp__emporia__post", **ids) is None
+    assert dg.pre_tool_call(tool_name="mcp__notes__add", **ids) is None
+
+
+def test_a_server_named_with_emporia_as_a_prefix_does_not_borrow_its_exemption(tmp_path, monkeypatch):
+    _use_profile(tmp_path, monkeypatch, {"platform_toolsets": _all(["web"]),
+                                         "mcp_servers": {"emporia__playwright": {}}})
+    _read()
+    assert dg.pre_tool_call(tool_name="mcp__emporia__playwright__click", session_id="s1", task_id="s1")["action"] == "block"
+
+
+@pytest.mark.parametrize("tool, key, command", [
+    ("terminal", "command", "curl -s localhost:9222/json/list"),
+    ("terminal", "command", "curl http://127.0.0.1:9222/x"),
+    ("terminal", "command", "google-chrome --remote-debugging-port=9333"),
+    ("terminal", "command", "chromium remote-debugging-pipe"),
+    ("execute_code", "code", "import subprocess\nsubprocess.run(['xdotool', 'click', '1'])"),
+    ("execute_code", "code", "import os\nos.system('osascript -e beep')"),
+    ("execute_code", "code", "requests.get('http://localhost:9222/json/version')"),
+])
+def test_driver_patterns_in_the_terminal_and_in_execute_code_codes(tool, key, command):
+    ids = {"session_id": "s1", "task_id": "s1"}
+    assert dg.pre_tool_call(tool_name=tool, args={key: command}, **ids) is None
+    _read()
+    assert dg.pre_tool_call(tool_name=tool, args={key: command}, **ids)["action"] == "block"
+    for fine in ("print(sum(range(9222)))", "echo 19222", "ls /json/data"):
+        assert dg.pre_tool_call(tool_name=tool, args={key: fine}, **ids) is None, fine
+
+
+def test_the_docs_say_what_b_cannot_see_and_the_remaining_limits():
+    text = (Path(__file__).resolve().parents[1] / "docs" / "agent-security-setup.md").read_text()
+    section = text.split("### Desktop control", 1)[1].split("### An agent is confined", 1)[0]
+    for needle in ("live `/browser connect`", "in-process", "execute_code", "package manager",
+                   "not seen", "terminal cannot be fenced"):
+        assert needle in section, needle

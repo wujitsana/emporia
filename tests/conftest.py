@@ -233,8 +233,10 @@ def _no_profile_for_desktop_control(monkeypatch):
 
     from emporia import desktop_control
     monkeypatch.setattr(desktop_control, "profile_home", lambda profile=None: Path(profile) if profile else None)
-    monkeypatch.setattr(desktop_control, "_env_names", lambda home: ([], ""))     # never asks Hermes for a .env
+    monkeypatch.setattr(desktop_control, "_env_names", lambda home: {"held": [], "extra": "", "cua": ""})     # never asks Hermes for a .env
     monkeypatch.setattr(desktop_control, "cua_driver_present", lambda env=None: False)
+    desktop_control._env_cache.clear()
+    desktop_control._config_cache.clear()
 
 
 # The installer writes dashboard/.env.local in the checkout itself (for dev builds). A test that runs the installer
