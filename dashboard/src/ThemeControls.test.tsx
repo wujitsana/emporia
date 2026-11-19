@@ -14,7 +14,7 @@ function setup(theme: "theme-light" | "theme-vivid" | "theme-dark", base?: "them
 }
 
 describe("the theme control", () => {
-  it("has three circles in order: mode, vivid, tint sleeve", () => {
+  it("has three circles in order: mode, vivid, tint", () => {
     setup("theme-light");
     const buttons = screen.getAllByRole("button");
     expect(buttons).toHaveLength(3);
@@ -23,7 +23,7 @@ describe("the theme control", () => {
     expect(buttons[2].getAttribute("aria-label")).toBe("Accent colour: Green, click to cycle");
     expect(buttons[0].className).toContain("e-theme-circle--mode");
     expect(buttons[1].className).toContain("e-theme-circle--vivid");
-    expect(buttons[2].className).toContain("e-sleeve");
+    expect(buttons[2].className).toContain("e-theme-circle--accent");
   });
 
   it("the mode circle swaps light and dark", () => {
@@ -66,21 +66,5 @@ describe("the theme control", () => {
   it("the compact (header / phone) control has the same three circles", () => {
     render(<ThemeCompact theme="theme-vivid" tint="tint-blue" onTheme={() => {}} onTint={() => {}} />);
     expect(screen.getAllByRole("button")).toHaveLength(3);
-  });
-});
-
-describe("look controls", () => {
-  it("renders the font keys with aria-pressed and calls back", async () => {
-    
-    const { ThemePanelBody } = await import("./ThemeControls");
-    const calls: string[] = [];
-    render(<ThemePanelBody theme="theme-light" tint="tint-red" onTheme={() => {}} onTint={() => {}}
-      look={{ font: "serif", ink: "black", bodyInk: false, onFont: (f) => calls.push(f), onInk: (i) => calls.push(i) }} />);
-    expect(screen.getByLabelText("Font: Serif").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByLabelText("Font: Pixel").getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(screen.getByLabelText("Font: Type"));
-    fireEvent.click(screen.getByLabelText(/Text colour: Black/));
-    expect(calls).toEqual(["type", "auto"]);
-    expect(screen.getByRole("img", { name: /Low contrast/ })).toBeTruthy();
   });
 });

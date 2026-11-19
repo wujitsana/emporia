@@ -86,15 +86,7 @@ const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
  * (a run through the tints) keep the class on until the last one settles.
  * `fade: false` (the capture hotkeys, capture mode) switches instantly.
  */
-export interface LookClasses {
-  font: "pixel" | "serif" | "type";
-  ink: "auto" | "white" | "black";
-  /** Body text takes the ink too (it reaches 4.5:1 here); the title always does. */
-  bodyInk: boolean;
-  cover: boolean;
-}
-
-export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boolean; capture?: boolean; look?: LookClasses } = {}) {
+export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boolean; capture?: boolean } = {}) {
   const tint = normalizeTint(tintIn);
   // On the Desktop page the body is the app's: the theme goes on our own root or nowhere.
   const b = themeRoot ?? (import.meta.env.VITE_EMPORIA_MODE === "desktop" ? null : document.body);
@@ -117,22 +109,4 @@ export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boole
   b.classList.add("font-use-CommitMono");
   b.classList.add("e-look");   // the one look (dashboard.css § 30)
   b.classList.add(tint);
-  const lk = opts.look;
-  [...b.classList].filter((c) => c.startsWith("look-")).forEach((c) => c !== "look-drip" && b.classList.remove(c));
-  if (lk) {
-    b.classList.add(`look-font-${lk.font}`);
-    if (lk.ink !== "auto") b.classList.add(`look-ink-${lk.ink}`);
-    if (lk.ink !== "auto" && lk.bodyInk) b.classList.add("look-body-ink");
-    if (lk.cover) b.classList.add("look-cover");
-  }
-}
-
-/** The one-shot "drip" on the title when the ink changes (CSS animation; the caller skips it when motion is off). */
-export function dripTitle() {
-  const b = themeRoot ?? (import.meta.env.VITE_EMPORIA_MODE === "desktop" ? null : document.body);
-  if (!b) return;
-  b.classList.remove("look-drip");
-  void b.offsetWidth;
-  b.classList.add("look-drip");
-  setTimeout(() => b.classList.remove("look-drip"), 800);
 }
