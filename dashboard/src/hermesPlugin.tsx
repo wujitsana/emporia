@@ -92,10 +92,19 @@ export function fitToView(host: HTMLElement, win: Window = window): () => void {
   };
 }
 
-async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => void> {
-  const shadow = host.attachShadow({ mode: "closed" });
+async function mount(host: HTMLElement, sdk: HermesPluginSdk, alive: () => boolean = () => true): Promise<() => void> {
+  // A tab that was dropped while this still awaited (Hermes switched profile) must not touch the page
+  // any more: no window globals for the old profile, no app rendered into a detached element.
+  const stale = () => !alive();
+  // Not on the host itself: attachShadow throws on an element that already has a root (a re-run on the
+  // same element), and the tab came up blank.
+  const holder = document.createElement("div");
+  holder.style.cssText = "display:contents";
+  host.replaceChildren(holder);
+  const shadow = holder.attachShadow({ mode: "closed" });
   const css = await fetch(new URL("style.css", BASE)).then((r) => r.text()).catch(() => "");
   await installFonts(css);
+  if (stale()) return () => undefined;
   const style = document.createElement("style");
   style.textContent = css;
   const container = document.createElement("div");
@@ -109,6 +118,7 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   // P296: a profile with no Emporia agent gets the one command that makes one,
   // not a console error.
   const probe = await sdk.authedFetch("/api/plugins/emporia/agents").catch(() => null);
+  if (stale()) return unfit;
   if (probe?.status === 503) {
     const d = await probe.json().catch(() => ({}));
     if (d.setup_needed) {
@@ -122,8 +132,8 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   const sockets = probe?.ok
     ? await probe.clone().json().then((d) => d?.sockets !== false).catch(() => true)
     : true;
-  window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl, sockets };
-  window.__EMPORIA_HERMES_PROFILE__ = await ensureViewer(
+  if (stale()) return unfit;
+  const viewer = await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
       .then((r) => r.json()).then((d) => d.agents as string[]),
     // P234: never "" inside Hermes — that read as "not in Hermes" and kept the
@@ -133,14 +143,18 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
         .then((r) => r.json()).then((d) => String(d.profile ?? "")).catch(() => "")
       || "default",
   );
+  if (stale()) return unfit;
+  window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl, sockets };
+  window.__EMPORIA_HERMES_PROFILE__ = viewer;
   // A runtime older than this plugin (after `hermes plugins update`): one line with the commands. Text only.
   void sdk.authedFetch("/api/plugins/emporia/_runtime_notice")
     .then((r) => r.json())
     .then((d) => { if (d?.stale && typeof d.message === "string") shadow.prepend(runtimeBanner(d.message)); })
     .catch(() => undefined);
   const { setThemeRoot } = await import("./themeConfig");
-  setThemeRoot(container);
   const { default: App } = await import("./App.tsx");
+  if (stale()) return unfit;
+  setThemeRoot(container);
   const root: Root = createRoot(container);
   root.render(<App />);
   return () => { unfit(); root.unmount(); };
@@ -163,6 +177,15 @@ function runtimeBanner(message: string): HTMLElement {
   close.onclick = () => bar.remove();
   bar.append(text, close);
   return bar;
+}
+
+/** The tab when mounting threw: a plain line instead of a blank page. */
+function failed(e: unknown): HTMLElement {
+  const box = document.createElement("div");
+  box.setAttribute("role", "alert");
+  box.style.cssText = "max-width:36rem;margin:3rem auto;padding:0 16px;font:15px/1.5 system-ui,sans-serif";
+  box.textContent = `Emporia could not start in this tab (${e instanceof Error ? e.message : String(e)}). Reload the page to try again.`;
+  return box;
 }
 
 /** The tab in a profile Emporia is not set up in: what it is, and the command. */
@@ -197,7 +220,11 @@ function notSetUp(): HTMLElement {
       let unmount: (() => void) | null = null;
       let gone = false;
       if (ref.current) {
-        void mount(ref.current, sdk!).then((u) => (gone ? u() : (unmount = u)));
+        const host = ref.current;
+        void mount(host, sdk!, () => !gone)
+          .then((u) => (gone ? u() : (unmount = u)))
+          // Never a blank tab: say what failed (the next mount starts clean).
+          .catch((e: unknown) => { if (!gone) host.replaceChildren(failed(e)); });
       }
       return () => { gone = true; unmount?.(); };
     }, []);
