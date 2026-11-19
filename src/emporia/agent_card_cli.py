@@ -430,7 +430,7 @@ def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: s
     except browser_sign.BrowserSignError as e:
         print(f"agent link-8004: {e}")
         return 1
-    _announce_page(page, chain_label=out["chain_label"], registry=str(out["typed_data"]["domain"]["verifyingContract"]),
+    _announce_page(page, chain_label=out["chain_label"], registry=str(out["agent_registry"]).split(":")[2],
                    what="signature", lead=f"Open this page in the browser that has your wallet (it only exists while "
                    f"this command waits; closes after one signature or {int(page.timeout // 60)} minutes; Ctrl-C cancels).")
     try:

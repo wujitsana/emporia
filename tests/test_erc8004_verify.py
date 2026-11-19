@@ -427,7 +427,7 @@ def test_without_eth_account_the_result_is_not_checked(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", hide)
     assert not erc8004.available()
     link = {"agent_registry": f"eip155:84532:{REG.lower()}", "agent_id": "42", "signer": "0x" + "11" * 20,
-            "stable_id": FX["stable_id"], "issued_at": 1, "wallet_sig": "00" * 65}
+            "stable_id": FX["stable_id"], "issued_at": 1, "agent_name": NAME, "wallet_sig": "00" * 65}
     r = erc8004.verify(link, FakeChain())
     assert r["status"] == "not-checked" and r["tier"] == ""
 

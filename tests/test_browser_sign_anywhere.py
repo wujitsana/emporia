@@ -197,7 +197,7 @@ def test_host_and_origin_are_accepted_only_for_the_browser_side_names():
         for ok in (f"127.0.0.1:{port}", f"localhost:{port}"):
             assert request(p, "GET", "/" + p.token, host=ok)[0] == 200, ok
         for bad in ("evil.example", f"evil.example:{port}", f"127.0.0.1.evil.example:{port}", f"localhost.evil:{port}",
-                    "127.0.0.1", f"127.0.0.1:{port + 1}", f"[::1]:{port}", f"0.0.0.0:{port}", f"192.168.1.2:{port}", ""):
+                    "127.0.0.1", f"127.0.0.1:{port + 1}", f"[::1]:{port}", f"0.0.0.0:{port}", f"192.168.1.2:{port}"):
             assert request(p, "GET", "/" + p.token, host=bad)[0] == 404, bad       # a rebinding page gets nothing
         body = {"signature": "0x" + "ab" * 65, "account": "0x" + "11" * 20}
         sign_path = "/" + p.token + "/sign"

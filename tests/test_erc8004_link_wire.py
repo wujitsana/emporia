@@ -70,7 +70,7 @@ def test_a_good_record_and_the_largest_signature_pass():
 
 def test_a_link_is_a_persons_kind_and_an_agents_tools_cannot_sign_it():
     assert signing.KINDS["erc8004-link"].person
-    assert signing.payload("erc8004-link", STABLE, REGISTRY, "42", SIGNER, 1760000000, WALLET_SIG, AT) == _payload()
+    assert signing.payload("erc8004-link", STABLE, REGISTRY, "42", SIGNER, 1760000000, WALLET_SIG, AT, "alpha") == _payload()
     with pytest.raises(signing.Refused, match="its person's to sign"):
         signing.check("erc8004-link", _payload(), signing.Context("a"))
 

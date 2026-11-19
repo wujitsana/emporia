@@ -73,11 +73,12 @@ describe("an ERC-8004 link's wording", () => {
   });
 
   it("sends the card's signature to the console only with the stable id, and as encoded query values", () => {
-    const l = link({ issued_at: 1700000000, wallet_sig: "0xab" });
+    const l = link({ issued_at: 1700000000, agent_name: "kestrel", wallet_sig: "0xab" });
     expect(chainImagePath("me", l)).not.toContain("sig=");
     expect(chainImagePath("me", { ...l, wallet_sig: undefined }, "0x" + "11".repeat(32))).not.toContain("sig=");
     const url = chainImagePath("me", l, "0x" + "11".repeat(32));
     expect(url).toContain("issued=1700000000");
+    expect(url).toContain("name=kestrel");
     expect(url).toContain("sig=0xab");
     expect(url).toContain(`stable=0x${"11".repeat(32)}`);
   });
