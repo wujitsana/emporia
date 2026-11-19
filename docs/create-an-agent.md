@@ -936,6 +936,39 @@ one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C)
 address, and the page shows what is signed and asks your wallet for the signature (switching its chain if needed). The
 command then checks the signature and records it exactly as with `--signature`. There is no wallet button anywhere in
 the dashboard; the page exists only while the command waits.
+
+**What your wallet shows.** The link is EIP-712 typed data whose first two lines are plain words: "Link ERC-8004 agent #12
+on Base Sepolia (testnet) to the Emporia agent alpha. This moves no funds and grants no permission." and the date
+(`2026-11-19 19:30 UTC`), then the registry, the agent number, your address and the agent's key. The registration and
+`setAgentWallet` are transactions, and a wallet shows raw data for a contract it does not know: the page and the command
+print what they do in words (the function, the registry address, value 0, gas in test ETH). In the wallet popup check the
+network and the `to` address against the ones printed. `setAgentWallet` carries the registry's own consent message (a
+format the registry defines), signed by the agent's wallet; your wallet does not show it.
+
+**Signing from another machine.** `--browser` needs a browser that can reach the page, and the page never listens on a
+public address. `--port N` (1024-65535, default random) fixes the port and `--listen auto|ADDR` picks the address
+(default `auto`: `127.0.0.1`, or inside a container the container's own private address; only loopback, private
+(10.x, 172.16-31.x, 192.168.x, 100.64/10, fc00::/7) and link-local addresses are accepted, never `0.0.0.0`). The command
+detects your setup, prints the exact steps, and the URL is always `http://127.0.0.1:PORT/<token>` in your browser, so a
+tunnel's local port must be the same number as `PORT`.
+
+| Your setup | Run | In your browser |
+| --- | --- | --- |
+| 1. Local machine, Hermes native | `emporia agent link-8004 NAME --chain C --agent-id N --browser` | opens by itself |
+| 2. Remote server, Hermes native, over SSH | add `--port 8765` | on your laptop: `ssh -L 8765:127.0.0.1:8765 you@server`, then open the printed URL |
+| 3. Remote server, Hermes in Docker (bridge network) | add `--port 8765` (it listens on the container's IP, e.g. 172.20.0.2) | on your laptop: `ssh -L 8765:172.20.0.2:8765 you@server` (the server's host can reach the bridge IP), then open the printed URL |
+| 4. Docker Desktop (macOS/Windows) | publish the port on the host's loopback in compose: `ports: ["127.0.0.1:8765:8765"]`, add `--port 8765` | open the printed URL on that machine |
+| 5. WSL2 | as 1 or 2: `localhost` forwarding usually works | open the printed URL in the Windows browser |
+| 6. No browser that can reach it | skip `--browser`: sign the printed message in any wallet | paste the signature after `--signature 0x...` in the printed command (it also prints what to sign and where) |
+
+Security: never publish the port on `0.0.0.0` (bind the host side to `127.0.0.1`); the SSH tunnel is encrypted; the page
+answers only to the Host `127.0.0.1:PORT` or `localhost:PORT`, behind a one-time token, for one signature or transaction;
+use a fresh wallet for testnet tests (its address becomes public and permanent next to the agent); check the chain and the
+`to` address in the wallet popup; use a hardware wallet for anything of value. If your wallet does not know the chain, the
+page offers it Emporia's public settings for it (`wallet_addEthereumChain`) and asks it to switch.
+A browser-wallet test in a headless browser is not part of the suite (it needs a real browser); to add one, start the page
+with a fixed port and drive it with a script that injects a fake `window.ethereum` (see `tests/fixtures/browser_sign/harness.mjs`).
+
 It is a read and a signature, so a **mainnet** identity can be linked even while mainnet money is locked; only spends
 are gated. Linking publishes the wallet address next to the agent (relay copies and the transparency log keep it; use a
 delegate wallet to keep your main one off). The card says **claimed** until a relay with an RPC of its own

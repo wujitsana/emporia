@@ -98,7 +98,8 @@ def test_verify_identity_reads_the_chain_for_each_link_and_never_trusts_the_rela
     ch.owners[AGENT] = addr
     ch.wallet = PAY
     profile = {"stable_id": signed["stable_id"], "x402_pay_to": {"evm": PAY},
-               "links": [entry(signer=addr, issued_at=signed["issued_at"], wallet_sig=signed["wallet_sig"])]}
+               "links": [entry(signer=addr, issued_at=signed["issued_at"], agent_name=signed["agent_name"],
+                               wallet_sig=signed["wallet_sig"])]}
     monkeypatch.setattr(m, "_agent_profile", lambda who: profile)
     built = views(ch)
     monkeypatch.setattr(m, "_identity_views", lambda: built)
@@ -209,7 +210,8 @@ def test_the_identity_check_keeps_one_cache_and_a_time_budget(monkeypatch):
     ch.owners[AGENT] = addr
     built = views(ch)
     monkeypatch.setattr(m, "_identity_views", lambda: built)
-    links = [entry(signer=addr, agent_id=str(i), issued_at=signed["issued_at"], wallet_sig=signed["wallet_sig"]) for i in range(3)]
+    links = [entry(signer=addr, agent_id=str(i), issued_at=signed["issued_at"], agent_name=signed["agent_name"],
+                   wallet_sig=signed["wallet_sig"]) for i in range(3)]
     monkeypatch.setattr(m, "_agent_profile", lambda who: {"stable_id": signed["stable_id"], "links": links})
     ticks = iter([0.0, 0.0, 99.0, 99.0, 99.0, 99.0])
     import time

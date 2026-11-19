@@ -58,6 +58,7 @@ class ChainLinkIn(BaseModel):
     agent_id: str
     signer: str
     issued_at: int
+    agent_name: str
     wallet_sig: str
     at: str
     signature: str
@@ -86,7 +87,8 @@ def read_link(link: dict[str, Any], *, urls: list[str] | None = None) -> dict[st
 
 def _link_of(row: Any) -> dict[str, Any]:
     return {"agent_registry": row["agent_registry"], "agent_id": row["agent_id"], "signer": row["signer"],
-            "stable_id": row["stable_id"], "issued_at": row["issued_at"], "wallet_sig": row["wallet_sig"]}
+            "stable_id": row["stable_id"], "issued_at": row["issued_at"], "agent_name": row["agent_name"],
+            "wallet_sig": row["wallet_sig"]}
 
 
 def card_entry(row: Any) -> dict[str, Any]:
@@ -96,7 +98,8 @@ def card_entry(row: Any) -> dict[str, Any]:
     return {"site": "erc8004", "agent_registry": row["agent_registry"], "agent_id": row["agent_id"],
             "signer": row["signer"], "tier": row["tier"], "status": row["status"], "checked": checked,
             "confirmed_by": 0, "testnet": networks.is_testnet(_chain_of(row["agent_registry"])),
-            "issued_at": row["issued_at"], "wallet_sig": row["wallet_sig"], "at": row["at"], "declared": True}
+            "issued_at": row["issued_at"], "agent_name": row["agent_name"], "wallet_sig": row["wallet_sig"],
+            "at": row["at"], "declared": True}
 
 
 def links_for(conn: Any, stable_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
@@ -175,7 +178,7 @@ async def record_chain_link(agent_id: str, req: ChainLinkIn, request: Request):
         raise HTTPException(404, f"no agent {agent_id} on this relay")
     stable = row["stable_id"]
     link = {"agent_registry": req.agent_registry, "agent_id": req.agent_id, "signer": req.signer,
-            "stable_id": stable, "issued_at": req.issued_at, "wallet_sig": req.wallet_sig}
+            "stable_id": stable, "issued_at": req.issued_at, "agent_name": req.agent_name, "wallet_sig": req.wallet_sig}
     if why := wire.erc8004_link_problem(link):
         raise HTTPException(400, why)
     chain = _chain_of(req.agent_registry)
@@ -192,9 +195,9 @@ async def record_chain_link(agent_id: str, req: ChainLinkIn, request: Request):
                                  "sign a new one (emporia agent link-8004)")
     if not rs.AGENT_REGISTRY.verify_signature(
             agent_id, wire.signed_erc8004_link_payload(stable, req.agent_registry, req.agent_id, req.signer,
-                                                       req.issued_at, req.wallet_sig, req.at), req.signature):
+                                                       req.issued_at, req.wallet_sig, req.at, req.agent_name), req.signature):
         raise HTTPException(403, "the link's signature does not verify against your key (sign stable_id, "
-                                 "agent_registry, agent_id, signer, issued_at, wallet_sig, at)")
+                                 "agent_registry, agent_id, signer, issued_at, wallet_sig, at, agent_name)")
     status, got = await asyncio.to_thread(_outcome, link, chain)
     now = _now()
     key = (stable, req.agent_registry, req.agent_id)
@@ -212,11 +215,11 @@ async def record_chain_link(agent_id: str, req: ChainLinkIn, request: Request):
         conn.execute(
             "INSERT OR REPLACE INTO agent_chain_links (stable_id, agent_registry, agent_id, signer, issued_at, wallet_sig, "
             "at, signature, recorded_at, status, tier, owner, block_number, block_hash, checked_at, attempted_at, "
-            "superseded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "superseded_by, agent_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (stable, req.agent_registry, req.agent_id, req.signer, req.issued_at, req.wallet_sig, req.at, req.signature,
              now, shown, got.get("tier", "") if status == "checked" else "", got.get("owner", ""),
              got.get("block_number"), got.get("block_hash", ""), now if status == "checked" else "",
-             now if got else "", loser_to))
+             now if got else "", loser_to, req.agent_name))
         stored = conn.execute("SELECT * FROM agent_chain_links WHERE stable_id = ? AND agent_registry = ? AND agent_id = ?",
                               key).fetchone()
         links = links_for(conn, [stable]).get(stable, [])

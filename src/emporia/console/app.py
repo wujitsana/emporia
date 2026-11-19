@@ -355,17 +355,18 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         relay = console.relay.relay_url
         return {"relay": relay, "kept": await asyncio.to_thread(logcheck.kept_summary, relay, agent.key_dir)}
 
-    def _chain_signed(stable: str, issued: str, sig: str) -> dict | None:
-        """The card's `{stable_id, issued_at, wallet_sig}` when all three came with the query (then the wallet's
+    def _chain_signed(stable: str, issued: str, sig: str, name: str = "") -> dict | None:
+        """The card's `{stable_id, issued_at, agent_name, wallet_sig}` when they came with the query (then the wallet's
         signature is verified here too); none of them: None; a malformed set: refused."""
         from emporia import erc8004
-        if not (stable or issued or sig):
+        if not (stable or issued or sig or name):
             return None
         hexsig = sig[2:] if sig[:2].lower() == "0x" else sig
-        if (not issued.isdigit() or len(issued) > 19 or len(hexsig) > 2 * erc8004.MAX_SIG_BYTES
+        if (not 0 < len(name) <= erc8004.MAX_NAME or not name.isprintable() or not issued.isdigit() or len(issued) > 19 or len(hexsig) > 2 * erc8004.MAX_SIG_BYTES
                 or not re.fullmatch(r"[0-9a-fA-F]*", hexsig) or not re.fullmatch(r"(0x)?[0-9a-fA-F]{64}", stable)):
-            raise HTTPException(400, "stable, issued and sig are the card's stable_id, issued_at and wallet_sig")
-        return {"stable_id": stable, "issued_at": int(issued), "wallet_sig": sig}
+            raise HTTPException(400, "stable, issued, name and sig are the card's stable_id, issued_at, agent_name and "
+                                     "wallet_sig")
+        return {"stable_id": stable, "issued_at": int(issued), "agent_name": name, "wallet_sig": sig}
 
     def _chain_query(registry: str, agent: str, signer: str) -> tuple[str, str, str]:
         from emporia import networks, wire
@@ -382,7 +383,7 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
 
     @app.get("/chain-link/{agent_id}")
     async def chain_link(agent_id: str, registry: str, agent: str, signer: str, stable: str = "", issued: str = "",
-                         sig: str = "", pay_to: str = ""):
+                         sig: str = "", pay_to: str = "", name: str = ""):
         """This machine's own read of a link on a card (never the relay's word): does the chain, at a pinned block,
         still back `signer` for that ERC-8004 agent; its registration name and description (a stranger's text,
         capped, normalised, flagged); whether an on-chain image is available. With the card's `stable`, `issued` and
@@ -390,7 +391,7 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
         profile) it also says whether the identity's `agentWallet` is that wallet. Cached ten minutes. Reads only."""
         console.agent(agent_id)
         chain, num, who = _chain_query(registry, agent, signer)
-        signed = _chain_signed(stable, issued, sig)
+        signed = _chain_signed(stable, issued, sig, name)
         from emporia import wire
         if pay_to and not wire._EVM_ADDRESS.fullmatch(pay_to):
             raise HTTPException(400, "pay_to is an EVM address")
@@ -399,13 +400,13 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
 
     @app.get("/chain-image/{agent_id}")
     async def chain_image(agent_id: str, registry: str, agent: str, signer: str, stable: str = "", issued: str = "",
-                          sig: str = ""):
+                          sig: str = "", name: str = ""):
         """The link's image, from an on-chain data: URI only, as an image with a sandbox policy (the middleware sets
         `Content-Security-Policy: sandbox; default-src 'none'`; nosniff comes with every answer). Never fetched from
         a URL, never `animation_url`."""
         console.agent(agent_id)
         chain, num, who = _chain_query(registry, agent, signer)
-        loaded, _ = await asyncio.to_thread(console.chain.load, chain, num, who, _chain_signed(stable, issued, sig))
+        loaded, _ = await asyncio.to_thread(console.chain.load, chain, num, who, _chain_signed(stable, issued, sig, name))
         if loaded.image is None:
             raise HTTPException(404, loaded.image_note or "no on-chain image")
         mime, data = loaded.image

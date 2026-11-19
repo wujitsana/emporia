@@ -89,6 +89,7 @@ export interface ChainLink {
   confirmed_by: number;
   testnet: boolean;
   issued_at?: number;
+  agent_name?: string;
   /** The wallet's EIP-712 signature (hex), so a client can verify it itself. */
   wallet_sig?: string;
   at?: string;

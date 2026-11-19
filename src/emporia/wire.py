@@ -1652,16 +1652,18 @@ _STABLE_HEX = re.compile(r"[0-9a-f]{64}")
 
 
 def signed_erc8004_link_payload(stable_id: str, agent_registry: str, agent_id: str, signer: str, issued_at: int,
-                                wallet_sig: str, at: str) -> dict[str, Any]:
+                                wallet_sig: str, at: str, agent_name: str) -> dict[str, Any]:
     """`emporia:erc8004-link:v1`: an agent recording that the wallet `signer` controls the ERC-8004 agent
     `agent_id` in `agent_registry` (`eip155:<chain id>:<registry address, lowercase>`). `agent_id` is a decimal
     string (a uint256 is never a JSON number); `issued_at` is the unix second the wallet signed its EIP-712
-    statement; `wallet_sig` is that signature (hex, at most 4096 bytes). Bound to the agent's stable id, so a
+    statement; `agent_name` is the Emporia handle the statement names (part of the signed words, so it is kept with
+    the link and a later rename does not void it); `wallet_sig` is that signature (hex, at most 4096 bytes). Bound to the agent's stable id, so a
     key rotation does not void it."""
     if not isinstance(agent_id, str) or not _CANONICAL_UINT.fullmatch(agent_id):
         raise ValueError("agent_id is a canonical decimal string: no sign, no leading zeros, at most 78 digits")
     return {"type": ERC8004_LINK_TYPE, "stable_id": stable_id, "agent_registry": agent_registry,
-            "agent_id": agent_id, "signer": signer, "issued_at": issued_at, "wallet_sig": wallet_sig, "at": at}
+            "agent_id": agent_id, "signer": signer, "issued_at": issued_at, "agent_name": agent_name, "wallet_sig": wallet_sig,
+            "at": at}
 
 
 def chain_link_item(stable_id: str, agent_registry: str, agent_id: str) -> str:
@@ -1685,6 +1687,9 @@ def erc8004_link_problem(p: Mapping[str, Any]) -> str:
     issued = p.get("issued_at")
     if isinstance(issued, bool) or not isinstance(issued, int) or not 0 < issued < 1 << 64:
         return "issued_at is unix seconds"
+    name = p.get("agent_name")
+    if not isinstance(name, str) or not 0 < len(name) <= 80 or not name.isprintable():
+        return "agent_name is the Emporia handle the wallet signed (printable, at most 80 characters)"
     sig = str(p.get("wallet_sig") or "")
     body = sig[2:] if sig[:2].lower() == "0x" else sig
     if not body or len(body) % 2 or len(body) > 2 * ERC8004_SIG_MAX_BYTES or not re.fullmatch(r"[0-9a-fA-F]+", body):

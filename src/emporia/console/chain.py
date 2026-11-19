@@ -162,12 +162,13 @@ class ChainViews:
     def load(self, caip2: str, agent_id: str, signer: str, signed: dict | None = None,
              pay_to: str = "", deadline: float | None = None) -> tuple[Loaded, bool]:
         """(the look, whether it came from the cache). Blocking: run it in a thread. `signed` is the card's
-        `{stable_id, issued_at, wallet_sig}`: with it the wallet's signature is verified here as well as the
+        `{stable_id, issued_at, agent_name, wallet_sig}`: with it the wallet's signature is verified here as well as the
         chain's control (`erc8004.verify`); without it only the chain is read (`erc8004.preview`). `pay_to` is the agent's
         registered EVM wallet: with it the answer says whether the identity's `agentWallet` is that wallet (visibility
         only; `agentWallet` is never proof of control)."""
         key = (caip2, str(int(agent_id)), signer.lower(),
-               "" if not signed else f"{signed['stable_id']}/{signed['issued_at']}/{signed['wallet_sig']}",
+               "" if not signed else f"{signed['stable_id']}/{signed['issued_at']}/{signed['wallet_sig']}/"
+                                     f"{signed['agent_name']}",
                pay_to.lower())
         hit = self._cache.get(key)
         now = self._clock()

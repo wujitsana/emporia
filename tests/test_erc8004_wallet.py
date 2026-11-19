@@ -518,7 +518,7 @@ def test_link_from_the_agent_wallet_checks_the_chain_and_signs_with_the_wallet(c
     out = chain_link.own_wallet_ask("base-sepolia", AID, read=chain, stable=STABLE, now=NOW)
     assert out["tier"] == "owner" and out["signer"] == wallet.address and out["signature"].startswith("0x")
     link = {"agent_registry": out["agent_registry"], "agent_id": str(AID), "signer": wallet.address, "stable_id": STABLE,
-            "issued_at": out["issued_at"], "wallet_sig": out["signature"]}
+            "issued_at": out["issued_at"], "agent_name": out["agent_name"], "wallet_sig": out["signature"]}
     assert erc8004.signature_recovers(link) is True
     chain.owners[AID] = OWNER
     again = chain_link.own_wallet_ask("base-sepolia", AID, read=chain, stable=STABLE, now=NOW)

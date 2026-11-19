@@ -685,7 +685,7 @@ def _chain_link(conn, r):
     # A card's ERC-8004 link: the signed record (the wallet address is public on the card) and what the relay last
     # read of the chain. No image and no registration text ever reach the relay, so none are logged.
     return True, "/".join((r["stable_id"], r["agent_registry"], r["agent_id"])), {k: r[k] for k in (
-        "stable_id", "agent_registry", "agent_id", "signer", "issued_at", "wallet_sig", "at", "signature",
+        "stable_id", "agent_registry", "agent_id", "signer", "issued_at", "agent_name", "wallet_sig", "at", "signature",
         "status", "tier", "owner", "block_number", "block_hash", "checked_at", "superseded_by")}
 
 

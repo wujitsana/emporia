@@ -10393,6 +10393,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="link-8004: sign in your browser wallet instead: serves one local page (127.0.0.1, one-time "
                           "address, closes after one signature or 10 minutes), then checks and records the signature; "
                           "register-8004: your browser wallet sends the registration the same way")
+    ag2.add_argument("--port", type=int, default=0, metavar="N",
+                     help="--browser: the page's port, 1024-65535 (default: random). Fix it when your browser is on another "
+                          "machine, so the SSH tunnel (`ssh -L N:127.0.0.1:N`) or a published container port can match")
+    ag2.add_argument("--listen", default="auto", metavar="auto|ADDR",
+                     help="--browser: the address the page listens on. auto (default) is 127.0.0.1, or inside a container "
+                          "its own private address. Only loopback and private addresses are accepted; never 0.0.0.0")
     ag2.add_argument("--from-agent-wallet", dest="from_agent_wallet", action="store_true",
                      help="register-8004: the agent's own Emporia EVM wallet sends the registration (needs --max-gas; "
                           "Base Sepolia test ETH only; it then owns the identity); set-8004-wallet: that wallet owns "
@@ -10420,10 +10426,10 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name, a.draft, a.use_soul) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
                      _card.x_link(a.url_or_name, a.handle, a.post) if a.action == "x-link" else
-                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes, a.browser, a.wait, a.from_agent_wallet) if a.action == "link-8004" else
+                     _card.link_8004(a.url_or_name, a.chain, a.agent_8004, a.signer, a.signature, a.issued_at, a.yes, a.browser, a.wait, a.from_agent_wallet, a.port, a.listen) if a.action == "link-8004" else
                      _card.unlink_8004(a.url_or_name, a.chain, a.agent_8004) if a.action == "unlink-8004" else
-                     _card.register_8004(a.url_or_name, a.chain, a.tx, a.signer, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas, a.no_image) if a.action == "register-8004" else
-                     _card.set_8004_wallet(a.url_or_name, a.chain, a.agent_8004, a.tx, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas) if a.action == "set-8004-wallet" else
+                     _card.register_8004(a.url_or_name, a.chain, a.tx, a.signer, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas, a.no_image, a.port, a.listen) if a.action == "register-8004" else
+                     _card.set_8004_wallet(a.url_or_name, a.chain, a.agent_8004, a.tx, a.yes, a.browser, a.wait, a.from_agent_wallet, a.max_gas, a.port, a.listen) if a.action == "set-8004-wallet" else
                      _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
                      _agent_init.mcp_config(a) if a.action == "mcp-config" else
                      cmd_agent_secure(a.url_or_name) if a.action == "secure" else

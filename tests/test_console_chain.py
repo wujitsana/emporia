@@ -245,7 +245,8 @@ def test_the_dashboard_back_end_only_reads(console_client):
 # -- the wallet's own signature, checked here ------------------------------------------------------------
 def _signed(key, addr, **kw):
     link = make_link(key, addr, **kw)
-    return {"stable_id": link["stable_id"], "issued_at": link["issued_at"], "wallet_sig": link["wallet_sig"]}
+    return {"stable_id": link["stable_id"], "issued_at": link["issued_at"], "agent_name": link["agent_name"],
+            "wallet_sig": link["wallet_sig"]}
 
 
 def test_with_the_cards_signature_the_console_verifies_it_as_well_as_the_chain():
@@ -272,7 +273,8 @@ def test_the_route_takes_the_cards_signature_and_refuses_a_malformed_one(console
     key, addr = keypair()
     console.chain = views(owned(addr, name="a"))
     s = _signed(key, addr)
-    q = {**_q(addr), "stable": s["stable_id"], "issued": str(s["issued_at"]), "sig": s["wallet_sig"]}
+    q = {**_q(addr), "stable": s["stable_id"], "issued": str(s["issued_at"]), "name": s["agent_name"],
+         "sig": s["wallet_sig"]}
     j = c.get(f"/chain-link/{name}", params=q).json()
     assert j["status"] == "checked" and j["signature_checked"] is True
     for bad in ({"sig": "zz"}, {"issued": "x"}, {"stable": "0x12"}, {"sig": "00" * 5000}):
@@ -317,7 +319,7 @@ def test_the_picture_is_the_on_chain_image_of_a_proven_link_and_only_from_the_ca
     console.chain = views(ch)
     s = _signed(key, addr)
     stable = s["stable_id"]
-    q = {**_q(addr), "stable": stable, "issued": str(s["issued_at"]), "sig": s["wallet_sig"]}
+    q = {**_q(addr), "stable": stable, "issued": str(s["issued_at"]), "name": s["agent_name"], "sig": s["wallet_sig"]}
     assert c.get(f"/chain-picture/{name}", params=_picture_q(stable)).status_code == 204     # nothing checked yet
     assert ch.calls == [], "asking for a picture never reads the chain"
     assert c.get(f"/chain-link/{name}", params=q).json()["status"] == "checked"             # the profile's check fills the cache
@@ -342,7 +344,8 @@ def test_an_unsigned_or_unproven_look_gives_no_picture(console_client):
     assert c.get(f"/chain-picture/{name}", params=_picture_q(s["stable_id"])).status_code == 204
     # a signature by another wallet: not proven
     bad = _signed(other, addr)
-    c.get(f"/chain-link/{name}", params={**_q(addr), "stable": bad["stable_id"], "issued": str(bad["issued_at"]), "sig": bad["wallet_sig"]})
+    c.get(f"/chain-link/{name}", params={**_q(addr), "stable": bad["stable_id"], "issued": str(bad["issued_at"]),
+                                                                "name": bad["agent_name"], "sig": bad["wallet_sig"]})
     assert c.get(f"/chain-picture/{name}", params=_picture_q(bad["stable_id"])).status_code == 204
 
 

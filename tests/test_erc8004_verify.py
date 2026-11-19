@@ -78,17 +78,20 @@ def keypair():
     return k, k.address
 
 
-def sign(key, chain_id, registry, agent_id, signer, stable, issued=1_700_000_000):
+NAME = "alpha"
+
+
+def sign(key, chain_id, registry, agent_id, signer, stable, issued=1_700_000_000, name=NAME):
     from eth_account import Account
     from eth_account.messages import encode_typed_data
-    td = erc8004.agent_link_typed_data(chain_id, registry, agent_id, signer, stable, issued)
+    td = erc8004.agent_link_typed_data(chain_id, registry, agent_id, signer, stable, issued, name)
     return Account.sign_message(encode_typed_data(full_message=td), key.key).signature.hex()
 
 
 def make_link(key, signer, agent_id=AGENT, stable=FX["stable_id"], chain_id=84532, registry=REG, sig=None, **kw):
     sig = sig if sig is not None else sign(key, chain_id, registry, agent_id, signer, stable)
     return {"agent_registry": f"eip155:{chain_id}:{registry.lower()}", "agent_id": str(agent_id), "signer": signer,
-            "stable_id": stable, "issued_at": 1_700_000_000, "wallet_sig": sig, **kw}
+            "stable_id": stable, "issued_at": 1_700_000_000, "agent_name": NAME, "wallet_sig": sig, **kw}
 
 
 def bound_chain(std=erc8004.STD_ERC721, holder=None, controller=True, meta=True):
@@ -121,14 +124,15 @@ def test_selectors_match_their_signatures():
 
 @needs_lib
 def test_typed_data_shape_and_digest_are_stable():
-    td = erc8004.agent_link_typed_data(84532, REG, "42", "0x" + "11" * 20, FX["stable_id"], 5)
+    td = erc8004.agent_link_typed_data(84532, REG, "42", "0x" + "11" * 20, FX["stable_id"], 5, NAME)
     assert td["domain"] == {"name": "Emporia agent link", "version": "1", "chainId": 84532}
     assert "verifyingContract" not in td["domain"]
     assert td["message"]["agentRegistry"] == f"eip155:84532:{REG.lower()}"
-    assert td["message"]["statement"].startswith("Link this ERC-8004 agent")
+    assert td["message"]["statement"] == ("Link ERC-8004 agent #42 on Base Sepolia (testnet) to the Emporia agent alpha. "
+                                          "This moves no funds and grants no permission.")
     d = erc8004.agent_link_digest(td)
     assert len(d) == 32 and d == erc8004.agent_link_digest(td)
-    td2 = erc8004.agent_link_typed_data(84532, REG, "43", "0x" + "11" * 20, FX["stable_id"], 5)
+    td2 = erc8004.agent_link_typed_data(84532, REG, "43", "0x" + "11" * 20, FX["stable_id"], 5, NAME)
     assert erc8004.agent_link_digest(td2) != d
 
 
@@ -504,3 +508,59 @@ def test_an_empty_owner_answer_is_unknown_without_code_at_the_registry_else_not_
     ch.codes.add(ch.registry)
     r = erc8004.verify(make_link(key, addr), ch)
     assert (r["status"], r["tier"]) == ("not-proven", "")
+
+
+# -- what a wallet shows: readable statement and date, a real EIP-712 round trip ---------------------------------
+@needs_lib
+def test_the_wallet_shows_the_statement_the_date_and_the_named_fields_in_that_order():
+    td = erc8004.agent_link_typed_data(84532, REG, "12", "0x" + "11" * 20, FX["stable_id"], 1_795_116_600, "alpha")
+    names = [f["name"] for f in td["types"]["AgentLink"]]
+    assert names == ["statement", "date", "agentRegistry", "agentId", "signer", "emporiaAgentKey", "issuedAt"]
+    m = td["message"]
+    assert m["statement"] == ("Link ERC-8004 agent #12 on Base Sepolia (testnet) to the Emporia agent alpha. "
+                              "This moves no funds and grants no permission.")
+    assert m["date"] == erc8004.date_text(1_795_116_600) and m["date"].endswith(" UTC") and len(m["date"]) == 20
+    assert m["agentRegistry"] == f"eip155:84532:{REG.lower()}" and m["issuedAt"] == 1_795_116_600
+
+
+@needs_lib
+def test_a_wallet_json_round_trip_signs_and_the_relay_path_verifies_it_exactly_as_signed():
+    from eth_account import Account
+    from eth_account.messages import encode_typed_data
+    key, addr = keypair()
+    ch = FakeChain()
+    ch.owners[AGENT] = addr
+    td = erc8004.agent_link_typed_data(84532, REG, AGENT, addr, FX["stable_id"], 1_700_000_000, NAME)
+    wire_json = erc8004.typed_data_json(td)               # what the page hands the wallet (eth_signTypedData_v4)
+    back = erc8004.typed_data_from_json(wire_json)
+    sig = Account.sign_message(encode_typed_data(full_message=back), key.key).signature.hex()
+    assert erc8004.verify(make_link(key, addr, sig=sig), ch)["tier"] == "owner"
+    # the rename of the agent later does not matter: the stored name rebuilds the digest; a different name does not
+    assert erc8004.verify(make_link(key, addr, sig=sig, agent_name="beta"), ch)["status"] == "invalid"
+    for bad in ("", "x" * 81, "line\nbreak"):
+        assert erc8004.verify(make_link(key, addr, sig=sig, agent_name=bad), ch)["status"] == "invalid", bad
+    assert erc8004.signature_recovers(make_link(key, addr, sig=sig)) is True
+
+
+@needs_lib
+def test_the_date_is_the_issued_time_formatted_so_a_wallet_reader_and_the_math_agree():
+    assert erc8004.date_text(0) == "1970-01-01 00:00 UTC"
+    assert erc8004.date_text(1_700_000_000) == "2023-11-14 22:13 UTC"
+    a = erc8004.agent_link_typed_data(84532, REG, "1", "0x" + "11" * 20, FX["stable_id"], 1_700_000_000, NAME)
+    b = erc8004.agent_link_typed_data(84532, REG, "1", "0x" + "11" * 20, FX["stable_id"], 1_700_000_060, NAME)
+    assert erc8004.agent_link_digest(a) != erc8004.agent_link_digest(b)
+
+
+@needs_lib
+def test_a_high_s_signature_is_refused_with_a_plain_message_and_its_low_s_twin_passes():
+    key, addr = keypair()
+    ch = FakeChain()
+    ch.owners[AGENT] = addr
+    low = bytes.fromhex(sign(key, 84532, REG, AGENT, addr, FX["stable_id"]).removeprefix("0x"))
+    assert erc8004.verify(make_link(key, addr, sig="0x" + low.hex()), ch)["tier"] == "owner"
+    n = erc8004.SECP256K1_N
+    s = int.from_bytes(low[32:64], "big")
+    v = low[64]
+    high = low[:32] + (n - s).to_bytes(32, "big") + bytes([27 + ((v - 27) ^ 1) if v >= 27 else v ^ 1])
+    r = erc8004.verify(make_link(key, addr, sig="0x" + high.hex()), ch)
+    assert r["status"] == "invalid" and "non-standard form; sign again" in r["reason"]

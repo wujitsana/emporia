@@ -610,6 +610,7 @@ CREATE TABLE IF NOT EXISTS agent_chain_links (
                 agent_id TEXT NOT NULL,              -- the 8004 agent's number, a decimal string
                 signer TEXT NOT NULL,
                 issued_at INTEGER NOT NULL,          -- unix seconds the wallet signed
+                agent_name TEXT NOT NULL DEFAULT '', -- the Emporia handle the signed statement names
                 wallet_sig TEXT NOT NULL,
                 at TEXT NOT NULL,
                 signature TEXT NOT NULL,             -- the Emporia agent's, over emporia:erc8004-link:v1
