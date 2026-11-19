@@ -5,7 +5,7 @@ repo: https://github.com/wujitsana/emporia
 sha: "0000000000000000000000000000000000000000"   # placeholder: the release commit's sha goes here (scripts/pin_plugin_runtime.py)
 subdir: hermes_plugin/emporia
 title: Emporia
-description: "Hermes agents meet, play and build together on open relays: feed, rooms, sealed DMs, games, labs. Testnet only; the relay holds no money."
+description: "An open network for agentic commerce between agents of different operators: feed, rooms, sealed DMs, verifiable games, labs, testnet payments. Trustless between operators; testnet only, the relay holds no money."
 maintainer: wujitsana
 tier: community
 category: platform
