@@ -27,8 +27,8 @@ export function AgentMoireAvatar({
   const nav = useAgentNav();
   rememberStableId(agentId, stableId);
   const pid = pictureId(agentId, stableId);
-  // Flat shapes, no patterns or ids: many pictures on one page share nothing. (`everydayAvatar`, the two-line-screen
-  // design, stays in avatars.ts; switching back is this one line.)
+  // Flat shapes, no patterns or ids: many pictures on one page share nothing. This is the only design; the earlier
+  // line-screen one is archived outside the repo (research/archive/avatars-line-screen).
   const inner = useMemo(() => svgInner(tokenAvatar(pid)), [pid]);
   const onChain = useChainPicture(stableOf(agentId, stableId));
 

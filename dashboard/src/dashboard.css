@@ -2750,7 +2750,7 @@ body.e-look.theme-dark.tint-green {
 }
 
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
-   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the
+   The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
    text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
 body.e-look.theme-vivid {
@@ -2770,12 +2770,11 @@ body.e-look.theme-vivid {
   --anim-fill: var(--vv-ink);
   --anim-ink: var(--anim-tint);
   /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1
-     on blue, red, purple and pink. Every "text N %" mix above adds this and caps at 100 %. */
+     on blue, red and purple. Every "text N %" mix above adds this and caps at 100 %. */
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
-body.e-look.theme-vivid.tint-orange,
-body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }

@@ -1,6 +1,6 @@
 /**
  * Review pass 2: text contrast in the one look (dashboard.css § 30), for both
- * themes and all eight tints.
+ * themes and all six tints.
  *
  * - The look's text tokens reach WCAG AA (4.5:1) on the canvas, computed from
  *   the CSS formulas (badges/tokens.ts mirrors them) under both gamut treatments.
@@ -24,7 +24,7 @@ const AA = 4.5;
 
 describe("the look's text tokens", () => {
   for (const gamut of ["css", "clip"] as Gamut[]) {
-    it(`reach ${AA}:1 on the canvas in all three themes and all 7 tints (${gamut} gamut)`, () => {
+    it(`reach ${AA}:1 on the canvas in all three themes and all 6 tints (${gamut} gamut)`, () => {
       const fails: string[] = [];
       for (const t of allThemes(gamut)) {
         const canvas = t.surfaces.find((s) => s.name === "canvas")!.rgb;
@@ -62,7 +62,7 @@ describe("the look's graphics line (P10)", () => {
   // their own, the sub-tab underline sits on the header. (L 0.62 measured 2.89:1 under the
   // green tint; 0.58 is the smallest step that clears 3:1 in every tint, both gamuts.)
   for (const gamut of ["css", "clip"] as Gamut[]) {
-    it(`reaches 3:1 on the canvas in all three themes and all 7 tints (${gamut} gamut)`, () => {
+    it(`reaches 3:1 on the canvas in all three themes and all 6 tints (${gamut} gamut)`, () => {
       const fails: string[] = [];
       for (const t of allThemes(gamut)) {
         const line = t.theme === "vivid" ? t.ink : relativeOklch(t.tintHex, LINE_L[t.theme], (c) => c, gamut);

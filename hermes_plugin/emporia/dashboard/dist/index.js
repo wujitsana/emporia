@@ -11602,8 +11602,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-red",
 			"tint-yellow",
 			"tint-purple",
-			"tint-orange",
-			"tint-pink"
+			"tint-orange"
 		];
 		DEFAULT_TINT = "tint-green";
 		TINT_LABELS = {
@@ -11612,8 +11611,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-red": "Crimson",
 			"tint-yellow": "Yellow",
 			"tint-purple": "Purple",
-			"tint-orange": "Orange",
-			"tint-pink": "Pink"
+			"tint-orange": "Orange"
 		};
 		TINT_COLORS = {
 			"tint-green": "#39ff44",
@@ -11621,8 +11619,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-red": "#b00331",
 			"tint-yellow": "#cdbf1f",
 			"tint-purple": "#7d3c98",
-			"tint-orange": "#d57c22",
-			"tint-pink": "#ff00ff"
+			"tint-orange": "#d57c22"
 		};
 		themeRoot = null;
 		fadeTimers = /* @__PURE__ */ new WeakMap();
@@ -13783,7 +13780,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-red",
 			"tint-purple"
 		];
-		LIGHT_PANEL = ["tint-orange", "tint-pink"];
+		LIGHT_PANEL = ["tint-orange"];
 		LIGHT_PANEL_WHITE = .2;
 		toHex = (rgb) => "#" + rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
 		rgbHex = toHex;
@@ -15596,19 +15593,19 @@ var EmporiaHermesPlugin = (function(exports) {
 				1
 			],
 			[
-				"#8000ff",
-				"#170b30",
-				"#f5f3ff",
-				"#612db6",
-				"#bca7ff",
+				"#7d3c98",
+				"#1a0f20",
+				"#f9f2fc",
+				"#74338e",
+				"#dc97fb",
 				0
 			],
 			[
-				"#ff00ff",
-				"#250325",
-				"#fff0fd",
-				"#8b0b8b",
-				"#ff7cfc",
+				"#cdbf1f",
+				"#171501",
+				"#f7f6ea",
+				"#635700",
+				"#cdbf1f",
 				1
 			]
 		];
@@ -15667,17 +15664,21 @@ var EmporiaHermesPlugin = (function(exports) {
 				0,
 				1,
 				2,
+				4,
 				5,
+				7,
 				9
 			],
 			[
 				0,
 				1,
 				2,
+				3,
 				4,
 				5,
+				6,
 				7,
-				9
+				8
 			]
 		];
 		SVG_OPEN = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\">";
@@ -17012,7 +17013,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	/** Call after the console has (re)checked a link: pictures are asked for again, and an agent no longer proven goes
-	*  back to its everyday picture. */
+	*  back to its drawn picture. */
 	function refreshChainPictures() {
 		entries.forEach((e) => {
 			e.stale = true;

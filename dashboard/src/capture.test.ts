@@ -4,7 +4,8 @@ import { themeFromParam, tintFromParam } from "./capture";
 describe("capture URL parameters", () => {
   it("reads a tint by its plain name, amber and default read as green", () => {
     expect(tintFromParam("green")).toBe("tint-green");
-    expect(tintFromParam("tint-pink")).toBe("tint-pink");
+    expect(tintFromParam("tint-orange")).toBe("tint-orange");
+    expect(tintFromParam("pink")).toBeNull();   // removed; the page then falls back to green
     expect(tintFromParam("Purple")).toBe("tint-purple");
     expect(tintFromParam("amber")).toBe("tint-green");
     expect(tintFromParam("default")).toBe("tint-green");

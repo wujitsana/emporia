@@ -384,17 +384,12 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
 }
 
-.e-host-body.tint-pink {
-  --tint: #ff00ff;
-}
-
 .e-host-body.theme-light.tint-green,
 .e-host-body.theme-light.tint-blue,
 .e-host-body.theme-light.tint-red,
 .e-host-body.theme-light.tint-yellow,
 .e-host-body.theme-light.tint-purple,
-.e-host-body.theme-light.tint-orange,
-.e-host-body.theme-light.tint-pink {
+.e-host-body.theme-light.tint-orange {
   /*
   NOTE(jimmylee):
   Light tint ramp is anchored to the ANSI light grays:
@@ -444,8 +439,7 @@ BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit r
 .e-host-body.theme-dark.tint-red,
 .e-host-body.theme-dark.tint-yellow,
 .e-host-body.theme-dark.tint-purple,
-.e-host-body.theme-dark.tint-orange,
-.e-host-body.theme-dark.tint-pink {
+.e-host-body.theme-dark.tint-orange {
   --theme-overlay: var(--color-black-alpha-40);
   --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
@@ -484,7 +478,7 @@ BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit r
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-red and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 .e-host-body.theme-vivid.tint-green,
@@ -492,8 +486,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 .e-host-body.theme-vivid.tint-red,
 .e-host-body.theme-vivid.tint-yellow,
 .e-host-body.theme-vivid.tint-purple,
-.e-host-body.theme-vivid.tint-orange,
-.e-host-body.theme-vivid.tint-pink {
+.e-host-body.theme-vivid.tint-orange {
   --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);
   --theme-overlay: var(--color-black-alpha-40);
@@ -513,8 +506,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
-.e-host-body.theme-vivid.tint-orange,
-.e-host-body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-host-body.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-host-body.theme-vivid.tint-blue,
 .e-host-body.theme-vivid.tint-red,
 .e-host-body.theme-vivid.tint-purple { --vv-ink: #fff; }
@@ -3274,7 +3266,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 }
 
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
-   The panel is a step darker (lighter for red and pink); blue and purple take white ink. Ink is the
+   The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
    text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
 .e-host-body.e-look.theme-vivid {
@@ -3294,12 +3286,11 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
   --anim-fill: var(--vv-ink);
   --anim-ink: var(--anim-tint);
   /* Faint and status text are the ink itself here: a mix toward a saturated tint falls under 4.5:1
-     on blue, red, purple and pink. Every "text N %" mix above adds this and caps at 100 %. */
+     on blue, red and purple. Every "text N %" mix above adds this and caps at 100 %. */
   --e-ink-boost: 100%;
   --anim-faint: var(--theme-text);
 }
-.e-host-body.e-look.theme-vivid.tint-orange,
-.e-host-body.e-look.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
+.e-host-body.e-look.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--anim-tint) 80%, white); }
 .e-host-body.e-look.theme-vivid.tint-blue,
 .e-host-body.e-look.theme-vivid.tint-red,
 .e-host-body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
@@ -4519,8 +4510,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
-.e-badge-panel.theme-vivid.tint-orange,
-.e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-badge-panel.theme-vivid.tint-orange { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }

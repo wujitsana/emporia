@@ -12,7 +12,7 @@
  * - Vivid and deep (the dark theme) come from ../themePalette.ts, the table the CSS is held to.
  *
  * The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
- * for all three themes and all seven tints, under both gamut treatments.
+ * for all three themes and all six tints, under both gamut treatments.
  */
 
 import { TINT_COLORS, TINT_LABELS, TINTS, DEFAULT_TINT, type Tint } from "../themeConfig.ts";
@@ -74,7 +74,7 @@ export function themeColors(style: StyleName, theme: ThemeName, tint: Tint, gamu
     { name: "wash", rgb: p.panel }] };   // vivid and dark: the hover / selected wash is the panel
 }
 
-/** Every combination the dashboard can show: its one style × 3 themes × 7 tints. */
+/** Every combination the dashboard can show: its one style × 3 themes × 6 tints. */
 export function allThemes(gamut: Gamut = "css"): ThemeColors[] {
   const out: ThemeColors[] = [];
   for (const theme of ["light", "vivid", "dark"] as const) {

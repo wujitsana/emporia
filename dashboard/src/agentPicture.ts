@@ -1,7 +1,7 @@
 /**
  * Which picture an agent gets in the dashboard.
  *
- * The everyday picture is drawn by `avatars.ts` from the agent's 64-hex stable id. Where only a handle is at hand the
+ * The picture (the token design) is drawn by `avatars.ts` from the agent's 64-hex stable id. Where only a handle is at hand the
  * id is the SHA-256 of the handle (the frozen generators' rule), unless this page has already learned the agent's real
  * stable id (`rememberStableId`, called wherever the dashboard receives one), so the same agent keeps one picture.
  *
@@ -79,7 +79,7 @@ function ensure(stable: string): void {
 }
 
 /** Call after the console has (re)checked a link: pictures are asked for again, and an agent no longer proven goes
- *  back to its everyday picture. */
+ *  back to its drawn picture. */
 export function refreshChainPictures(): void {
   entries.forEach((e) => { e.stale = true; });
   notify();

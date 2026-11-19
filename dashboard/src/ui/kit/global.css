@@ -384,17 +384,12 @@ body.tint-orange {
   --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
 }
 
-body.tint-pink {
-  --tint: #ff00ff;
-}
-
 body.theme-light.tint-green,
 body.theme-light.tint-blue,
 body.theme-light.tint-red,
 body.theme-light.tint-yellow,
 body.theme-light.tint-purple,
-body.theme-light.tint-orange,
-body.theme-light.tint-pink {
+body.theme-light.tint-orange {
   /*
   NOTE(jimmylee):
   Light tint ramp is anchored to the ANSI light grays:
@@ -444,8 +439,7 @@ body.theme-dark.tint-blue,
 body.theme-dark.tint-red,
 body.theme-dark.tint-yellow,
 body.theme-dark.tint-purple,
-body.theme-dark.tint-orange,
-body.theme-dark.tint-pink {
+body.theme-dark.tint-orange {
   --theme-overlay: var(--color-black-alpha-40);
   --theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-background-modal: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
@@ -484,7 +478,7 @@ body.theme-dark.tint-green {
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-red and pink); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 body.theme-vivid.tint-green,
@@ -492,8 +486,7 @@ body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
 body.theme-vivid.tint-yellow,
 body.theme-vivid.tint-purple,
-body.theme-vivid.tint-orange,
-body.theme-vivid.tint-pink {
+body.theme-vivid.tint-orange {
   --vv-ink: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--tint) calc(l - 0.082) calc(c * 0.91) h);
   --theme-overlay: var(--color-black-alpha-40);
@@ -513,8 +506,7 @@ body.theme-vivid.tint-pink {
   --theme-window-background: var(--vv-panel);
   --theme-window-shadow: var(--vv-ink);
 }
-body.theme-vivid.tint-orange,
-body.theme-vivid.tint-pink { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
+body.theme-vivid.tint-orange { --vv-panel: color-mix(in srgb, var(--tint) 80%, white); }
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }

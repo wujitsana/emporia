@@ -42,7 +42,7 @@ Five places (keys `1` to `5`), then two in the header:
 - **Header:** Help (`?`, the Docs tab) and, for the relay's operator, the Relay desk (Relay and Operator).
 
 Other keys: `p` Profile, `f` Money, `,` Settings, `.` Relay and `o` Operator (the last two for the relay's operator only).
-Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Orange, Purple, Pink), a font choice, a text ink and a cover mode. The title reads "Emporia" with a star, and the tab icon is a pixel star.
+Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Yellow, Purple, Orange), and a text switch (pure black or white text). The title reads "Emporia" with a star, and the tab icon is a pixel star.
 
 - **Stats (Agent > Stats)** is the agent's own figures, the same ones
   `hermes emporia stats NAME` prints: earned, spent, owed, held in escrow, and net after model

@@ -1,9 +1,9 @@
-"""Emporia agent pictures. Two pure functions from the agent's stable id (64 hex chars) to an SVG string:
+"""Emporia agent pictures. One pure function from the agent's stable id (64 hex chars) to an SVG string:
 
-  token_avatar(agent_id)           the ERC-8004 token picture ("Mix v2 final"): Rooms, Strata or Hallmark, flat shapes
-  everyday_avatar(agent_id, uid)   the profile picture ("Original+ with wider grounds"): two thin line screens on a dark ground
+  token_avatar(agent_id)   Rooms, Strata or Hallmark, flat shapes: the profile picture and the ERC-8004 registration image
 
-Integer math and literal tables only; avatars.js produces the same bytes (see vectors.json).
+(The earlier line-screen "everyday" design is archived outside the repo: research/archive/avatars-line-screen.)
+Integer math and literal tables only; avatars.ts produces the same bytes (see tests/fixtures/avatar_vectors.json).
 """
 
 # ---- palette: the dashboard's colors ---------------------------------------------------------------------------
@@ -13,13 +13,13 @@ TINT = [
     ["#0047ff", "#051232", "#f0f5ff", "#1446c2", "#93b7fe", 0],  # blue
     ["#b00331", "#250a0c", "#fef2f2", "#a1022c", "#fe9498", 0],  # crimson
     ["#d57c22", "#121212", "#eeeeee", "#d57c22", "#d57c22", 1],  # burnt orange: only itself plus neutral grounds
-    ["#8000ff", "#170b30", "#f5f3ff", "#612db6", "#bca7ff", 0],  # purple
-    ["#ff00ff", "#250325", "#fff0fd", "#8b0b8b", "#ff7cfc", 1],  # pink
+    ["#7d3c98", "#1a0f20", "#f9f2fc", "#74338e", "#dc97fb", 0],  # purple
+    ["#cdbf1f", "#171501", "#f7f6ea", "#635700", "#cdbf1f", 1],  # yellow
 ]
 # The ten chat sender colors, hsl(h, 65%, 58%) for h = 210 0 145 280 235 175 300 195 255 100.
 CHAT = ["#4e94da", "#da4e4e", "#4eda88", "#ab4eda", "#4e5ada", "#4edace", "#da4eda", "#4eb7da", "#714eda", "#7dda4e"]
-# Per tint: the chat colors at least 50 degrees of hue away (the "guest"). Purple leaves out #4eb7da.
-GUEST = [[0, 1, 3, 4, 5, 6, 7, 8], [1, 2, 3, 6, 9], [0, 2, 3, 4, 5, 7, 8, 9], [0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 5, 9], [0, 1, 2, 4, 5, 7, 9]]
+# Per tint: the chat colors at least 50 degrees of hue away (the "guest"); purple (hsl hue 286) also keeps #4e5ada at 51 degrees.
+GUEST = [[0, 1, 3, 4, 5, 6, 7, 8], [1, 2, 3, 6, 9], [0, 2, 3, 4, 5, 7, 8, 9], [0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 4, 5, 7, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8]]
 
 SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
 
@@ -257,33 +257,3 @@ def token_avatar(agent_id):
     col = palette(b)
     body = FAMILY[b[31] % 8](b, col)
     return SVG_OPEN + ground(col[0]) + body + (EDGE if 'd="M1 1h30' not in body else "") + "</svg>"
-
-
-# ---- everyday picture ------------------------------------------------------------------------------------------
-# Grounds: each tint and each chat color at four steps from dark to mid-dark (OKLab L 0.19, 0.27, 0.35, 0.43, chroma
-# rising with it); the orange hue stays neutral gray. Lightness tables (x100) serve the contrast rule.
-GROUNDS = [["#001a01", "#013003", "#024807", "#00620a"], ["#041132", "#0b2256", "#14347d", "#1e47a6"], ["#2b0308", "#4b0913", "#6d1120", "#911a2e"], ["#121212", "#262626", "#3a3a3a", "#4e4e4e"], ["#170a2f", "#2b1851", "#412676", "#58359d"], ["#230523", "#3f0e3e", "#5c185b", "#7b237a"], ["#031527", "#0a2844", "#123c64", "#1c5285"], ["#2a0506", "#480e10", "#6a181b", "#8d2427"], ["#011a0a", "#003016", "#024724", "#006033"], ["#1e072a", "#361249", "#511e6a", "#6d2b8d"], ["#0b0f31", "#191f55", "#28307a", "#3842a3"], ["#011816", "#012e2a", "#024440", "#035d57"], ["#230523", "#3e0e3e", "#5c185c", "#7b237b"], ["#00171f", "#002b38", "#024153", "#005970"], ["#140b30", "#271953", "#3c2878", "#5138a0"], ["#061900", "#112f01", "#1c4600", "#285f01"]]
-GROUND_L = [19, 27, 35, 43]
-BRIGHT_L = [87, 78, 78, 67, 78, 78]
-CHAT_L = [65, 61, 79, 60, 53, 81, 66, 73, 54, 80]
-
-
-def everyday_avatar(agent_id, uid=None):
-    """uid keeps the two pattern ids unique when several tiles share a page; it defaults to the start of the id."""
-    b = id_bytes(agent_id)
-    t = b[0] % 6
-    u = uid or agent_id[:12]
-    gi = GUEST[t][b[2] % len(GUEST[t])]
-    bright, guest = TINT[t][4], CHAT[gi]
-    swap = b[1] % 2
-    rot_a = b[3] % 180
-    rot_b = rot_a + 55 + (b[4] % 21)
-    low = min(BRIGHT_L[t], CHAT_L[gi])
-    step = b[9] % 4
-    while low - GROUND_L[step] < 22:
-        step -= 1
-    return (SVG_OPEN + f'<defs><pattern id="a{u}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate({rot_a} 16 16)">'
-            + f'<path stroke="{guest if swap else bright}" d="M0 0V4"/></pattern>'
-            + f'<pattern id="b{u}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate({rot_b} 16 16)">'
-            + f'<path stroke="{bright if swap else guest}" stroke-width=".8" d="M0 0H4"/></pattern></defs>'
-            + ground(GROUNDS[b[8] % 16][step]) + f'<path fill="url(#a{u})" opacity=".85" d="M0 0h32v32H0z"/><path fill="url(#b{u})" opacity=".65" d="M0 0h32v32H0z"/></svg>')

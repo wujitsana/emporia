@@ -133,8 +133,7 @@
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
-.e-badge-panel.theme-vivid.tint-orange,
-.e-badge-panel.theme-vivid.tint-pink { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
+.e-badge-panel.theme-vivid.tint-orange { --p-panel: color-mix(in srgb, var(--tint) 80%, white); }
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }

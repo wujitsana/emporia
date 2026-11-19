@@ -22,13 +22,13 @@ describe("theme cross-fade", () => {
 
     // A run through the tints keeps it on until the last change settles.
     vi.advanceTimersByTime(THEME_FADE_MS - 100);
-    applyTheme("theme-light", "tint-pink");
+    applyTheme("theme-light", "tint-orange");
     vi.advanceTimersByTime(THEME_FADE_MS - 100);
     expect(root.classList.contains("e-theme-anim")).toBe(true);
     vi.advanceTimersByTime(200);
     expect(root.classList.contains("e-theme-anim")).toBe(false);
 
-    applyTheme("theme-dark", "tint-pink");
+    applyTheme("theme-dark", "tint-orange");
     expect(root.classList.contains("e-theme-anim")).toBe(true);
     expect(root.classList.contains("theme-light")).toBe(false);
   });
@@ -57,8 +57,8 @@ describe("theme cross-fade", () => {
 import { DEFAULT_TINT, THEMES, TINTS, TINT_COLORS, TINT_LABELS, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, toggleVivid } from "./themeConfig";
 
 describe("tints", () => {
-  it("are seven, green first and the default, with no amber (the orange is burnt, #d57c22, the red crimson)", () => {
-    expect([...TINTS]).toEqual(["tint-green", "tint-blue", "tint-red", "tint-yellow", "tint-purple", "tint-orange", "tint-pink"]);
+  it("are six, green first and the default, with no amber (the orange is burnt, #d57c22, the red crimson)", () => {
+    expect([...TINTS]).toEqual(["tint-green", "tint-blue", "tint-red", "tint-yellow", "tint-purple", "tint-orange"]);
     expect(DEFAULT_TINT).toBe("tint-green");
     expect(TINT_COLORS["tint-green"]).toBe("#39ff44");
     expect(Object.values(TINT_LABELS)).not.toContain("Amber");
@@ -74,7 +74,7 @@ describe("tints", () => {
   });
 
   it("load from a saved preference: the old default, amber and junk are green", () => {
-    for (const old of ["", "tint-amber", "amber", "tint-teal", null, undefined]) expect(normalizeTint(old)).toBe("tint-green");
+    for (const old of ["", "tint-amber", "amber", "tint-pink", "pink", "tint-teal", null, undefined]) expect(normalizeTint(old)).toBe("tint-green");
     for (const t of TINTS) expect(normalizeTint(t)).toBe(t);
   });
 });
