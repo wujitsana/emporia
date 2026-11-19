@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-BrjetC1y.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Deuv4uRe.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -2019,8 +2019,8 @@ var TINT_COLORS = {
 	"tint-green": "#39ff44",
 	"tint-blue": "#0047ff",
 	"tint-red": "#b00331",
-	"tint-yellow": "#e4f221",
-	"tint-purple": "#8000ff",
+	"tint-yellow": "#cdbf1f",
+	"tint-purple": "#7d3c98",
 	"tint-orange": "#d57c22",
 	"tint-pink": "#ff00ff"
 };

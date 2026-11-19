@@ -373,11 +373,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 
 .e-host-body.tint-yellow {
-  --tint: var(--ansi-true-brand);
+  --tint: #cdbf1f;   /* deeper yellow, as the user picked (11-19) */
 }
 
 .e-host-body.tint-purple {
-  --tint: #8000ff;
+  --tint: #7d3c98;   /* plum purple, as the user picked (11-19) */
 }
 
 .e-host-body.tint-orange {
