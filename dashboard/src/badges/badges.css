@@ -18,13 +18,13 @@
 /* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
    (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
 .e-badge-panel.theme-light {
-  --e-badge-accent: oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h);
+  --e-badge-accent: var(--tint-deep, #006c00);
 }
 .e-badge-panel.theme-light.tint-charcoal {
   --p-bg: #ececec; --p-panel: #e0e0e0; --p-line: #b8b8b8;
 }
 .e-badge-panel.theme-dark {
-  --e-badge-accent: oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h);
+  --e-badge-accent: var(--tint-light, #39ff44);
 }
 
 /* A row of small badges (Season › Quests: the ones earned). */

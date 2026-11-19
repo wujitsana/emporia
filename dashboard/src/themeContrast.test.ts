@@ -9,6 +9,8 @@ import { contrast, type Gamut } from "./badges/color.ts";
 import { TINTS, TINT_LABELS } from "./themeConfig.ts";
 import { WHITE_INK, LIGHT_PANEL, rgbHex, deepPalette, vividPalette } from "./themePalette.ts";
 import { themeColors, type ThemeName } from "./badges/tokens.ts";
+import { COMPANIONS } from "./palette.ts";
+import { hexToRgb } from "./badges/color.ts";
 
 type Fs = { readFileSync(p: string, enc: "utf8"): string };
 const proc = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(m: string): unknown } }).process;
@@ -99,5 +101,42 @@ describe("the CSS carries the palette", () => {
       expect(read(f), f).not.toMatch(/#f0a832|#f5b84a/i);
     }
     expect(read("badges/tokens.ts")).not.toMatch(/\bAMBER\b/);
+  });
+});
+
+describe("the chat sender names", () => {
+  it(`every companion reads (${AA}:1) where a name sits: the light tone on the dark theme's canvas and panel, the deep tone on the light theme's, in every tint`, () => {
+    const fails: string[] = [];
+    for (const tint of TINTS) {
+      const dark = themeColors("animatic", "dark", tint), light = themeColors("animatic", "light", tint);
+      for (const other of TINTS) {
+        const c = COMPANIONS[other];
+        for (const s of dark.surfaces.filter((x) => x.name !== "wash")) {
+          const r = contrast(hexToRgb(c.light), s.rgb);
+          if (r < AA) fails.push(`dark ${TINT_LABELS[tint]} ${TINT_LABELS[other]} light on ${s.name}: ${r.toFixed(2)}`);
+        }
+        for (const s of light.surfaces.filter((x) => x.name !== "wash")) {
+          const r = contrast(hexToRgb(c.deep), s.rgb);
+          if (r < AA) fails.push(`light ${TINT_LABELS[tint]} ${TINT_LABELS[other]} deep on ${s.name}: ${r.toFixed(2)}`);
+        }
+      }
+    }
+    expect(fails).toEqual([]);
+  });
+
+  it("the kit's body.tint-* rules set --tint-light and --tint-deep to palette.ts", () => {
+    for (const t of TINTS) {
+      const rule = KIT.match(new RegExp(`body\\.${t} \\{[^}]*\\}`));
+      expect(rule, t).not.toBeNull();
+      expect(rule![0], t).toContain(`--tint-light: ${COMPANIONS[t].light};`);
+      expect(rule![0], t).toContain(`--tint-deep: ${COMPANIONS[t].deep};`);
+    }
+  });
+
+  it("the accent in the dark theme is the light companion (green pinned) and in the light theme the deep one", () => {
+    for (const tint of TINTS) {
+      expect(rgbHex(deepPalette(tint).accent), tint).toBe(tint === "tint-green" ? "#39ff44" : COMPANIONS[tint].light);
+      expect(rgbHex(themeColors("animatic", "light", tint).accent), tint).toBe(COMPANIONS[tint].deep);
+    }
   });
 });

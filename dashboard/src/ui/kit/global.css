@@ -362,26 +362,38 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 body.tint-green {
   --tint: #39ff44;
+  --tint-light: #72e072;
+  --tint-deep: #006c00;
 }
 
 body.tint-blue {
   --tint: #0047ff;
+  --tint-light: #69cdff;
+  --tint-deep: #005e8b;
 }
 
 body.tint-red {
   --tint: #b00331;   /* crimson, as the user picked (11-14) */
+  --tint-light: #ffbeff;
+  --tint-deep: #743c76;
 }
 
 body.tint-purple {
   --tint: #7d3c98;   /* plum purple, as the user picked (11-19) */
+  --tint-light: #dc97fb;
+  --tint-deep: #74338e;
 }
 
 body.tint-orange {
   --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
+  --tint-light: #ffad33;
+  --tint-deep: #814400;
 }
 
 body.tint-charcoal {
   --tint: #888888;   /* neutral gray, as the user picked (11-19) */
+  --tint-light: #b7b7b7;
+  --tint-deep: #555555;
 }
 
 body.theme-light.tint-green,
@@ -413,8 +425,8 @@ body.theme-light.tint-charcoal {
   --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);
   --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);
   --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);
-  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);
-  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);
+  --theme-focused-foreground: var(--tint-deep, #006c00);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-deep, #006c00) 50%, transparent);
   /*
   NOTE(jimmylee):
   Window body matches background-modal so the panel sits one step darker than the
@@ -465,8 +477,8 @@ body.theme-dark.tint-charcoal {
   --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
   --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
-  --theme-focused-foreground: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h);
-  --theme-focused-foreground-subdued: oklch(from var(--tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --theme-focused-foreground: var(--tint-light, #39ff44);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
   --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
   --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);
 }

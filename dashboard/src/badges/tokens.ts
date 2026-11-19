@@ -16,7 +16,8 @@
  */
 
 import { TINT_COLORS, TINT_LABELS, TINTS, DEFAULT_TINT, type Tint } from "../themeConfig.ts";
-import { type Gamut, type RGB, mixOver, relativeOklch } from "./color.ts";
+import { type Gamut, type RGB, hexToRgb, mixOver, relativeOklch } from "./color.ts";
+import { COMPANIONS } from "../palette.ts";
 import { LIGHT_NEUTRAL, deepPalette, vividPalette } from "../themePalette.ts";
 
 export type StyleName = "animatic";
@@ -27,15 +28,15 @@ export const DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
 
 /** The accent, exactly as badges.css writes it. Kept here so the test can hold the CSS to it. */
 export const ACCENT_CSS: Record<ThemeName, string> = {
-  light: "oklch(from var(--tint, #39ff44) 0.45 min(c, 0.2) h)",
+  light: "var(--tint-deep, #006c00)",
   vivid: "oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h)",
-  dark: "oklch(from var(--tint, #39ff44) max(l, 0.78) min(c, 0.22) h)",
+  dark: "var(--tint-light, #39ff44)",
 };
 
 export function accentFor(theme: ThemeName, tint: Tint, gamut: Gamut = "css"): RGB {
   if (theme === "vivid") return vividPalette(tint, gamut).accent;
   if (theme === "dark") return deepPalette(tint, gamut).accent;
-  return relativeOklch(TINT_COLORS[tint], 0.45, (c) => Math.min(c, 0.2), gamut);
+  return hexToRgb(COMPANIONS[tint].deep);
 }
 
 export interface Surface { name: string; rgb: RGB }

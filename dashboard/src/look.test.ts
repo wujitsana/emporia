@@ -35,8 +35,8 @@ describe("the look", () => {
     expect(document.body.classList.contains("e-look")).toBe(true);
   });
 
-  it("darkens the accent used as text on the light canvas and keeps faint text a colour (readability)", () => {
-    expect(CSS).toMatch(/body\.e-look\.theme-light \{[^}]*--theme-focused-foreground: oklch\(from var\(--anim-tint\) 0\.45/);
+  it("uses the deep companion as the accent text on the light canvas and keeps faint text a colour (readability)", () => {
+    expect(CSS).toMatch(/body\.e-look\.theme-light \{[^}]*--theme-focused-foreground: var\(--tint-deep, #006c00\)/);
     expect(CSS).toMatch(/--anim-faint: color-mix\(in srgb, var\(--theme-text\) min\(100%, calc\(68% \+ var\(--e-ink-boost, 0%\)\)\)/);
   });
 
