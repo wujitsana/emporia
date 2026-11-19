@@ -458,7 +458,9 @@ def test_re_reads_are_one_in_flight_per_link_and_rate_limited(relay, monkeypatch
 def test_the_relay_stores_no_image_and_no_registration_text():
     with rs.DB_LOCK, rs.get_db() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_chain_links)")}
-    assert not {c for c in cols if any(w in c for w in ("image", "uri", "name", "description", "text", "url"))}
+    # `agent_name` is the Emporia handle the wallet's statement names (1-80 printable characters, the agent's own
+    # word): the relay keeps it only to rebuild the signed digest. It is not a registration name.
+    assert not {c for c in cols if any(w in c for w in ("image", "uri", "name", "description", "text", "url"))} - {"agent_name"}
 
 
 def _logged(stable):
@@ -586,9 +588,10 @@ def test_a_leading_zero_agent_id_is_refused_by_the_relay(relay):
         at = datetime.now(UTC).isoformat()
         wsig = sign(key, 84532, ERC8004_REGISTRIES[SEPOLIA], AGENT, addr, stable, issued=issued)
         body = {"agent_registry": reg, "agent_id": "0%d" % AGENT, "signer": addr, "issued_at": issued,
-                "wallet_sig": wsig, "at": at}
+                "agent_name": a.agent_id, "wallet_sig": wsig, "at": at}
         payload = {"type": wire.ERC8004_LINK_TYPE, "stable_id": stable, "agent_registry": reg,
-                   "agent_id": body["agent_id"], "signer": addr, "issued_at": issued, "wallet_sig": wsig, "at": at}
+                   "agent_id": body["agent_id"], "signer": addr, "issued_at": issued, "agent_name": a.agent_id,
+                   "wallet_sig": wsig, "at": at}
         body["signature"] = identity.sign(payload, a.agent_id)
         return await a._bearer_request("post", f"http://testserver/agents/{a.agent_id}/links/erc8004", json=body), \
             await card(a, a)
