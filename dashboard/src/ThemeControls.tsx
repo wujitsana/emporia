@@ -67,11 +67,11 @@ export function ThemePanelBody({
             type="button"
             role="switch"
             aria-checked={ink.on}
-            aria-label="Pure black or white text"
+            aria-label="Flip the text: black or white"
             disabled={!!ink.disabledWhy}
             className="e-switch e-theme-duo__btn"
             data-on={ink.on ? "true" : "false"}
-            title={ink.disabledWhy || (ink.on ? "text: pure black or white (click for the theme's own ink)" : "text: the theme's own ink (click for pure black or white)")}
+            title={ink.disabledWhy || (ink.on ? "text: flipped (a style choice: small text is harder to read; click for the theme's own)" : "text: the theme's own (click to flip it between black and white; small text gets harder to read)")}
             onClick={ink.onToggle}
           >
             <span className="e-switch__knob" aria-hidden />

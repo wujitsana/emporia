@@ -3,13 +3,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThemePanelBody } from "./ThemeControls";
 import { TINTS, applyTheme, setThemeRoot, type Theme } from "./themeConfig";
-import { INK_AA, normalizeInk, pureInk } from "./inkSwitch";
-import { contrast } from "./badges/color.ts";
-import { themeColors, type ThemeName } from "./badges/tokens.ts";
+import { FLIP_MIN, INK_AA, normalizeInk, pureInk } from "./inkSwitch";
 
 afterEach(() => { cleanup(); setThemeRoot(null); });
 
-const THEMES: Theme[] = ["theme-light", "theme-vivid", "theme-dark"];
 
 describe("the text switch: saved values", () => {
   it("maps the earlier Auto / White / Black choice to off / on / on, and junk to off", () => {
@@ -23,33 +20,44 @@ describe("the text switch: saved values", () => {
   });
 });
 
-describe("the text switch: contrast guard", () => {
-  it("is on only where pure ink reaches 4.5:1 on the canvas and the panel, in both gamuts", () => {
-    let usable = 0;
-    for (const theme of THEMES) for (const tint of TINTS) {
+describe("the text switch: a flip, in vivid only", () => {
+  it("is not shown in light or dark (their ink is already near-black or near-white)", () => {
+    for (const tint of TINTS) for (const theme of ["theme-light", "theme-dark"] as Theme[]) {
       const p = pureInk(theme, tint);
-      const ink: [number, number, number] = p.color === "#ffffff" ? [1, 1, 1] : [0, 0, 0];
-      let worst = Infinity;
-      for (const gamut of ["css", "clip"] as const) {
-        const t = themeColors("animatic", theme.replace("theme-", "") as ThemeName, tint, gamut);
-        for (const s of t.surfaces.filter((x) => x.name !== "wash")) worst = Math.min(worst, contrast(ink, s.rgb));
-      }
-      expect(p.ok === (worst >= INK_AA && !p.why), `${theme} ${tint} ${worst.toFixed(2)} ${p.why}`).toBe(true);
-      if (p.ok) usable++; else expect(p.why).not.toBe("");
+      expect(p.shown, `${theme} ${tint}`).toBe(false);
+      expect(p.ok).toBe(false);
     }
-    expect(usable).toBe(TINTS.length * 3);   // the best of pure black / white always clears 4.5:1 here
-    expect(pureInk("theme-light", "tint-green").color).toBe("#000000");
-    expect(pureInk("theme-dark", "tint-green").color).toBe("#ffffff");
+  });
+
+  it("flips vivid's own ink to the other of black and white", () => {
+    expect(pureInk("theme-vivid", "tint-red").color).toBe("#000000");      // white on crimson -> black
+    expect(pureInk("theme-vivid", "tint-blue").color).toBe("#000000");
+    expect(pureInk("theme-vivid", "tint-purple").color).toBe("#000000");
+    expect(pureInk("theme-vivid", "tint-orange").color).toBe("#ffffff");   // dark on orange -> white
+    expect(pureInk("theme-vivid", "tint-charcoal").color).toBe("#ffffff");
+  });
+
+  it("is usable on every vivid tint but green, where white would be unreadable, and says why", () => {
+    for (const tint of TINTS) {
+      const p = pureInk("theme-vivid", tint);
+      expect(p.shown).toBe(true);
+      expect(p.ok === (p.worst >= FLIP_MIN), `${tint} ${p.worst.toFixed(2)}`).toBe(true);
+      if (!p.ok) expect(p.why).toMatch(/unreadable/);
+    }
+    expect(pureInk("theme-vivid", "tint-green").ok).toBe(false);
+    expect(pureInk("theme-vivid", "tint-red").ok).toBe(true);
+    // a style choice: the flipped ink stays under the 4.5:1 body-text bar on every tint
+    for (const tint of TINTS) expect(pureInk("theme-vivid", tint).worst).toBeLessThan(INK_AA);
   });
 });
 
 describe("the text switch: control", () => {
-  const base = { theme: "theme-dark" as const, tint: "tint-green" as const, onTheme: () => {}, onTint: () => {} };
+  const base = { theme: "theme-vivid" as const, tint: "tint-green" as const, onTheme: () => {}, onTint: () => {} };
 
   it("is a real switch with aria-checked, and toggles on click", () => {
     const onToggle = vi.fn();
     const { rerender } = render(<ThemePanelBody {...base} ink={{ on: false, disabledWhy: "", onToggle }} />);
-    const sw = screen.getByRole("switch", { name: "Pure black or white text" });
+    const sw = screen.getByRole("switch", { name: "Flip the text: black or white" });
     expect(sw.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(sw);
     expect(onToggle).toHaveBeenCalledTimes(1);
@@ -60,10 +68,10 @@ describe("the text switch: control", () => {
 
   it("is disabled with a reason in its title where pure ink would be unreadable", () => {
     const onToggle = vi.fn();
-    render(<ThemePanelBody {...base} ink={{ on: false, disabledWhy: "Pure black or white text would be low contrast here", onToggle }} />);
+    render(<ThemePanelBody {...base} ink={{ on: false, disabledWhy: "White text would be unreadable on this vivid tint (1.3:1)", onToggle }} />);
     const sw = screen.getByRole("switch") as HTMLButtonElement;
     expect(sw.disabled).toBe(true);
-    expect(sw.getAttribute("title")).toMatch(/low contrast/);
+    expect(sw.getAttribute("title")).toMatch(/unreadable/);
     fireEvent.click(sw);
     expect(onToggle).not.toHaveBeenCalled();
   });

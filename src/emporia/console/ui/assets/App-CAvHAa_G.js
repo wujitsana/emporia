@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CQ-Bxlyw.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CSx5CwCm.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -2198,14 +2198,14 @@ function relativeOklch(hex, L, C, gamut = "css") {
 function mixOver(a, p, under) {
 	return a.map((x, i) => x * p + under[i] * (1 - p));
 }
-function luminance(rgb) {
+function luminance$1(rgb) {
 	const [r, g, b] = rgb.map(toLinear);
 	return .2126 * r + .7152 * g + .0722 * b;
 }
 /** The WCAG contrast ratio, 1–21. */
 function contrast(a, b) {
-	const la = luminance(a);
-	const lb = luminance(b);
+	const la = luminance$1(a);
+	const lb = luminance$1(b);
 	return (Math.max(la, lb) + .05) / (Math.min(la, lb) + .05);
 }
 // src/palette.ts
@@ -2365,11 +2365,11 @@ function ThemePanelBody({ theme, base, tint, onTheme, onTint, ink }) {
 				type: "button",
 				role: "switch",
 				"aria-checked": ink.on,
-				"aria-label": "Pure black or white text",
+				"aria-label": "Flip the text: black or white",
 				disabled: !!ink.disabledWhy,
 				className: "e-switch e-theme-duo__btn",
 				"data-on": ink.on ? "true" : "false",
-				title: ink.disabledWhy || (ink.on ? "text: pure black or white (click for the theme's own ink)" : "text: the theme's own ink (click for pure black or white)"),
+				title: ink.disabledWhy || (ink.on ? "text: flipped (a style choice: small text is harder to read; click for the theme's own)" : "text: the theme's own (click to flip it between black and white; small text gets harder to read)"),
 				onClick: ink.onToggle,
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 					className: "e-switch__knob",
@@ -14125,18 +14125,18 @@ function themeColors(style, theme, tint, gamut = "css") {
 }
 // src/inkSwitch.ts
 /**
-* The text switch: one on/off control beside the three circles. Off is the theme's own ink (tinted);
-* on is pure black or pure white text over the whole page, whichever the theme's surfaces take.
-* Saved in this browser like the theme (prefs.ts); nothing goes to the relay.
+* The text switch: one on/off control beside the three circles, shown only in vivid. Off is vivid's own ink
+* (white on blue, crimson and purple; near-black on green, orange and charcoal); on flips it to the other one,
+* pure black or pure white, over the whole page. Saved in this browser like the theme (prefs.ts); nothing goes
+* to the relay. In light and dark the theme's ink is already near-black or near-white, so there is nothing to
+* flip and the switch is not shown.
 *
-* Contrast guard: pure ink is used only where it reaches 4.5:1 on the canvas AND the panel (both
-* gamuts); elsewhere the switch is disabled and says
-* why, instead of producing text nobody can read. The CSS (dashboard.css, "TEXT SWITCH") applies it at
-* the token level: --theme-text, the button and accent-as-text tokens and, in vivid, --vv-ink, so every
-* component that reads a token follows.
+* It is a style choice: the flipped ink is under the 4.5:1 body-text bar on every vivid tint (about 3:1 on the
+* canvas, less on panels), and the switch says so. Where the flip is unreadable (under FLIP_MIN on the canvas:
+* white on green) it is disabled with the reason. The CSS (dashboard.css, "TEXT SWITCH") applies it at the
+* token level: --theme-text, the button and accent-as-text tokens and --vv-ink, so every component follows.
 */
 var LS_INK = "emporia_ink";
-var INK_AA = 4.5;
 var BLACK$1 = [
 	0,
 	0,
@@ -14151,32 +14151,41 @@ var WHITE$1 = [
 function normalizeInk(v) {
 	return v === "on" || v === "white" || v === "black";
 }
+var luminance = (c) => {
+	const lin = (v) => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+	return .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
+};
 function pureInk(theme, tint) {
-	const name = theme.replace("theme-", "");
-	const score = (ink) => {
-		let worst = Infinity;
-		for (const gamut of ["css", "clip"]) {
-			const t = themeColors("animatic", name, tint, gamut);
-			for (const s of t.surfaces.filter((x) => x.name !== "wash")) worst = Math.min(worst, contrast(ink, s.rgb));
-		}
-		return { worst };
-	};
-	const b = score(BLACK$1);
-	const w = score(WHITE$1);
-	const useWhite = w.worst > b.worst;
-	const pick = useWhite ? w : b;
-	const color = useWhite ? "#ffffff" : "#000000";
-	if (pick.worst < 4.5) return {
-		color,
+	if (theme !== "theme-vivid") return {
+		color: "#000000",
+		shown: false,
 		ok: false,
-		worst: pick.worst,
-		why: `Pure black or white text would be low contrast here (${pick.worst.toFixed(1)}:1, under ${INK_AA}:1)`
+		why: "",
+		worst: 0
+	};
+	let worst = Infinity;
+	let flipWhite = false;
+	for (const gamut of ["css", "clip"]) {
+		const t = themeColors("animatic", "vivid", tint, gamut);
+		flipWhite = luminance(t.ink) < .5;
+		const canvas = t.surfaces.find((x) => x.name === "canvas") ?? t.surfaces[0];
+		worst = Math.min(worst, contrast(flipWhite ? WHITE$1 : BLACK$1, canvas.rgb));
+	}
+	const color = flipWhite ? "#ffffff" : "#000000";
+	const word = flipWhite ? "White" : "Black";
+	if (worst < 2.5) return {
+		color,
+		shown: true,
+		ok: false,
+		worst,
+		why: `${word} text would be unreadable on this vivid tint (${worst.toFixed(1)}:1)`
 	};
 	return {
 		color,
+		shown: true,
 		ok: true,
 		why: "",
-		worst: pick.worst
+		worst
 	};
 }
 // src/ui/GatedNote.tsx
@@ -35862,7 +35871,7 @@ function AppInner() {
 	const [inkPref, setInkPref] = (0, import_react.useState)(() => new URLSearchParams(window.location.search).get("ink") === "on" || !CAPTURE && normalizeInk(readPref("emporia_ink")));
 	const pure = pureInk(theme, tint);
 	const inkOn = inkPref && pure.ok;
-	const ink = {
+	const ink = pure.shown ? {
 		on: inkOn,
 		disabledWhy: pure.ok ? "" : pure.why,
 		onToggle: () => {
@@ -35870,7 +35879,7 @@ function AppInner() {
 			setInkPref(next);
 			if (!CAPTURE) writePref(LS_INK, next ? "on" : "off");
 		}
-	};
+	} : void 0;
 	const baseRef = (0, import_react.useRef)(base);
 	(0, import_react.useEffect)(() => {
 		baseRef.current = base;

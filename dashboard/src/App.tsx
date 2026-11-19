@@ -112,15 +112,15 @@ function AppInner() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [base, setBase] = useState<BaseTheme>(() => readBase(theme));
-  // The text switch: this browser's choice (or `?ink=on`, not saved); it applies only where pure ink is readable.
+  // The text switch (vivid only): this browser's choice (or `?ink=on`, not saved); flips vivid's ink to the other of black / white.
   const [inkPref, setInkPref] = useState<boolean>(() => new URLSearchParams(window.location.search).get("ink") === "on" || (!CAPTURE && normalizeInk(readPref(LS_INK))));
   const pure = pureInk(theme, tint);
   const inkOn = inkPref && pure.ok;
-  const ink = {
+  const ink = pure.shown ? {
     on: inkOn,
     disabledWhy: pure.ok ? "" : pure.why,
     onToggle: () => { const next = !inkPref; setInkPref(next); if (!CAPTURE) writePref(LS_INK, next ? "on" : "off"); },
-  };
+  } : undefined;
   const baseRef = useRef(base);
   useEffect(() => { baseRef.current = base; }, [base]);
   const [navOpen, setNavOpen] = useState(false);

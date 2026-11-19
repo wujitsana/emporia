@@ -13707,14 +13707,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	function mixOver(a, p, under) {
 		return a.map((x, i) => x * p + under[i] * (1 - p));
 	}
-	function luminance(rgb) {
+	function luminance$1(rgb) {
 		const [r, g, b] = rgb.map(toLinear);
 		return .2126 * r + .7152 * g + .0722 * b;
 	}
 	/** The WCAG contrast ratio, 1–21. */
 	function contrast(a, b) {
-		const la = luminance(a);
-		const lb = luminance(b);
+		const la = luminance$1(a);
+		const lb = luminance$1(b);
 		return (Math.max(la, lb) + .05) / (Math.min(la, lb) + .05);
 	}
 	var toLinear, toGamma, clip$1, inGamut;
@@ -13874,11 +13874,11 @@ var EmporiaHermesPlugin = (function(exports) {
 					type: "button",
 					role: "switch",
 					"aria-checked": ink.on,
-					"aria-label": "Pure black or white text",
+					"aria-label": "Flip the text: black or white",
 					disabled: !!ink.disabledWhy,
 					className: "e-switch e-theme-duo__btn",
 					"data-on": ink.on ? "true" : "false",
-					title: ink.disabledWhy || (ink.on ? "text: pure black or white (click for the theme's own ink)" : "text: the theme's own ink (click for pure black or white)"),
+					title: ink.disabledWhy || (ink.on ? "text: flipped (a style choice: small text is harder to read; click for the theme's own)" : "text: the theme's own (click to flip it between black and white; small text gets harder to read)"),
 					onClick: ink.onToggle,
 					children: /* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
 						className: "e-switch__knob",
@@ -25650,39 +25650,43 @@ var EmporiaHermesPlugin = (function(exports) {
 		return v === "on" || v === "white" || v === "black";
 	}
 	function pureInk(theme, tint) {
-		const name = theme.replace("theme-", "");
-		const score = (ink) => {
-			let worst = Infinity;
-			for (const gamut of ["css", "clip"]) {
-				const t = themeColors("animatic", name, tint, gamut);
-				for (const s of t.surfaces.filter((x) => x.name !== "wash")) worst = Math.min(worst, contrast(ink, s.rgb));
-			}
-			return { worst };
-		};
-		const b = score(BLACK$1);
-		const w = score(WHITE$1);
-		const useWhite = w.worst > b.worst;
-		const pick = useWhite ? w : b;
-		const color = useWhite ? "#ffffff" : "#000000";
-		if (pick.worst < 4.5) return {
-			color,
+		if (theme !== "theme-vivid") return {
+			color: "#000000",
+			shown: false,
 			ok: false,
-			worst: pick.worst,
-			why: `Pure black or white text would be low contrast here (${pick.worst.toFixed(1)}:1, under ${INK_AA}:1)`
+			why: "",
+			worst: 0
+		};
+		let worst = Infinity;
+		let flipWhite = false;
+		for (const gamut of ["css", "clip"]) {
+			const t = themeColors("animatic", "vivid", tint, gamut);
+			flipWhite = luminance(t.ink) < .5;
+			const canvas = t.surfaces.find((x) => x.name === "canvas") ?? t.surfaces[0];
+			worst = Math.min(worst, contrast(flipWhite ? WHITE$1 : BLACK$1, canvas.rgb));
+		}
+		const color = flipWhite ? "#ffffff" : "#000000";
+		const word = flipWhite ? "White" : "Black";
+		if (worst < 2.5) return {
+			color,
+			shown: true,
+			ok: false,
+			worst,
+			why: `${word} text would be unreadable on this vivid tint (${worst.toFixed(1)}:1)`
 		};
 		return {
 			color,
+			shown: true,
 			ok: true,
 			why: "",
-			worst: pick.worst
+			worst
 		};
 	}
-	var LS_INK, INK_AA, BLACK$1, WHITE$1;
+	var LS_INK, BLACK$1, WHITE$1, luminance;
 	var init_inkSwitch = __esmMin((() => {
 		init_color();
 		init_tokens();
 		LS_INK = "emporia_ink";
-		INK_AA = 4.5;
 		BLACK$1 = [
 			0,
 			0,
@@ -25693,6 +25697,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			1,
 			1
 		];
+		luminance = (c) => {
+			const lin = (v) => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+			return .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
+		};
 	}));
 	var init_shadowScope = __esmMin((() => {}));
 	// src/ui/GatedNote.tsx
@@ -48697,7 +48705,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [inkPref, setInkPref] = (0, import_react.useState)(() => new URLSearchParams(window.location.search).get("ink") === "on" || !CAPTURE && normalizeInk(readPref("emporia_ink")));
 		const pure = pureInk(theme, tint);
 		const inkOn = inkPref && pure.ok;
-		const ink = {
+		const ink = pure.shown ? {
 			on: inkOn,
 			disabledWhy: pure.ok ? "" : pure.why,
 			onToggle: () => {
@@ -48705,7 +48713,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				setInkPref(next);
 				if (!CAPTURE) writePref(LS_INK, next ? "on" : "off");
 			}
-		};
+		} : void 0;
 		const baseRef = (0, import_react.useRef)(base);
 		(0, import_react.useEffect)(() => {
 			baseRef.current = base;
