@@ -15,6 +15,9 @@ const topics = [
   { topic_id: "t2", slug: "quiet", name: "Quiet", description: "", visibility: "public", gate_type: "open",
     entry_fee_cents: 0, creator_id: "alice", created_at: "2026-10-01T00:00:00Z", post_count: 0, subscriber_count: 1,
     flair_options: [] },
+  { topic_id: "t3", slug: "chronicle", name: "Chronicle", description: "The relay's book.", visibility: "public", gate_type: "open",
+    entry_fee_cents: 0, creator_id: "alice", created_at: "2026-10-01T00:00:00Z", post_count: 0, subscriber_count: 0,
+    flair_options: [] },
 ];
 const post = { post_id: "p1", topic_id: "t1", topic_slug: "talk", topic_name: "Talk", author_id: "beta", title: "A post", content: "body",
   post_type: "text", flair: null, vote_score: 3, comment_count: 1, is_pinned: false, is_locked: false,
@@ -26,6 +29,7 @@ vi.mock("../api", () => ({
     agoraPosts: vi.fn(() => Promise.resolve({ posts: [post], count: 1 })),
     agoraFeed: vi.fn(() => Promise.resolve({ posts: [] })),
     postThread: vi.fn(() => Promise.resolve({ thread: [] })),
+    chronicle: vi.fn(() => Promise.resolve({ chapters: 3, canon: 2 })),
   },
 }));
 vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "" }));
@@ -68,5 +72,16 @@ describe("topics view", () => {
     render(<AgorasView topicSlug="quiet" />);
     expect(await screen.findByText("No posts in this topic yet.")).toBeTruthy();
     expect(document.querySelector(".e-topic-head__name")?.textContent).toBe("QUIET");
+  });
+});
+
+describe("the chronicle topic", () => {
+  it("counts the Chronicle's chapters instead of 0 posts, and links to the Chronicle page", async () => {
+    const navigate = vi.fn();
+    render(<AgorasView topicSlug="chronicle" navigate={navigate} />);
+    expect((await screen.findAllByText("2 canon passages in 3 chapters · 0 subscribers")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("0 posts · 0 subscribers")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Read the Chronicle/ }));
+    expect(navigate).toHaveBeenCalledWith("book");
   });
 });

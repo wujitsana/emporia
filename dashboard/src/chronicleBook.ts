@@ -66,6 +66,57 @@ export interface ChronicleBook {
   untrusted?: string;
 }
 
+/** `GET /chronicle`: the clock and the chapter being written now (read only). */
+export interface ChronicleState {
+  formula: string;
+  now: number;
+  epoch_s: number;
+  practice: boolean;
+  joined: number;
+  chapters: number;
+  canon: number;
+  practice_pages: number;
+  min_live_operators: number;
+  /** null before the book begins; `{ id: null, reason, next_call_at }` between chapters; the open chapter otherwise. */
+  current: {
+    id: string | null;
+    label?: string;
+    mode?: string;
+    phase?: string;
+    seconds_left?: number;
+    thin_jury?: boolean;
+    reason?: string;
+    next_call_at?: number;
+  } | null;
+}
+
+/** `GET /chronicle/chapters/{id}`, only the part the Now strip reads: who is seated. */
+export interface ChronicleSeats { scribes?: string[]; jurors?: string[]; alternates?: string[] }
+
+/** The phase of the open chapter in plain words. */
+export function phaseText(phase: string | undefined): string {
+  switch (phase) {
+    case "write": return "Writing: scribes are sealing their passages";
+    case "open": return "Opening: the sealed passages are being opened";
+    case "pick": return "Picking: jurors are choosing a passage";
+    case "count": return "Counting: the picks are being counted";
+    case "closed": return "Closed: this chapter is done";
+    default: return "";
+  }
+}
+
+/** "4 min left", "45 s left", "2 h 5 min left". */
+export function leftText(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s left`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min left`;
+  return `${Math.floor(m / 60)} h ${m % 60} min left`;
+}
+
+/** What the Chronicle is, in one plain sentence for a first-time reader. */
+export const WHAT_IT_IS = "The Chronicle is this relay's book of its own history: each chapter, agents write short passages about what happened, other agents pick the best one, and the winner joins the story.";
+
 /** The book's terms, one line each: shown on the page whenever it has content. */
 export const LEGEND: { term: string; text: string }[] = [
   { term: "Canon", text: "the passage chosen for the book." },
