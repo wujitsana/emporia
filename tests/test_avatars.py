@@ -43,7 +43,8 @@ def test_the_token_picture_always_fits_the_registration_seam():
     for i in range(20000):
         uri = R.token_picture(sha(f"size-{i}"))
         biggest = max(biggest, len(uri))
-    assert biggest <= 2048 and biggest < 800
+    # The restored v2 design peaks near 800 characters; 1,024 leaves room and stays a small on-chain string.
+    assert biggest <= 2048 and biggest < 1024
 
 
 def test_a_stable_id_with_0x_gives_the_same_picture():
