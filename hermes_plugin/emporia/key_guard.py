@@ -238,7 +238,7 @@ _CONFIG_FILE = re.compile(r"(?:^|[/\s'\"])(?:config\.ya?ml|\.env)\b|\bhermes\b[^
 # limits` / `agent playbook` (the person's yes), written straight into the agent's own
 # config — `hermes config set NAME VALUE`, a line added to its .env, a key in config.yaml —
 # which passed with no word from the person.
-_MAINNET_SETTING = ("EMPORIA_X402_MAINNET",)
+_MAINNET_SETTING = ("EMPORIA_X402_MAINNET", "EMPORIA_ALLOW_HOT_AGENT_WALLET")   # the second lets a local key pay real money with no signer
 _LIMIT_SETTINGS = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "EMPORIA_X402_MAX_DAILY_CENTS",
                    "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_SIGN_LIMITS", "EMPORIA_PAYOUT_ADDRESSES",
                    "EMPORIA_PLAYBOOK", r"EMPORIA_PLAYBOOK_(?!AUTONOMOUS)\w+",

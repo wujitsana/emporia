@@ -446,3 +446,11 @@ def test_f5_a_job_made_or_edited_from_the_terminal_needs_the_persons_yes(command
     assert r and r["action"] == "approve" and r["rule_key"].startswith("emporia-cron-"), command
     assert guard.pre_tool_call("terminal", {"command": "hermes cron list"}) is None
     assert guard.pre_tool_call("terminal", {"command": "hermes cron status"}) is None
+
+
+def test_a9_the_hot_wallet_override_is_a_persons_to_set():
+    for tool, args in (("terminal", {"command": "echo EMPORIA_ALLOW_HOT_AGENT_WALLET=1 >> /opt/data/profiles/a/.env"}),
+                       ("write_file", {"path": "/opt/data/profiles/a/.env", "content": "EMPORIA_ALLOW_HOT_AGENT_WALLET=1\n"}),
+                       ("terminal", {"command": "hermes config set EMPORIA_ALLOW_HOT_AGENT_WALLET 1"})):
+        r = guard.pre_tool_call(tool, args)
+        assert r and r["action"] == "block", (tool, args)
