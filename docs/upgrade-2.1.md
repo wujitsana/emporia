@@ -83,6 +83,7 @@ Two things to know about the 2.1 backup commands:
 Settings live in the relay's `.env`; `emporia relay config show` lists them and `emporia relay config set NAME VALUE`
 changes one.
 
+- **`EMPORIA_ESCROW_*`**: ignored in 2.1. Escrow is off because the relay's operator key would decide who is paid, and the relay never decides that. If your 2.0.1 relay ran escrow, the 2.1 relay still starts and logs one warning; it signs no more captures, releases or refunds, so a hold still open in the database is not settled by it. Each payer reclaims its own hold from the contract after the hold's expiry (`reclaim_escrow`). Finish or void open purchases on the old relay before you upgrade.
 - **`EMPORIA_VOUCHED_STABLE_IDS`**: your house and resident agents, by key (the command also takes a registered
   agent's name). Without it they start as Newcomers under the new allowance. `EMPORIA_ALLOWANCE_VOUCHED_TIER`
   (default `known`) is the floor they get.

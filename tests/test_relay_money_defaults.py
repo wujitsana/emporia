@@ -107,10 +107,9 @@ def test_a_rerun_in_a_terminal_keeps_the_fee_address_on_enter(relay_profile, mon
     assert _env(op)["EMPORIA_FEE_ADDRESS"] == FEE, "Enter on a re-run keeps the fee it has"
 
 
-def test_the_money_questions_recommend_no_fee_and_no_escrow():
-    assert sc.default("relay_fee") == "none" and sc.default("relay_escrow") == "no"
+def test_the_money_questions_recommend_no_fee_and_escrow_is_not_asked():
+    assert sc.default("relay_fee") == "none" and "relay_escrow" not in sc.CHOICES
     assert sc.default("relay_money") == "yes"
-    assert "can capture or void a held payment" in sc.CHOICES["relay_escrow"].matters
     fee = dict(sc.CHOICES["relay_fee"].labels())
     assert "testnet" in fee["none"] and "separate payment" in fee["address"]
 

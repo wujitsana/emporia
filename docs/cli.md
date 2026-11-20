@@ -26,7 +26,7 @@ emporia relay start | stop | restart | status | logs
 emporia relay use | link | unlink | links | access | members | move | backup | db | config | modules | overview | owner-key | rotate-key | remove | seed | watch   # the rest of the relay's desk (run emporia relay with no action for the list)
 emporia relay upgrade [--dry-run] [--yes]       # carry an older relay database to this release (backup first, additive only)
 emporia setup agent NAME              # asks role, keys, wallets, limits — recommends the safe answer
-emporia setup relay [--fee-receiver 0x…] [--with solana-devnet,tempo-moderato] [--escrow]  # x402, paid directly; no address: no fee; escrow only if opted in
+emporia setup relay [--fee-receiver 0x…] [--with solana-devnet,tempo-moderato]  # x402, paid directly; no address: no fee; escrow is off in 2.1 (--escrow is refused)
 emporia wallet show|create|import|store|backup|mainnet|register|limits|accept NAME  # wallets, networks, balances, caps, where it takes payment
 emporia role NAME [marketplace|developer|both]   # what its tools may reach (marketplace for money)
 emporia stats NAME [--days 7]       # what it earned, spent, is owed and cost to run (model tokens) — P287

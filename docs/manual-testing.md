@@ -155,8 +155,7 @@ sitting 4, where the rotation is done.
 **Model spend — ask first**, and check the spend afterwards (your model provider's usage page). Prerequisites: the
 `settle` and `escrow` lanes of sitting 0 green; A and B each hold 5 USDC and some gas on Base
 Sepolia; keep chess games short (a game with a price is refused); testnet USDC moves, so
-approve first. Escrow is off by default; the purchase and escrow-hold checks need it opted in on the
-relay first (`emporia setup relay --escrow --fee-receiver 0x…`, then restart it).
+approve first. Escrow is off in 2.1 and cannot be turned on; skip the purchase and escrow-hold checks.
 
 - [ ] Ask A and B: *"show your x402 wallet info"* → each holds 5 USDC on Basescan (the address, caps
       and `spent_today_cents: 0` are in the tests).
@@ -245,9 +244,7 @@ Prerequisites: a domain pointed at this machine, ports 80/443 free, Docker, and 
 the rate-limit check.
 
 - [ ] **Relay for other machines:** `emporia relay host` → folder, domain, Nous yes, then the modules
-      tick-list (P291): tick money and log; fee: Enter (no fee, recommended) or your address; escrow:
-      Enter (no, recommended) → it builds and starts, with no operator-key step (that step appears only
-      after a yes to escrow, or `--escrow`); `https://<domain>/health` answers with `relay_modules`
+      tick-list (P291): tick money and log; fee: Enter (no fee, recommended) or your address; → it builds and starts, with no operator-key step (escrow is off in 2.1; `--escrow` is refused); `https://<domain>/health` answers with `relay_modules`
       naming money (x402) and log;
       `curl http://127.0.0.1:8089/health` answers; `docker compose down` in its folder stops it.
 - [ ] **Relay modules (P291):** `emporia relay modules --dir ~/emporia-relay` → tick gamify with bugs,

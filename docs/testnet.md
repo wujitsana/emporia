@@ -92,7 +92,7 @@ test harness's, deliberately separate so a configured relay can't drag the test 
 it didn't intend. `emporia setup relay` writes the relay's settings for this lane: x402 payments
 only, paid agent to agent (the relay holds nothing), and a fee address only if you give one (blank:
 no fee, recommended for testnet; an address: `EMPORIA_FEE_BPS`, default 100 = 1%, sent to it as a
-separate payment). Escrow holds are off unless you add `--escrow` (see lane `escrow` below). By hand:
+separate payment). Escrow is off in 2.1 (`--escrow` is refused; lane `escrow` below is parked). By hand:
 
 ```bash
 export EMPORIA_X402_ENABLED=1
@@ -161,11 +161,9 @@ driven through the SDK:
   confirms → the hold is captured: a fresh seller wallet receives 0.975 USDC, the fee receiver 0.025.
 - **B:** funded, delivered, disputed → the hold is voided and the payer is back to the full amount.
 
-Escrow is off on a relay unless its operator opts in (`emporia setup relay --escrow --fee-receiver 0x…`,
-or yes to the escrow question, whose recommended answer is no): the relay's operator key can capture or
-void a held payment, so the relay has a say in who gets paid. Only with that opt-in does setup write the
-escrow settings and make the operator key. This lane sets its own escrow settings for its relay
-subprocess.
+**Parked in 2.1.** Escrow is off: with it the relay's operator key decides who is paid at settlement, and the
+relay never decides that. A relay process ignores `EMPORIA_ESCROW_*`, so this lane's tests are skipped until a
+better design (a contract both parties control, with outside dispute resolution) lands.
 
 Keys are passed as **file paths**, never as hex in the environment or shell history:
 
@@ -200,8 +198,7 @@ It refuses unless the network is `eip155:84532` and the asset is Base Sepolia US
 below 50 cents (so no wallet asks its person) and the run under a 50-cent cap, and stops at the first
 failed payment without retrying. Two things it reports as they are: the paid room it makes is private (a paid room may also be
 public: listed, anyone pays to join) and its creator cannot close it, so the room stays; and a purchase is paid by an
-x402 escrow hold, so on a relay without escrow funding is refused (409) and the step is reported as skipped, not failed (service purchases
-need escrow on). `--room-only` runs the paid room alone. The run prints the rooms and sessions it
+x402 escrow hold, so on a relay without escrow (every relay in 2.1) funding is refused (409) and the step is reported as skipped, not failed. `--room-only` runs the paid room alone. The run prints the rooms and sessions it
 leaves behind.
 
 **The run counts as the person's own session.** The agents' own guard refuses money in an unattended

@@ -344,14 +344,6 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
                           "payment beside the creator's share; the relay still holds nothing.",
                title="a fee, to my address")),
            "emporia relay config set EMPORIA_FEE_ADDRESS 0x… (unset it for no fee)"),
-    Choice("relay_escrow", "Hold purchases in escrow?",
-           "Escrow holds a service purchase in a contract until delivery. The relay's operator key can capture or "
-           "void a held payment, so the relay has a say in who gets paid.",
-           YES_NO("purchases are held until delivery; the relay's operator key captures or voids each hold. Needs a "
-                  "fee address and an operator key with a little Base Sepolia ETH for gas.",
-                  "payments go straight to the payee; the relay never decides who gets paid.", False,
-                  "No operator key to fund or guard."),
-           "emporia setup relay --no-escrow (escrow is off in 2.1)"),
 )}
 
 #: The yes/no questions' keys, whose answer is "yes"/"no".

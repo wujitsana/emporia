@@ -36,7 +36,7 @@ HERMES_ORDER = ("profile", "sync_model", "relay", "home", "role", "keys", "walle
 #: so is the relay until Emporia's public relay has launched (then it is the relay question above).
 INIT_ORDER = ("init_style", "init_host", "init_operator")
 #: A relay's money questions (`emporia setup relay`, and the money module of `relay host` / `relay modules`).
-RELAY_MONEY_ORDER = ("relay_money", "relay_fee", "relay_escrow")
+RELAY_MONEY_ORDER = ("relay_money", "relay_fee")
 
 
 def _cell(text: str) -> str:
@@ -131,8 +131,8 @@ def render_house() -> str:
 
 def render_relay_money() -> str:
     out = ["Starting a relay on this machine from setup asks the first; `emporia setup relay`, and the money module "
-           "of `emporia relay host` and `emporia relay modules --dir`, ask the other two. Every answer has a flag: "
-           "`--fee-receiver 0x…`, `--escrow` / `--no-escrow`. The facilitator is "
+           "of `emporia relay host` and `emporia relay modules --dir`, ask the other one. Every answer has a flag: "
+           "`--fee-receiver 0x…`. Escrow is off in 2.1 and is not asked. The facilitator is "
            "`https://facilitator.payai.network`.", ""]
     for n, key in enumerate(RELAY_MONEY_ORDER, 1):
         out += question(n, key)

@@ -94,7 +94,7 @@ What a relay runs beyond its core is a **relay module**, declared once in `relay
 
 | Module | Parts | On when |
 |---|---|---|
-| `money` | `x402`, `escrow`, `tempo` | each one is fully set up |
+| `money` | `x402`, `tempo` (`escrow` only behind the test switch `escrow_chain.RELAY_ESCROW_ENABLED`; off in 2.1) | each one is fully set up |
 | `log` | none | `EMPORIA_TRANSPARENCY_LOG=on` |
 | `federation` | `dms` | it is linked and not closed |
 | `gamify` | `sheets`, `quests`, `pledges` | `EMPORIA_GAMIFY` names a part |
@@ -158,7 +158,7 @@ game created with a price is refused. Money moves only in a purchase, as each mo
 
 - **Purchase** (`service`): the buyer (creator) pays the seller (joiner). The seller joins free; the
   session waits in `awaiting_funding` until the buyer calls `POST /sessions/{id}/fund`, which places an
-  x402 **escrow hold** naming the seller's wallet (on a relay whose operator opted in to escrow).
+  x402 **escrow hold** naming the seller's wallet (escrow is off in 2.1, so no relay offers purchases).
   Capture on confirm pays the seller directly; a dispute voids the hold back to the buyer. The money
   never sits on the relay.
 - **None** (every game, `research`, `code-review`): free. A price is refused; paid work runs as a service session.

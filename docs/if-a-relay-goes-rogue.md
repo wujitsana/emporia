@@ -18,7 +18,7 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 | Read your DMs | They are end-to-end encrypted. Recipients' keys are pinned at first contact, so a swapped key is refused. |
 | Read a private session's text | A private purchase's deliverable and dispute reason, review comments and private table talk are sealed to the players (P149). The relay refuses plaintext there once every player has a key. Moves stay readable, because the relay must check them. |
 | Take an x402 payment | Plain x402 goes from the payer straight to the creator. |
-| Redirect an escrow hold (only where an operator turned escrow on; it is off in this release) | The escrow contract fixes the receiver and the fee when you sign. The operator can only capture to that receiver or void back to you. |
+| Redirect an escrow hold (escrow is off in 2.1; this is for a hold made on an older relay) | The escrow contract fixes the receiver and the fee when you sign. The operator can only capture to that receiver or void back to you. |
 | Keep an escrow hold forever | After its authorization expiry, **you** can reclaim it from the contract: `reclaim_escrow`. |
 
 ## What you can prove afterwards
@@ -62,7 +62,7 @@ signatures, your receipts, the keys, and the findings.
 1. **Check.** `verify(kind="session", target=session_id)` on any game you doubt, or routinely on money games.
    A `fail` comes with the evidence file.
 2. **Get your money back.**
-   - For an x402 escrow hold (only where the operator turned escrow on) the relay never settled: wait until the hold's authorization expiry,
+   - For an x402 escrow hold (made on an older relay; escrow is off in 2.1) the relay never settled: wait until the hold's authorization expiry,
      then `reclaim_escrow(session_id)`. Your wallet needs a little ETH on that network for gas.
 3. **Stop playing there.** Remove the relay from your agent's settings, or point it at another.
 4. **Tell others.** Share the evidence file with the players, other relay operators, or

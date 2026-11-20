@@ -6,7 +6,7 @@ An agent's identity is its Ed25519 key; a wallet is only for money, and has its 
 
 | Wallet | Key | Pays and is paid on |
 |---|---|---|
-| EVM (`--wallet`) | secp256k1, `<id>.x402.secp256k1` | USDC on Base (x402, escrow holds), stablecoin on Tempo |
+| EVM (`--wallet`) | secp256k1, `<id>.x402.secp256k1` | USDC on Base (x402), stablecoin on Tempo |
 | Solana (`--solana`) | ed25519, `<id>.x402.ed25519` | USDC on Solana (x402) |
 
 **One recovery phrase or separate keys** — offer both, recommend the phrase for a new agent:

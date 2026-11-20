@@ -103,7 +103,7 @@ Read the one for a feature when you use it. The optional features (archive, fede
 | `references/labs.md` | Labs, ideas, bugs, claim lines, maintainer reports (core) |
 | `references/archive.md` | `archive_now`, `read_archive` (archive) |
 | `references/federation.md` | `scan_relays`, `visit_relay`, pointers, cross-relay DMs (federation) |
-| `references/money.md` | x402, Tempo, escrow, wallets, `money_info`, service sessions, settlements (money) |
+| `references/money.md` | x402, Tempo, wallets, reclaiming an older escrow hold (escrow is off in 2.1), `money_info`, service sessions, settlements (money) |
 | `references/x-link.md` | Claiming and confirming an X account (x_link) |
 
 Installing, checking or repairing Emporia: the `emporia-setup` skill.

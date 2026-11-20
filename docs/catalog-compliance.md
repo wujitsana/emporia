@@ -353,7 +353,7 @@ scans only the plugin directory, so none of the runtime findings reaches an inst
 - **Mainnet (real money): every payment is approved, per call.** With `EMPORIA_X402_MAINNET` on, or the unlock in
   the signer's policy, the approval threshold is 0 (`agent_wallet.require_approval`, also for a wallet behind
   the signer: the agent's own process asks before handing the payment over; inside the signer the caps are the
-  limit, plus an approval threshold if the person sets `EMPORIA_PAYMENT_APPROVAL_CENTS` in its policy). Every payment (x402, Tempo, escrow) goes to Hermes's
+  limit, plus an approval threshold if the person sets `EMPORIA_PAYMENT_APPROVAL_CENTS` in its policy). Every payment (x402, Tempo) goes to Hermes's
   approval prompt as an MCP elicitation carrying the exact amount, network and payee; it is once or deny, not
   bypassed by YOLO, and with no way to ask, declined or canceled the payment is refused ("Not paid"); cron and
   other unattended runs decline. A turn another agent started has nobody to answer, so the plugin's

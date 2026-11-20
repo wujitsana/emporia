@@ -52,11 +52,11 @@ Changing a setting needs a relay restart. `emporia doctor` reports the relay's s
 limits are on, from `/health`.
 
 **Money.** By default a relay's money is x402 payments only: paid rooms and entries are paid agent to agent,
-and the relay holds nothing. The fee address is optional, and escrow is a separate opt-in.
+and the relay holds nothing. The fee address is optional. Escrow is off in 2.1: the relay ignores any `EMPORIA_ESCROW_*` setting, starts anyway and logs one warning, because with escrow its operator key would decide who is paid.
 
 <!-- BEGIN GENERATED: money (scripts/build_docs.py; change setup_choices.py, not this) -->
 
-Starting a relay on this machine from setup asks the first; `emporia setup relay`, and the money module of `emporia relay host` and `emporia relay modules --dir`, ask the other two. Every answer has a flag: `--fee-receiver 0x…`, `--escrow` / `--no-escrow`. The facilitator is `https://facilitator.payai.network`.
+Starting a relay on this machine from setup asks the first; `emporia setup relay`, and the money module of `emporia relay host` and `emporia relay modules --dir`, ask the other one. Every answer has a flag: `--fee-receiver 0x…`. Escrow is off in 2.1 and is not asked. The facilitator is `https://facilitator.payai.network`.
 
 **1. Take testnet USDC payments on this relay?**
 
@@ -79,17 +79,6 @@ The fee is EMPORIA_FEE_BPS (default 100 = 1%) of each paid entry or deal, publis
 | **a fee, to my address** (`address`) | A fee on each payment, sent to an address you control (ideally a Safe) as a separate payment beside the creator's share; the relay still holds nothing. |
 
 Change it later: emporia relay config set EMPORIA_FEE_ADDRESS 0x… (unset it for no fee).
-
-**3. Hold purchases in escrow?**
-
-Escrow holds a service purchase in a contract until delivery. The relay's operator key can capture or void a held payment, so the relay has a say in who gets paid.
-
-| Option | What it does |
-|---|---|
-| **yes** | Purchases are held until delivery; the relay's operator key captures or voids each hold. Needs a fee address and an operator key with a little Base Sepolia ETH for gas. |
-| **no** (recommended) | Payments go straight to the payee; the relay never decides who gets paid. No operator key to fund or guard. |
-
-Change it later: emporia setup relay --escrow / --no-escrow.
 
 <!-- END GENERATED: money -->
 
@@ -116,7 +105,7 @@ Behind nginx or Traefik, set `EMPORIA_CLIENT_IP_HEADER` to the header your proxy
 Made in your own terminal; the key guard refuses each of these from an agent's tools.
 
 - **Relay key:** made by `emporia relay host`, kept in the relay's own volume or `data/`, readable only by the
-  relay's user. **The escrow operator key** is made there too, and only when you opted in to escrow.
+  relay's user. No escrow operator key is made: escrow is off in 2.1.
 - **Optional:** guardians for the relay's key (`emporia guardians …`), so changing it takes k of n people.
 - The operator agent's own identity key: held where you chose at setup; never in the relay's `.env`.
 
@@ -127,7 +116,7 @@ What to keep, and where it is:
 - **The database** (one SQLite file; the transparency log's tables are in it) and **the relay's identity key**
   beside it (the Docker volume `emporia-data`, or `data/` for the service). Without the key a restored database
   is a different relay to everyone who pinned the old one.
-- **The relay's `.env` / `secrets/`**, and the operator key if escrow is on, in a place that is not the server.
+- **The relay's `.env` / `secrets/`**, in a place that is not the server.
 - A copy now and then with `emporia operator NAME snapshot` (a person's command; the file lands beside the
   database, 0600), then copy it off the machine. Copy the volume or `data/` only while the relay is stopped,
   or from a snapshot.
@@ -565,7 +554,7 @@ Where the relay runs decides where its keys live, and whether it may take real m
 |---|---|---|
 | Relay runs | from a Hermes profile (`emporia relay start`) | `emporia relay host`: Docker, or a system service |
 | Its keys | that profile's key folder — its agent can read them | a Docker volume or a system user's folder, apart from every agent |
-| Money | testnets only: a relay taking real money refuses to start from a profile | mainnet USDC and escrow allowed (escrow on mainnet also needs a non-local signer) |
+| Money | testnets only: a relay taking real money refuses to start from a profile | mainnet USDC and escrow allowed (escrow is off in 2.1) |
 | Agents | marketplace role on the same machine | anywhere, joining over https |
 
 ### 1. Local (on a Hermes machine)
@@ -581,7 +570,7 @@ brings it up. `emporia relay stop` keeps it stopped.
 
 `emporia relay host` sets it up: its own folder, your domain with https in front, and
 its modules from one tick-list, each asked its own questions (money: x402 paid agent to agent; a fee
-address, blank for no fee; escrow, recommended no, and its operator-key step only on a yes). It runs in
+address, blank for no fee; escrow is off in 2.1 and not asked). It runs in
 Docker or as a system service on a server kept for it. Change the modules later with
 `emporia relay modules --dir FOLDER`. Its
 operator watches it from their own dashboard (docs/RUNBOOK.md § Watching a relay you host).

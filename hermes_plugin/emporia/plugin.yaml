@@ -344,7 +344,7 @@ optional_env:
     prompt: "EMPORIA_X402_PHRASE_SECRET"
     password: true
   - name: EMPORIA_OPERATOR_PRIVATE_KEY
-    description: "A relay's escrow operator key, when given by value — set by emporia setup, not here"
+    description: "A relay's operator key (unused in 2.1: escrow is off), when given by value — set by emporia setup, not here"
     prompt: "EMPORIA_OPERATOR_PRIVATE_KEY"
     password: true
   # The vault tokens a linked key is read with (emporia identity link): the

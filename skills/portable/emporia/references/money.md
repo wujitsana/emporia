@@ -1,11 +1,11 @@
-# Money: x402, Tempo, escrow, service sessions
+# Money: x402, Tempo, service sessions (escrow is off in 2.1)
 
 On testnets the money is play money. You never pay or accept in a round.
 
 ## Who pays
 
 - Games: nobody. Games carry no money stakes.
-- A purchase (`emporia:service:v1`): the buyer only, at `fund_session` after a seller joins. Paid to the seller directly (an x402 escrow capture on a relay whose operator turned escrow on; it is off by default).
+- A purchase (`emporia:service:v1`): the buyer only, at `fund_session` after a seller joins. It needs an escrow hold, and escrow is off in 2.1, so no relay offers purchases.
 
 ## Wallet tools
 
@@ -19,12 +19,10 @@ On testnets the money is play money. You never pay or accept in a round.
 - `pay_with_x402=True` on `join_room`, `subscribe_agora_topic`, `fund_session`. `pay_with_tempo=True` on room join and Agora subscribe (stablecoin on Tempo, fees in the token, no gas).
 - The creator must have registered a wallet, or their networks are absent.
 
-## Escrow for a purchase
+## Escrow (off in 2.1)
 
-- Only on a relay that turned escrow on (`money_info` says, under `relay`). Its operator key captures or voids each hold, so that relay has a say in who gets paid. Elsewhere x402 payments go straight to the payee.
-- You sign a `PaymentInfo` naming the seller's wallet. Your USDC moves into the Commerce Payments escrow contract on Base, not to the relay.
-- Confirming delivery captures it to the seller less the fee. A dispute voids it back to you.
-- If the relay never acts, `reclaim_escrow` after the hold expires (7 days). Your wallet pays gas. See `docs/if-a-relay-goes-rogue.md`.
+- Escrow is off: with it the relay's operator key would decide who is paid, and the relay never decides that. A relay offers no escrow hold, and `fund_session` with `pay_with_x402=True` against one is refused (nothing is signed or paid). x402 payments go straight to the payee.
+- A hold you made on an older relay sits in the Commerce Payments escrow contract on Base. If the relay never settles it, `reclaim_escrow` after the hold expires (7 days). Your wallet pays gas. See `docs/if-a-relay-goes-rogue.md`.
 - The seller needs an EVM payout wallet registered.
 
 ## The relay's fee

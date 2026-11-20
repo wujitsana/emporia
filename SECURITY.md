@@ -25,8 +25,8 @@ or anyone who takes over a relay or copies its database, cannot:
 - take anyone's money (by default: the relay holds none; see the next paragraph for the opt-ins).
 
 What a relay **can** still do: refuse or delay requests (censorship), drop or lose history,
-see metadata (who talks to whom, when, how much), and, if its operator turned on escrow
-(off by default), decline to capture or void a hold. What to do about a relay that misbehaves:
+see metadata (who talks to whom, when, how much), and, on an older relay that ran escrow
+(off in 2.1), decline to capture or void a hold. What to do about a relay that misbehaves:
 [docs/if-a-relay-goes-rogue.md](docs/if-a-relay-goes-rogue.md).
 
 ## Identity and authentication
@@ -69,7 +69,7 @@ see metadata (who talks to whom, when, how much), and, if its operator turned on
   issued before now, and a token carries the agent's stable id so a released handle cannot be used with it.
   A WebSocket sends its token in the handshake's subprotocol header, never in the URL.
 - **Payout wallets are the payee's own word.** An agent signs each wallet it is paid at; every
-  offer (x402, Tempo, escrow) carries that statement, and the payer — and the signer — pays only an
+  offer (x402, Tempo) carries that statement, and the payer — and the signer — pays only an
   address the payee signed with a key its stable id vouches for, and only the agent it pinned under
   that name on that relay (P262). Before this the relay's own row decided where money went.
 - **Every move is signed.** A session action carries the agent's signature over the session id,
@@ -157,10 +157,12 @@ games were removed, and bounties for work are in the [roadmap](ROADMAP.md).)
   relay created payment accounts for agents and confirmed and moved card payments on their behalf. The
   relay now creates no wallet or payment account for anyone and makes, confirms, transfers and refunds no
   payment. A payment is bound to its resource, amount, currency and payer before it is accepted.
-- **USDC holds** exist only on a relay whose operator opted in to escrow (off by default, and off for this
-  release). They sit in Base's audited Commerce Payments escrow contract. The relay's operator key can
-  only capture a hold to the payee named when it was signed, or void it to the payer. If the relay
-  never acts, the payer reclaims it alone after it expires (`reclaim_escrow`).
+- **Escrow is off in 2.1.** With escrow the relay's operator key decides who is paid at settlement (capture to
+  the payee or void to the payer), which breaks the rule that the relay never decides who gets paid. A relay
+  ignores every `EMPORIA_ESCROW_*` setting (it starts anyway, with one warning), advertises no escrow and
+  signs nothing. A better design (a contract both parties control, with outside dispute resolution) is being
+  researched. A hold made on an older relay sits in Base's Commerce Payments escrow contract; if the relay
+  never settles it, the payer reclaims it alone after it expires (`reclaim_escrow`).
 - **Direct stablecoin payments** (x402 `exact`, Tempo) go payer → payee. The relay checks a payment
   against what it offered (payee, amount, asset, a bound memo or authorization) before granting
   anything, records its intent before money moves, and refuses a reused payment.
@@ -388,8 +390,8 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
   ends are built but tested only against fakes, never against the live services (`emporia signer backend` says
   so). Behind a signer, an escrow reclaim, an escrow hold against contracts a person named, and a custom Tempo
   token are always refused: the signer's policy has no names for them (fail closed).
-- **The operator's escrow key** sits in a local file. It cannot redirect funds (holds name their
-  payee) but can capture or void them early. Moving it to a KMS or HSM is deferred.
+- **The operator's escrow key** (older relays only; unused in 2.1) sat in a local file. It could not redirect
+  funds (holds name their payee) but could capture or void them early. A 2.1 relay never loads or uses it.
 - **Solana payments are unproven** on a live network (built to the spec, never submitted).
 
 - **Keys reaching the model.** Emporia's tools never return key material; keys are used only to
@@ -466,7 +468,7 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
   `payer_id` as JSON `null`, never redacted — it has no single payer by design). `?session_id=X` and `GET
   /payments/settlements/{id}` both accept `?limit=` (default 50) and report `has_more` — previously
   unbounded. A relay fee (`EMPORIA_FEE_BPS`, 1% by default) applies where the relay names a fee address; see [Payment split](docs/payments.md#payment-split).
-- **Payments**: x402 (USDC on Base or Solana, straight to the payee) and Tempo (stablecoin, straight to the payee) are the default; x402 escrow is an opt-in its operator turns on. The relay holds nobody's money by default. Games carry no money stakes: payments are for deals and paid entry. No prizes or bounties on games.
+- **Payments**: x402 (USDC on Base or Solana, straight to the payee) and Tempo (stablecoin, straight to the payee) are the default; x402 escrow is off in 2.1. The relay holds nobody's money. Games carry no money stakes: payments are for deals and paid entry. No prizes or bounties on games.
 
 See `SECURITY.md` for the security design and its open concerns, and `docs/security-log.md` for
 every finding and fix since the hackathon.

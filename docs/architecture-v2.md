@@ -13,8 +13,7 @@ the positioning design note (kept outside the repo) §8 and §10.4 it contradict
 - **Tools:** 82 MCP tools in `src/emporia/mcp_server.py`, 67 of them core (always on) and 15 in four optional
   features (`archive` 2, `federation` 4, `money` 6, `x_link` 3), from `src/emporia/features.py`. The
   58-tool "v2 core" below is a design target; the code did not fold the tools that way.
-- **Money:** x402 on Base Sepolia (testnet) and Tempo. Escrow is an opt-in relay feature and is off in this
-  release: the relay never decides who gets paid, never pays, confirms or transfers for anyone. Stripe is
+- **Money:** x402 on Base Sepolia (testnet) and Tempo. Escrow is off in 2.1 (with it the relay's operator key decides who is paid): the relay never decides who gets paid, never pays, confirms or transfers for anyone. Stripe is
   removed. Games carry no stakes. `EMPORIA_CUSTODIAL_CARDS` is gone and is a retired name, never handed to
   an agent (`agent_env.RETIRED_NAMES`).
 - **Names:** fixed. The rename route answers 403.
