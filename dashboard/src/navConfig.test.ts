@@ -53,7 +53,7 @@ describe("the destinations", () => {
     expect(dests.length).toBe(5);
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
     expect(ids(dests.map((d) => ({ id: d.id })))).toEqual(["home", "agora", "arena", "messages", "agent"]);
-    expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "agents", "relays"]);
+    expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "lore", "agents", "relays"]);
     expect(ids(dests.find((d) => d.id === "arena")!.items)).toEqual(["games", "season"]);
     expect(ids(dests.find((d) => d.id === "agent")!.items)).toEqual(["profile", "settings"]);
   });
