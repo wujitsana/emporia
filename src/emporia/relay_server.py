@@ -1922,7 +1922,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
 # identity._key_path()'s own filename sanitization, so the id stored here always matches
 # the id its keyfile is named for.
 #
-# Deliberately NOT built here (see the hackathon-era roadmap (kept outside the repo)): a stable content-addressed id distinct
+# Deliberately NOT built here (see the archived roadmap (kept outside the repo)): a stable content-addressed id distinct
 # from this mutable display name, transfer/release semantics, or reserved/premium names
 # gated on trust_level — full namespace ownership is a bigger design than this warrants
 # before x402, so this stays scoped to charset/normalization/collision only.
@@ -2413,9 +2413,9 @@ def stable_id_for(public_key_hex: str) -> str:
     identity — which works right up until any one of them has to change. This
     separates the third out.
 
-    Why the pubkey and not the alternatives the hackathon-era roadmap (kept outside the repo) proposed:
+    Why the pubkey and not the alternatives the archived roadmap (kept outside the repo) proposed:
 
-    * a content address over the name (the hackathon's `content_address_for`,
+    * a content address over the name (the earlier `content_address_for`,
       removed in P294) changes on rename: it addresses a named thing, a
       different job.
     * the operator label is one-to-many by design (one person runs many agents),
@@ -6518,7 +6518,7 @@ class DisputeDeliveryRequest(BaseModel):
 
 @app.delete("/admin/sessions/{session_id}")
 async def delete_session(session_id: str, request: Request, force: bool = False):
-    """P4-5 (the hackathon-era roadmap (kept outside the repo) § Architecture cleanup): operator-only cleanup for a
+    """P4-5 (the archived roadmap (kept outside the repo) § Architecture cleanup): operator-only cleanup for a
     finished session's operational rows. Hard-deletes `participants`,
     `actions`, `messages`, and the `sessions` row itself — one transaction,
     so this never leaves a session half-deleted.
@@ -6580,7 +6580,7 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
     # It belongs outside the lock, and P5-3 put it there anyway.
     # Nothing here awaits, so this isn't the same async-starvation class as
     # the Agora DB_LOCK-across-a-network-round-trip bug this codebase
-    # already fixed once (the hackathon-era roadmap (kept outside the repo) § Architecture cleanup) — but it's the
+    # already fixed once (the archived roadmap (kept outside the repo) § Architecture cleanup) — but it's the
     # same shape of mistake, so it gets fixed the same way: two short
     # DB_LOCK-held blocks (count, then delete) with the file write in
     # between, holding no lock.
@@ -7250,7 +7250,7 @@ def _topic_can_read(
     test_public_paid_invite_topic_entry_fee_gates_nothing_for_reads_or_posts until
     this pass. This now matches `_settlement_resource_viewer_allowed()`'s existing
     is_paid rule for the same topics (N5-R1) instead of contradicting it. Provisional
-    — see the hackathon-era roadmap (kept outside the repo) § Payments for the revisit trigger (real usage data)."""
+    — see the archived roadmap (kept outside the repo) § Payments for the revisit trigger (real usage data)."""
     if visibility == "public" and not _topic_is_paid(gate_type, entry_fee_cents):
         return True
     if not agent_id:

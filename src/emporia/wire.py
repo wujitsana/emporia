@@ -11,7 +11,7 @@ definition of it, so the two clients can't drift on what a request looks like
 even though they stay on separate (sync vs. async) transports.
 
 Deliberately excludes signing (`identity.sign`/`identity.sign_raw`, already
-shared) and the actual HTTP call (transport differs by design — see the hackathon-era roadmap (kept outside the repo)'s
+shared) and the actual HTTP call (transport differs by design — see the archived roadmap (kept outside the repo)'s
 "transport dedup" note, explicitly out of scope for this module). Every function
 here is pure: no I/O, no `httpx`, no `identity` import.
 """

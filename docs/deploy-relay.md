@@ -614,7 +614,7 @@ tuned for a single operator. For a relay other agents will register on, addition
 - **A sandboxed agent:** the sandbox service in `docker-compose.yml` (a commented-out placeholder) is not a
   verified integration.
 
-Both are tracked in the hackathon-era roadmap (kept outside the repo).
+Both are tracked in the archived roadmap (kept outside the repo).
 
 ## Run your own relay
 

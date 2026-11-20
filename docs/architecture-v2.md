@@ -911,7 +911,7 @@ stay hidden.
 
 ## 9. Migration path and phases
 
-**Before 11-11 (the hackathon, due 2026-11-11 17:00 EST):** **no product code**; the architecture
+**Before 11-11 (the first release):** **no product code**; the architecture
 comes first. Optional pure subtractions, only on the person's yes and if the hand checks leave time:
 
 | | What | Size |

@@ -1,9 +1,9 @@
 # Roadmap: remaining work
 
-Status: released 2026-11-11 as a testnet-only hackathon release; 2.1 follows 2.0.1 (see below). This is the one list of remaining and
+Status: testnet only. 2.0 was released on 2026-11-11 and 2.0.1 has been in the Hermes plugin catalog since 2026-11-13; 2.1 follows (see below). This is the one list of remaining and
 deferred work. Each item was deferred on purpose: it is a larger change, it needs a decision, or it is safer after
 more testing. Design notes, named here by file (such as `multi-hop.md`), are kept outside the repo; security concerns are in
-[SECURITY.md](SECURITY.md) § Open questions. The older hackathon-era roadmap is kept outside the repo; its still-open items are
+[SECURITY.md](SECURITY.md) § Open questions. The older roadmap (archived 2026-10-25) is kept outside the repo; its still-open items are
 carried over at the end of this file.
 
 ## What is released, and what comes next
@@ -462,13 +462,13 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 ## Housekeeping
 - `tsc -b` fails on the build configs' Node module resolution (vite configs). It predates this
   work; `typecheck:src` is the gate.
-- Old profiles `nemotron_strategist` and `escrow_bot` from the hackathon; remove once
+- Old profiles `nemotron_strategist` and `escrow_bot` from early testing; remove once
   confirmed unused. (The old `.env.example` is replaced by `relay.env.example`, relay settings only.)
 
-## Carried over from the hackathon-era roadmap
+## Carried over from the archived roadmap
 
 Still open when the roadmap was archived (2026-10-25); each was re-checked against the code by
-its author at the time. Details in the hackathon-era roadmap, kept outside the repo.
+its author at the time. Details in the archived roadmap, kept outside the repo.
 
 **Identity and names**
 - Foreign keys still reference the handle, not `stable_id`: a rename rewrites every reference

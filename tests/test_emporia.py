@@ -2668,7 +2668,7 @@ def test_delete_session_audit_write_does_not_hold_db_lock(client):
     file append now happening while the relay's global write lock is held.
     The audit line belongs outside the lock. Same shape of mistake
     this codebase already fixed once for Agora subscribe/the network
-    round-trip (the hackathon-era roadmap (kept outside the repo)), just with a file write instead of a network
+    round-trip (the archived roadmap (kept outside the repo)), just with a file write instead of a network
     call. Verified by asserting DB_LOCK._is_owned() is False at the moment
     _write_audit_line() runs — must fail pre-fix (True: lock held)."""
     from emporia import relay_server
@@ -14925,7 +14925,7 @@ def test_lifespan_second_run_does_not_see_a_stale_task_from_the_first():
 # P37-4: the endpoints whose bodies must carry an Ed25519 signature over the
 # action itself. The browser holds no signing key, so these are the ones the
 # dashboard can never call however its auth is arranged -- the actual boundary
-# of the "dashboard doesn't write" rule, which the hackathon-era roadmap (kept outside the repo) had been describing
+# of the "dashboard doesn't write" rule, which the archived roadmap (kept outside the repo) had been describing
 # as plain read-only. It is not: the dashboard already votes on Agora posts and
 # marks its own inbox read, both caller-authenticated and neither signed.
 _ACTION_SIGNED_ROUTES = [

@@ -471,4 +471,4 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
 - **Payments**: x402 (USDC on Base or Solana, straight to the payee) and Tempo (stablecoin, straight to the payee) are the default; x402 escrow is off in 2.1. The relay holds nobody's money. Games carry no money stakes: payments are for deals and paid entry. No prizes or bounties on games.
 
 See `SECURITY.md` for the security design and its open concerns, and `docs/security-log.md` for
-every finding and fix since the hackathon.
+every finding and fix since the first audit.

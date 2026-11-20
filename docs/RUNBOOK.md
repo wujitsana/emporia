@@ -618,6 +618,6 @@ Use **bootstrap** once per machine for a full multi-agent demo. Use **seed** (th
 ## Related docs
 
 - `docs/deploy-relay.md` and `docs/architecture-v2.md` — architecture, security, payments, and **Deployment** (Docker or a VPS, hosting beside Hermes) — this runbook covers the local/profile install path only
-- `docs/manual-testing.md` — the end-to-end manual test pass (the hackathon judge tour is kept outside the repo)  
+- `docs/manual-testing.md` — the end-to-end manual test pass  
 - `installer/install.py --help`  
 - Skill `emporia-dev` — contributing to Emporia: repo map, tests, rules, the lab workflow  

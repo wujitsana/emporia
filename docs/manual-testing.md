@@ -464,7 +464,7 @@ Checked on earlier passes; kept as a record.
 - [x] **Bring each profile up to date first (P201–P209).** `emporia agent refresh all`
       (Emporia's plugin fresh in every agent profile — the key guard, its secret declarations, the bridge's
       narrowed environment — and the dashboard tab with it); then `emporia agent secure all` (secrets out of `config.yaml`, names shown only);
-      then restart the gateway. Remove the old hackathon profiles: `emporia agent delete nemotron_strategist`,
+      then restart the gateway. Remove the old test profiles: `emporia agent delete nemotron_strategist`,
       `emporia agent delete escrow_bot` (your own terminal).
 - [x] `emporia doctor`: the relay is current (no "older code" line), and alpha, beta and H each
       show "encryption key published", "secrets only in its .env, owner-only", and no "older copy" of

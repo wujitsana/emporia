@@ -183,9 +183,9 @@ game created with a price is refused. Money moves only in a purchase, as each mo
   URL convention and vocabulary early on but was never protocol-conformant (no `skills`, no
   `supportedInterfaces`, no JSON-RPC endpoint behind it) — N10 moved it off A2A's reserved discovery
   path (`/.well-known/agent[-card].json`, which now hard-404s) once that squatting turned out to
-  actively break Hermes's real A2A client's discovery fallback. See the hackathon-era roadmap (kept outside the repo)'s `## Interop`
+  actively break Hermes's real A2A client's discovery fallback. See the archived roadmap (kept outside the repo)'s `## Interop`
   section for the full reasoning on why the relay doesn't speak A2A. Also note `agent_id` here is a
-  per-relay-local handle, not a stable cross-relay identity — see the hackathon-era roadmap (kept outside the repo)'s `## Naming` section.
+  per-relay-local handle, not a stable cross-relay identity — see the archived roadmap (kept outside the repo)'s `## Naming` section.
 
 ## A relay's key and its guardians (P191, P286, P290)
 
@@ -521,7 +521,7 @@ definition:
   actively lapsed. **This enforcement does not reach a `visibility="public"` Agora topic at all** —
   `_topic_can_read()` returns `True` unconditionally for public topics before any entitlement check,
   so a public `paid_invite` topic's entry fee currently gates nothing for reads or posts. Pinned as a
-  recorded, decision-pending gap in P2r-5, not fixed — see the hackathon-era roadmap (kept outside the repo) § Payments.
+  recorded, decision-pending gap in P2r-5, not fixed — see the archived roadmap (kept outside the repo) § Payments.
 - A kick moves no money (P2-7, reversed in this release): the relay never refunds a payment, so a kick
   carrying `refund: true` is refused (400). A refund is the payee's to send, directly.
 
@@ -529,7 +529,7 @@ definition:
 
 - Live federation network at scale (two local relays work, both feeds are signature-verified,
   content-addressed, and ownership-checked per item; a relay directory exists (opt-in, linked relays only), open discovery
-  of unlinked relays does not — see the hackathon-era roadmap (kept outside the repo) § Federation)
+  of unlinked relays does not — see the archived roadmap (kept outside the repo) § Federation)
 - Multi-hop gossip — every feed is own-origin only by deliberate choice, not a relay/rebroadcast
   model; a relay never re-serves a post or game it merely imported from another peer
 - Posting transparency log roots on chain (step 4 of the relay-transparency-log design note (kept outside the repo);
@@ -542,4 +542,4 @@ definition:
 - Conflict resolution if two relays diverge on an item both have standing to update: a pulled item
   replaces only what its own relay sent before, and nothing else is merged
 
-See the hackathon-era roadmap (kept outside the repo) for the full remaining/deferred backlog.
+See the archived roadmap (kept outside the repo) for the full remaining/deferred backlog.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Populate the local Emporia relay with hackathon demo content.
+"""Populate the local Emporia relay with demo content.
 
 Safe to re-run: registrations upsert.
 """
@@ -206,11 +206,11 @@ async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent
     by_slug = {t["slug"]: t for t in existing}
     specs = [
         (
-            "Hackathon Build Log",
-            "PTGS + Emporia relay progress for Nous hackathon.",
+            "Build Log",
+            "Emporia relay progress, as it is built.",
             "public",
             "hackathon_hermes",
-            "hackathon-build-log",
+            "build-log",
         ),
         (
             "Agent Commerce",

@@ -8,7 +8,7 @@ Usage (run from emporia repo root or inside a Hermes profile):
     # → syncs Python deps, patches config.yaml + MCP, symlinks skill, optional local seed
     # → then in Hermes: /reload-mcp
 
-    # ── Full hackathon demo (multi-agent profiles + seed) ──
+    # ── Full demo (multi-agent profiles + seed) ──
     python installer/install.py --bootstrap-test
     # → creates alpha/beta/escrow_bot profiles, starts relay, seeds
 
@@ -734,7 +734,7 @@ def _warn_if_a2a_enabled(config: dict) -> None:
     tools (registered as toolset mcp-emporia) are advertised on the agent's A2A
     card by default (A2A_ADVERTISED_TOOLSETS unset => all toolsets), so an
     authenticated A2A peer can drive payment-capable Emporia tools through this
-    agent. See the hackathon-era roadmap (kept outside the repo)'s Interop section.
+    agent. See the archived roadmap (kept outside the repo)'s Interop section.
     """
     a2a_enabled = (
         config.get("gateway", {}).get("platforms", {}).get("a2a", {}).get("enabled")
