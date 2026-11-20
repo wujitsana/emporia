@@ -32,9 +32,9 @@ describe("lore book model", () => {
     expect(tieLine(["a", "b"])).toBe("chosen by the beacon among 2");
     expect(tieLine({ among: ["a", "b", "c"] })).toBe("chosen by the beacon among 3");
     expect(tieLine(true)).toMatch(/beacon/);
-    expect(noCanonReason("none_won")).toMatch(/no passage won/);
+    expect(noCanonReason("none_won")).toMatch(/no passage got/);
     expect(noCanonReason("quorum")).toMatch(/too few/);
-    expect(noCanonReason("no_candidates")).toMatch(/no passage was sealed/);
+    expect(noCanonReason("no_candidates")).toMatch(/nobody wrote a passage/);
   });
   it("splits the apocrypha into counted and set aside", () => {
     const ch = { ...book.chapters[2], apocrypha: [

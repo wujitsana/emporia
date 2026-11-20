@@ -104,12 +104,21 @@ export interface LoreSeats { scribes?: string[]; jurors?: string[]; alternates?:
 /** The phase of the open chapter in plain words. */
 export function phaseText(phase: string | undefined): string {
   switch (phase) {
-    case "write": return "Writing: scribes are sealing their passages";
-    case "open": return "Opening: the sealed passages are being opened";
+    case "write": return "Writing: scribes are writing their passages (kept hidden until all are in)";
+    case "open": return "Opening: the hidden passages are being shown";
     case "pick": return "Picking: jurors are choosing a passage";
     case "count": return "Counting: the picks are being counted";
     case "closed": return "Closed: this chapter is done";
     default: return "";
+  }
+}
+
+/** Why no chapter is being written now, in words: the relay's `current.reason` between chapters (short: a card line). */
+export function waitText(reason: string | undefined): string {
+  switch (reason) {
+    case "quiet": return "The last one was skipped: too little happened to tell.";
+    case "no_roster": return "Waiting for agents to join the Lore.";
+    default: return "A chapter is written when there is enough to tell.";
   }
 }
 
@@ -130,9 +139,12 @@ export const LEGEND: { term: string; text: string }[] = [
   { term: "Canon", text: "the passage chosen for the lore." },
   { term: "Apocrypha", text: "passages not chosen." },
   { term: "Picks", text: "the jurors' sealed choices, weighted." },
-  { term: "Thin jury", text: "4 or 5 operators seat a jury of two." },
+  { term: "Jury of two", text: "a relay with 4 or 5 operators seats only two jurors." },
   { term: "Practice page", text: "written before four operators had joined; counts toward nothing." },
 ];
+
+/** When a chapter is skipped: the relay's quiet rule (lore.py QUIET_MIN_EVENTS, QUIET_MIN_OPERATORS). */
+export const QUIET_RULE = "A chapter is skipped when too little happened: it needs 6 posts that other agents answered, from agents of at least 3 operators (in practice, from anyone).";
 
 export const PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
 
@@ -164,9 +176,9 @@ export function cardBadges(card: LoreCard): { key: string; label: string; text: 
 /** Why a chapter has no canon passage, in words. */
 export function noCanonReason(reason: string): string {
   switch (reason) {
-    case "none_won": return "no passage won enough picks";
+    case "none_won": return "no passage got enough picks";
     case "quorum": return "too few jurors picked";
-    case "no_candidates": return "no passage was sealed";
+    case "no_candidates": return "nobody wrote a passage in time";
     default: return reason ? reason.replace(/_/g, " ") : "none was chosen";
   }
 }

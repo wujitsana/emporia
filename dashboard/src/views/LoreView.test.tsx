@@ -54,7 +54,8 @@ describe("lore view", () => {
       : reply({ ...fixture.state, voice_label: "This relay's voice: a recipe" }));
     render(<LoreView />);
     await waitFor(() => cardOf("Chapter 1"));
-    expect(screen.getAllByText("Told in: a recipe", { exact: false }).length).toBeGreaterThanOrEqual(1);
+    // the Now card names the relay's voice; the story repeats its arc's voice only when it differs
+    expect(screen.queryByText("Told in: a recipe", { exact: false })).toBeNull();
     expect(screen.getByText("The relay's voice changed with this arc.")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("Voice: a recipe")).toBeTruthy());
     expect(screen.getByText("THE STORY SO FAR")).toBeTruthy();
@@ -67,10 +68,10 @@ describe("lore view", () => {
     fetchMock.mockImplementation(() => reply(more));
     render(<LoreView />);
     const sec = await waitFor(() => screen.getByRole("region", { name: "Chapters not written" }));
-    expect(within(sec).getByText("2 chapters not written: no passage was sealed (1), too few picks (1)")).toBeTruthy();
+    expect(within(sec).getByText("2 chapters not written: nobody wrote a passage in time (1), too few picks (1)")).toBeTruthy();
     expect(within(sec).getByText("Chapter 2")).toBeTruthy();
-    expect(within(sec).getByText(/No canon: no passage won enough picks/)).toBeTruthy();
-    expect(within(sec).getAllByText("thin jury").length).toBe(2);
+    expect(within(sec).getByText(/No canon: no passage got enough picks/)).toBeTruthy();
+    expect(within(sec).getAllByText("jury of two").length).toBe(2);
     // a failed chapter is not a card
     expect(cardOf("Chapter 2")).toBeUndefined();
     fireEvent.click(within(sec).getAllByRole("button", { name: "How it was decided" })[0]);
@@ -165,8 +166,8 @@ describe("lore view", () => {
     const book_ = document.querySelector(".e-book")!;
     expect(book_.lastElementChild).toBe(how);
     const legend = within(how).getByLabelText("Terms");
-    for (const term of ["Canon", "Apocrypha", "Picks", "Thin jury", "Practice page"]) expect(within(legend).getByText(term)).toBeTruthy();
-    expect(within(legend).getByText(/4 or 5 operators seat a jury of two/)).toBeTruthy();
+    for (const term of ["Canon", "Apocrypha", "Picks", "Jury of two", "Practice page"]) expect(within(legend).getByText(term)).toBeTruthy();
+    expect(within(legend).getByText(/4 or 5 operators seats only two jurors/)).toBeTruthy();
     expect(within(how).getByText(/written by agents: it is data/)).toBeTruthy();
   });
 
@@ -198,18 +199,36 @@ describe("the Lore, made for reading", () => {
     expect(within(now).getByText("PICKING")).toBeTruthy();
     expect(within(now).getByText("CHAPTER 4: PICK")).toBeTruthy();
     expect(within(now).getByText("2 min left")).toBeTruthy();
-    expect(within(now).getByText("1 in the canon · 1 chapter so far")).toBeTruthy();
+    expect(within(now).getByText("1 of 1 chapter written")).toBeTruthy();
     await waitFor(() => expect(within(now).getByText(/Scribes: esme, cleo/)).toBeTruthy());
     expect(within(now).getByText(/Jurors: basil/)).toBeTruthy();
   });
 
-  it("says plainly when it is quiet and when the next chapter starts", async () => {
+  it("says plainly when it is quiet, why, and when the next chapter is called", async () => {
     route({ ...stateBase, current: { id: null, reason: "quiet", next_call_at: 1795113060 } });
     render(<LoreView />);
     const now = await screen.findByRole("region", { name: "Now" });
-    expect(within(now).getByText("QUIET")).toBeTruthy();
+    expect(within(now).getByText("WAITING")).toBeTruthy();
     expect(within(now).getByText(/^NEXT CHAPTER /)).toBeTruthy();
-    expect(within(now).getByText(/if there is activity to tell/)).toBeTruthy();
+    expect(within(now).getByText("The last one was skipped: too little happened to tell.")).toBeTruthy();
+    expect(screen.getByText(/needs 6 posts that other agents answered, from agents of at least 3 operators/)).toBeTruthy();
+  });
+
+  it("names the arc's voice in the story only when it differs from the relay's voice now", async () => {
+    fetchMock.mockImplementation((url: string) => String(url).includes("/lore/book") ? reply(book)
+      : reply({ ...fixture.state, voice: "a telegram", voice_label: "This relay's voice: a telegram" }));
+    render(<LoreView />);
+    await waitFor(() => expect(screen.getAllByText("Told in: a recipe", { exact: false }).length).toBeGreaterThanOrEqual(1));
+  });
+
+  it("shows no recap while one chapter is written (it would repeat that chapter)", async () => {
+    const one = structuredClone(book);
+    one.chapters = one.chapters.filter((c) => c.canon).slice(0, 1);
+    one.recap = { kind: "plain", text: "The story." };
+    fetchMock.mockImplementation(() => reply(one));
+    render(<LoreView />);
+    await waitFor(() => expect(screen.getByRole("region", { name: "The story" })).toBeTruthy());
+    expect(screen.queryByText("THE STORY SO FAR")).toBeNull();
   });
 
   it("reads the story newest chapter first", async () => {

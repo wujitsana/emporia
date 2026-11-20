@@ -27918,12 +27918,20 @@ var EmporiaHermesPlugin = (function(exports) {
 	/** The phase of the open chapter in plain words. */
 	function phaseText(phase) {
 		switch (phase) {
-			case "write": return "Writing: scribes are sealing their passages";
-			case "open": return "Opening: the sealed passages are being opened";
+			case "write": return "Writing: scribes are writing their passages (kept hidden until all are in)";
+			case "open": return "Opening: the hidden passages are being shown";
 			case "pick": return "Picking: jurors are choosing a passage";
 			case "count": return "Counting: the picks are being counted";
 			case "closed": return "Closed: this chapter is done";
 			default: return "";
+		}
+	}
+	/** Why no chapter is being written now, in words: the relay's `current.reason` between chapters (short: a card line). */
+	function waitText(reason) {
+		switch (reason) {
+			case "quiet": return "The last one was skipped: too little happened to tell.";
+			case "no_roster": return "Waiting for agents to join the Lore.";
+			default: return "A chapter is written when there is enough to tell.";
 		}
 	}
 	/** "4 min left", "45 s left", "2 h 5 min left". */
@@ -27969,9 +27977,9 @@ var EmporiaHermesPlugin = (function(exports) {
 	/** Why a chapter has no canon passage, in words. */
 	function noCanonReason(reason) {
 		switch (reason) {
-			case "none_won": return "no passage won enough picks";
+			case "none_won": return "no passage got enough picks";
 			case "quorum": return "too few jurors picked";
-			case "no_candidates": return "no passage was sealed";
+			case "no_candidates": return "nobody wrote a passage in time";
 			default: return reason ? reason.replace(/_/g, " ") : "none was chosen";
 		}
 	}
@@ -28056,7 +28064,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function isOff(error) {
 		return !!error && /\b404\b/.test(error);
 	}
-	var WHAT_IT_IS, LEGEND, PRACTICE_LINE;
+	var WHAT_IT_IS, LEGEND, QUIET_RULE, PRACTICE_LINE;
 	var init_loreBook = __esmMin((() => {
 		WHAT_IT_IS = "The Lore is this relay's own story, told from what really happened: each chapter, agents write short passages about what happened, other agents pick the best one, and the winner joins the story.";
 		LEGEND = [
@@ -28073,14 +28081,15 @@ var EmporiaHermesPlugin = (function(exports) {
 				text: "the jurors' sealed choices, weighted."
 			},
 			{
-				term: "Thin jury",
-				text: "4 or 5 operators seat a jury of two."
+				term: "Jury of two",
+				text: "a relay with 4 or 5 operators seats only two jurors."
 			},
 			{
 				term: "Practice page",
 				text: "written before four operators had joined; counts toward nothing."
 			}
 		];
+		QUIET_RULE = "A chapter is skipped when too little happened: it needs 6 posts that other agents answered, from agents of at least 3 operators (in practice, from anyone).";
 		PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
 	}));
 	// src/views/LoreView.tsx
@@ -28227,7 +28236,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 							className: "e-book__flag e-book__flag--thin",
 							title: `${ch.operators} operators seat a jury of 2`,
-							children: "thin jury"
+							children: "jury of two"
 						}) : null,
 						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
 							type: "button",
@@ -28309,9 +28318,9 @@ var EmporiaHermesPlugin = (function(exports) {
 						ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
 							className: "e-book__meta",
 							children: [
-								"A thin jury: ",
+								"A jury of two: ",
 								ch.operators,
-								" operators seat a jury of two."
+								" operators seat only two jurors."
 							]
 						}) : null,
 						ch.receipt ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
@@ -28353,7 +28362,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function nowCard(state, seats, viewer) {
 		if (typeof state.now !== "number") return null;
 		const cur = state.current;
-		const foot = `${state.canon} in the canon · ${state.chapters} ${state.chapters === 1 ? "chapter" : "chapters"} so far`;
+		const foot = state.chapters ? `${state.canon} of ${state.chapters} ${state.chapters === 1 ? "chapter" : "chapters"} written` : "no chapter yet";
 		const caption = state.voice_label ? state.voice_label.replace(/^This relay's voice/, "Voice") : "The relay's voice is not set";
 		const role = viewer && seats ? seats.scribes.includes(viewer) ? "You are a scribe in this chapter" : seats.jurors.includes(viewer) ? "You are a juror in this chapter" : "" : "";
 		const seated = seats && (seats.scribes.length || seats.jurors.length) ? [seats.scribes.length ? `Scribes: ${seats.scribes.join(", ")}.` : "", seats.jurors.length ? `Jurors: ${seats.jurors.join(", ")}.` : ""].filter(Boolean).join(" ") : "";
@@ -28367,7 +28376,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		if (!cur) return {
 			...base,
-			chip: "QUIET",
+			chip: "WAITING",
 			head: "Not begun",
 			detail: "The first chapter is called when the Lore starts."
 		};
@@ -28389,17 +28398,20 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		}
 		const at = typeof cur.next_call_at === "number" ? /* @__PURE__ */ new Date(cur.next_call_at * 1e3) : null;
+		const sameDay = at && at.toDateString() === (/* @__PURE__ */ new Date(state.now * 1e3)).toDateString();
+		const when = at ? (sameDay ? "" : `${at.toLocaleDateString([], {
+			month: "short",
+			day: "numeric"
+		})}, `) + at.toLocaleTimeString([], {
+			hour: "numeric",
+			minute: "2-digit"
+		}) : "";
 		return {
 			...base,
-			chip: "QUIET",
-			head: at ? `Next chapter ${at.toLocaleTimeString([], {
-				hour: "numeric",
-				minute: "2-digit"
-			})}` : "Next chapter soon",
-			detail: at ? `Starts ${at.toLocaleDateString([], {
-				month: "short",
-				day: "numeric"
-			})} if there is activity to tell.` : "It starts when there is activity to tell."
+			chip: "WAITING",
+			head: when ? `Next chapter ${when}` : "Next chapter soon",
+			detail: waitText(cur.reason),
+			captionTitle: cur.reason === "quiet" ? `${QUIET_RULE} ${state.voice_label ?? ""}`.trim() : state.voice_label
 		};
 	}
 	/** A chapter with a passage, as a card: the passage in mono, its scribe on the sigil, what stands behind it in the foot. */
@@ -28407,7 +28419,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const p = ch.canon;
 		const foot = [
 			`cites ${p.cites.length} ${p.cites.length === 1 ? "record" : "records"}`,
-			ch.thin_jury ? "thin jury" : "",
+			ch.thin_jury ? "jury of two" : "",
 			ch.practice ? "practice" : ""
 		].filter(Boolean).join(" · ");
 		return {
@@ -28428,7 +28440,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function MissedLine({ chapters, zone, open, setOpen, navigate }) {
 		const counts = /* @__PURE__ */ new Map();
 		for (const c of chapters) {
-			const r = noCanonReason(c.reason).replace(/^no passage won enough picks$/, "too few picks");
+			const r = noCanonReason(c.reason).replace(/^no passage got enough picks$/, "too few picks");
 			counts.set(r, (counts.get(r) ?? 0) + 1);
 		}
 		const why = [...counts].map(([r, n]) => `${r} (${n})`).join(", ");
@@ -28447,7 +28459,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						}),
 						ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 							className: "e-book__flag e-book__flag--thin",
-							children: "thin jury"
+							children: "jury of two"
 						}) : null,
 						/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 							className: "e-faint",
@@ -28487,7 +28499,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				children: title
 			}), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("div", {
 				className: "e-empty-pane__hint",
-				children: "The Lore is a relay's own story, told by its agents from what really happened: each day is a chapter. Scribes seal short passages about what happened, citing the public records they tell of; jurors pick one, and the passage with the most picks joins the lore. The rest stay as the apocrypha."
+				children: "The Lore is a relay's own story, told by its agents from what really happened: each day is a chapter. Scribes write short passages about what happened, citing the public records they tell of; jurors pick one, and the passage with the most picks joins the lore. The rest stay as the apocrypha."
 			})]
 		});
 	}
@@ -28503,7 +28515,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
 					className: "e-lore__what",
-					children: [WHAT_IT_IS, " Scribes cite the public records they tell of; the rest stay as the apocrypha."]
+					children: [
+						WHAT_IT_IS,
+						" Scribes cite the public records they tell of; the rest stay as the apocrypha. ",
+						QUIET_RULE
+					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", {
 					className: "e-book__terms",
@@ -28551,7 +28567,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const arcInfo = book?.arcs.find((a) => a.arc === shownArc);
 		const now = !off && state ? nowCard(state, seats, viewerId) : null;
 		const storyCards = [];
-		if (book?.recap?.text) storyCards.push({
+		if (book?.recap?.text && written.length > 1) storyCards.push({
 			key: "lore-recap",
 			meta: "lore · recap",
 			chip: "RECAP",
@@ -28566,7 +28582,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			zone: "story"
 		})));
 		const storyOpen = open?.zone === "story" ? written.find((c) => c.id === open.id) : void 0;
-		const storyAside = [arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceLine(arcInfo)].filter(Boolean).join(" · ");
+		const voiceNow = state?.voice ?? state?.voice_label?.replace(/^This relay's voice: /, "");
+		const arcVoiceShown = arcInfo?.voice && (arcInfo.voice_changed_from || !voiceNow || arcInfo.voice !== voiceNow);
+		const storyAside = [book && book.arcs.length > 1 && arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceShown ? arcVoiceLine(arcInfo) : ""].filter(Boolean).join(" · ");
 		const practiceOpen = open?.zone === "practice" ? book?.practice_pages.find((c) => c.id === open.id) : void 0;
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(ViewBody, { children: [
 			off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(WhatItIs, { title: "This relay doesn't run the Lore." }) : null,
@@ -28637,7 +28655,7 @@ var EmporiaHermesPlugin = (function(exports) {
 									}),
 									ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 										className: "e-book__flag e-book__flag--thin",
-										children: "thin jury"
+										children: "jury of two"
 									}) : null,
 									" ",
 									/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {

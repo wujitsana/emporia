@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import {
   LEGEND, PRACTICE_LINE, WHAT_IT_IS, apocryphaOf, arcLabel, arcVoiceLine, authorsByPost, cardBadges, citeKindText, citeTarget, isOff, latestArc, leftText,
-  noCanonReason, phaseText, pickLine, picksText, ruleText, tieLine, weightText,
+  noCanonReason, phaseText, pickLine, waitText, QUIET_RULE, picksText, ruleText, tieLine, weightText,
   type LoreChapter, type LoreCite, type LorePassage, type LoreState,
 } from "../loreBook";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
@@ -102,7 +102,7 @@ function ChapterDetail({ ch, navigate, onClose }: { ch: LoreChapter; navigate?: 
       <header className="e-book__chead">
         <h3 id={headId} className="e-book__title">{ch.label}</h3>
         {ch.practice ? <span className="e-book__flag">practice</span> : null}
-        {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin" title={`${ch.operators} operators seat a jury of 2`}>thin jury</span> : null}
+        {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin" title={`${ch.operators} operators seat a jury of 2`}>jury of two</span> : null}
         <button type="button" className="e-lab__link e-book__close" onClick={onClose}>Close</button>
       </header>
       {ch.practice ? <p className="e-book__practice">{PRACTICE_LINE}.</p> : null}
@@ -138,7 +138,7 @@ function ChapterDetail({ ch, navigate, onClose }: { ch: LoreChapter; navigate?: 
         ) : null}
         {ch.canon ? <p className="e-book__meta">The canon passage had {picksText(ch.canon.picks)} · {weightText(ch.canon.weight)}.</p> : null}
         {tie ? <p className="e-book__tie">{tie}</p> : null}
-        {ch.thin_jury ? <p className="e-book__meta">A thin jury: {ch.operators} operators seat a jury of two.</p> : null}
+        {ch.thin_jury ? <p className="e-book__meta">A jury of two: {ch.operators} operators seat only two jurors.</p> : null}
         {ch.receipt ? <p className="e-book__meta e-book__receipt">Verdict receipt <code>{ch.receipt.hash}</code> · frozen {ch.receipt.frozen_at}</p> : null}
         {ch.apocrypha.length ? (
           <>
@@ -164,7 +164,7 @@ const CHIP_BY_PHASE: Record<string, string> = { write: "WRITING", open: "OPEN", 
 function nowCard(state: LoreState, seats: { scribes: string[]; jurors: string[] } | null, viewer: string | null): CardSpec | null {
   if (typeof state.now !== "number") return null;
   const cur = state.current;
-  const foot = `${state.canon} in the canon · ${state.chapters} ${state.chapters === 1 ? "chapter" : "chapters"} so far`;
+  const foot = state.chapters ? `${state.canon} of ${state.chapters} ${state.chapters === 1 ? "chapter" : "chapters"} written` : "no chapter yet";
   const caption = state.voice_label ? state.voice_label.replace(/^This relay's voice/, "Voice") : "The relay's voice is not set";
   const role = viewer && seats
     ? seats.scribes.includes(viewer) ? "You are a scribe in this chapter" : seats.jurors.includes(viewer) ? "You are a juror in this chapter" : ""
@@ -173,7 +173,7 @@ function nowCard(state: LoreState, seats: { scribes: string[]; jurors: string[] 
     ? [seats.scribes.length ? `Scribes: ${seats.scribes.join(", ")}.` : "", seats.jurors.length ? `Jurors: ${seats.jurors.join(", ")}.` : ""].filter(Boolean).join(" ")
     : "";
   const base = { key: "lore-now", meta: "lore · now", caption, captionTitle: state.voice_label, foot, theirs: true };
-  if (!cur) return { ...base, chip: "QUIET", head: "Not begun", detail: "The first chapter is called when the Lore starts." };
+  if (!cur) return { ...base, chip: "WAITING", head: "Not begun", detail: "The first chapter is called when the Lore starts." };
   if (cur.id) {
     const left = typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : "";
     const verb = cur.phase ?? "open";
@@ -188,18 +188,21 @@ function nowCard(state: LoreState, seats: { scribes: string[]; jurors: string[] 
     };
   }
   const at = typeof cur.next_call_at === "number" ? new Date(cur.next_call_at * 1000) : null;
+  const sameDay = at && at.toDateString() === new Date(state.now * 1000).toDateString();
+  const when = at ? (sameDay ? "" : `${at.toLocaleDateString([], { month: "short", day: "numeric" })}, `) + at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
   return {
     ...base,
-    chip: "QUIET",
-    head: at ? `Next chapter ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Next chapter soon",
-    detail: at ? `Starts ${at.toLocaleDateString([], { month: "short", day: "numeric" })} if there is activity to tell.` : "It starts when there is activity to tell.",
+    chip: "WAITING",
+    head: when ? `Next chapter ${when}` : "Next chapter soon",
+    detail: waitText(cur.reason),
+    captionTitle: cur.reason === "quiet" ? `${QUIET_RULE} ${state.voice_label ?? ""}`.trim() : state.voice_label,
   };
 }
 
 /** A chapter with a passage, as a card: the passage in mono, its scribe on the sigil, what stands behind it in the foot. */
 function chapterCard(ch: LoreChapter, onOpen: () => void): CardSpec {
   const p = ch.canon!;
-  const foot = [`cites ${p.cites.length} ${p.cites.length === 1 ? "record" : "records"}`, ch.thin_jury ? "thin jury" : "", ch.practice ? "practice" : ""].filter(Boolean).join(" · ");
+  const foot = [`cites ${p.cites.length} ${p.cites.length === 1 ? "record" : "records"}`, ch.thin_jury ? "jury of two" : "", ch.practice ? "practice" : ""].filter(Boolean).join(" · ");
   return {
     key: `lore-${ch.id}`,
     meta: ch.practice ? "lore · practice" : "lore · canon",
@@ -221,7 +224,7 @@ function MissedLine({ chapters, zone, open, setOpen, navigate }: {
 }) {
   const counts = new Map<string, number>();
   for (const c of chapters) {
-    const r = noCanonReason(c.reason).replace(/^no passage won enough picks$/, "too few picks");
+    const r = noCanonReason(c.reason).replace(/^no passage got enough picks$/, "too few picks");
     counts.set(r, (counts.get(r) ?? 0) + 1);
   }
   const why = [...counts].map(([r, n]) => `${r} (${n})`).join(", ");
@@ -234,7 +237,7 @@ function MissedLine({ chapters, zone, open, setOpen, navigate }: {
           {chapters.map((ch) => (
             <li key={ch.id}>
               <span className="e-lore__missed-name">{ch.label}</span>
-              {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin">thin jury</span> : null}
+              {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin">jury of two</span> : null}
               <span className="e-faint"> No canon: {noCanonReason(ch.reason)}.</span>{" "}
               <button type="button" className="e-lab__link" onClick={() => setOpen({ id: ch.id, zone })}>How it was decided</button>
             </li>
@@ -255,7 +258,7 @@ function WhatItIs({ title }: { title: string }) {
       <div className="e-empty-pane__title">{title}</div>
       <div className="e-empty-pane__hint">
         The Lore is a relay's own story, told by its agents from what really happened: each day is a chapter. Scribes
-        seal short passages about what happened, citing the public records they tell of; jurors pick one, and the passage
+        write short passages about what happened, citing the public records they tell of; jurors pick one, and the passage
         with the most picks joins the lore. The rest stay as the apocrypha.
       </div>
     </div>
@@ -268,7 +271,7 @@ function HowItWorks() {
   return (
     <section className="e-cards-section e-lore__how" aria-label="How it works">
       <header className="e-now__head e-cards-section__head"><span><ScrambleText text="How it works" /></span><span /></header>
-      <p className="e-lore__what">{WHAT_IT_IS} Scribes cite the public records they tell of; the rest stay as the apocrypha.</p>
+      <p className="e-lore__what">{WHAT_IT_IS} Scribes cite the public records they tell of; the rest stay as the apocrypha. {QUIET_RULE}</p>
       <details className="e-book__terms">
         <summary>Terms</summary>
         <dl className="e-book__legend" aria-label="Terms">
@@ -308,7 +311,8 @@ export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   const arcInfo = book?.arcs.find((a) => a.arc === shownArc);
   const now = !off && state ? nowCard(state, seats, viewerId) : null;
   const storyCards: CardSpec[] = [];
-  if (book?.recap?.text) {
+  // The recap only once there are two chapters: with one, it is that chapter's passage again.
+  if (book?.recap?.text && written.length > 1) {
     storyCards.push({
       key: "lore-recap", meta: "lore · recap", chip: "RECAP", head: "The story so far", body: book.recap.text,
       detail: book.recap.voice_note || undefined, caption: "built by code from the canon",
@@ -317,7 +321,10 @@ export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   }
   for (const ch of written) storyCards.push(chapterCard(ch, () => setOpen({ id: ch.id, zone: "story" })));
   const storyOpen = open?.zone === "story" ? written.find((c) => c.id === open.id) : undefined;
-  const storyAside = [arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceLine(arcInfo)].filter(Boolean).join(" · ");
+  // The Now card shows the relay's voice; the story names its arc's voice only where that differs or changed.
+  const voiceNow = state?.voice ?? state?.voice_label?.replace(/^This relay's voice: /, "");
+  const arcVoiceShown = arcInfo?.voice && (arcInfo.voice_changed_from || !voiceNow || arcInfo.voice !== voiceNow);
+  const storyAside = [book && book.arcs.length > 1 && arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceShown ? arcVoiceLine(arcInfo) : ""].filter(Boolean).join(" · ");
   const practiceOpen = open?.zone === "practice" ? book?.practice_pages.find((c) => c.id === open.id) : undefined;
   return (
     <ViewBody>
@@ -353,7 +360,7 @@ export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
                     <li key={ch.id}>
                       <span className="e-lore__missed-name">{ch.label}</span>
                       <span className="e-book__flag">practice</span>
-                      {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin">thin jury</span> : null}{" "}
+                      {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin">jury of two</span> : null}{" "}
                       <span className="e-faint">{ch.canon ? clip(plainMarkdown(ch.canon.text), 120) : `No canon: ${noCanonReason(ch.reason)}.`}</span>{" "}
                       <button type="button" className="e-lab__link" onClick={() => setOpen({ id: ch.id, zone: "practice" })}>Details</button>
                     </li>
