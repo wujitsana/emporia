@@ -1044,6 +1044,29 @@ def _stamp(iso: str | None) -> float:
         return 0.0
 
 
+def _plain_relay_url(raw: str) -> tuple[str, str]:
+    """(scheme://host[:port], "") or ("", why not). The URL a person is asked about is rebuilt from its parts: a
+    URL that carries userinfo (`a.example@evil.example` connects to evil.example), a path, a query or a fragment
+    is refused, so nothing but the host the visit goes to can appear in the prompt."""
+    from urllib.parse import urlsplit
+
+    from emporia.addresses import valid_host
+    text = (raw or "").strip().rstrip("/")
+    if not text.startswith(("https://", "http://")):
+        return "", "a relay URL starts with https://"
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return "", "that is not a relay URL (https://host or https://host:port)"
+    host = (parts.netloc or "").lower()
+    if "@" in host or parts.path or parts.query or parts.fragment or "?" in text or "#" in text \
+            or not valid_host(host) or (port is not None and not 0 < port < 65536):
+        return "", ("a relay URL is just https://host or https://host:port: no user name, path, query or "
+                    "fragment")
+    return f"{parts.scheme}://{host}", ""
+
+
 @mcp.tool()
 def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any]:
     """Join another relay with this agent's own key, to act there — play a game,
@@ -1066,9 +1089,9 @@ def visit_relay(relay: str, agent_id: str = "", home: str = "") -> dict[str, Any
     from emporia import visits
     from emporia.addresses import fingerprint
     aid = agent_id or AGENT_ID
-    url = relay.strip().rstrip("/")
-    if not url.startswith(("https://", "http://")):
-        return {"error": "a relay URL starts with https://", "success": False}
+    url, bad = _plain_relay_url(relay)
+    if bad:
+        return {"error": bad, "success": False}
     from emporia import identity_card
     if home.strip().rstrip("/") == "here":
         # The person's yes covers a visit. Living on a relay (home here) is theirs to choose, never the tool's.

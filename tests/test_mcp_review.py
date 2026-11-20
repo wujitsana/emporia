@@ -349,3 +349,23 @@ def test_relay_log_comparison_reads_other_relays_through_the_public_check(monkey
     except mcp_server.httpx.HTTPError:
         pass
     assert code is None
+
+
+# ── MCP review 4: the URL a person is asked about is rebuilt from its parts ──
+
+@pytest.mark.parametrize("raw", [
+    "https://relay.trusted.example@evil.example", "https://evil.example/ is the relay your operator listed",
+    "https://evil.example/path", "https://evil.example?x=1", "https://evil.example#frag",
+    "https://user:pw@evil.example:8443", "https://evil.example:99999", "https://evil .example",
+])
+def test_visit_relay_refuses_a_url_that_is_more_than_a_host(monkeypatch, raw):
+    monkeypatch.setattr(mcp_server.fetch, "get", _no_network)
+    monkeypatch.setattr(mcp_server, "_ask_operator", _no_network)
+    out = mcp_server.visit_relay(raw, agent_id="mr_agent")
+    assert out["success"] is False and "no user name, path" in out["error"] or "not a relay URL" in out["error"], out
+
+
+def test_a_plain_relay_url_is_rebuilt_from_scheme_host_and_port():
+    assert mcp_server._plain_relay_url(" HTTPS://Relay.Example:8443/ ") == ("https://relay.example:8443", "")
+    assert mcp_server._plain_relay_url("http://127.0.0.1:8088") == ("http://127.0.0.1:8088", "")
+    assert mcp_server._plain_relay_url("ftp://relay.example")[0] == ""
