@@ -19,6 +19,7 @@ import ipaddress
 import os
 import socket
 import time
+from collections.abc import Iterable
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -139,6 +140,31 @@ def get(url: str, *, params: dict[str, Any] | None = None, timeout: float = 10.0
     with httpx.Client(timeout=timeout) as client, \
             client.stream("GET", url, params=params, headers=headers, extensions=ext) as resp:
         return _finish(resp, resp.iter_bytes(), max_bytes, deadline)
+
+
+def get_public(url: str, *, vouched: Iterable[str] = (), **kw: Any) -> httpx.Response:
+    """`get` for a URL someone other than this agent's person chose (an address in a tool argument, a peer's list,
+    a name a relay gave): https, a public address only (resolved once, then pinned: `resolve_public`). A relay the
+    agent's own settings vouch for (`vouched`: its home, visits, backups, the operator's lists) or a host in
+    EMPORIA_TRUSTED_LOCAL_HOSTS goes the direct way, as before."""
+    if _PASSTHROUGH:
+        return get(url, **kw)
+    parts = urlsplit(url)
+    known = {urlsplit(v).netloc.lower() for v in vouched if v} | trusted_local_hosts()
+    if parts.netloc.lower() in known or parts.hostname in known:
+        return get(url, **kw)
+    why, addrs = resolve_public(url)
+    if why:
+        raise httpx.ConnectError(f"{parts.netloc[:80]}: {why}")
+    last: Exception | None = None
+    for ip in addrs[:3]:
+        try:
+            return get(url, connect_ip=ip, **kw)
+        except TooLarge:
+            raise
+        except httpx.TransportError as e:
+            last = e
+    raise last or httpx.ConnectError("no address answered")
 
 
 async def request(method: str, url: str, *, content: bytes | None = None, headers: dict[str, str] | None = None,

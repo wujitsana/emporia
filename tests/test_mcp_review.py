@@ -286,3 +286,66 @@ def test_register_x402_wallet_has_no_address_argument_and_signs_the_own_wallet(m
     assert signed and signed[0][3] == "0xOWN"
     with pytest.raises(TypeError):
         mcp_server.register_x402_wallet(address="0xEVIL", agent_id="mr_agent")
+
+
+# ── MCP review 2/5: a relay named by a tool argument is read at a public address only ──
+
+@pytest.mark.parametrize("agent", [
+    "x@169.254.169.254:80/latest/meta-data/iam/security-credentials/ROLE?a=",
+    "x@evil.example/path", "x@evil.example?q=1", "x@u:p@evil.example", "x@evil.example#f", "x@evil .example",
+])
+def test_agent_card_refuses_an_address_whose_host_is_more_than_a_host(monkeypatch, agent):
+    monkeypatch.setattr(mcp_server.fetch, "get", _no_network)
+    monkeypatch.setattr(mcp_server.fetch, "get_public", _no_network)
+    for call in (lambda: mcp_server.agent_card(agent), lambda: mcp_server.agent_card(agent, passport=True)):
+        out = call()
+        assert out["success"] is False and "host" in out["error"], out
+
+
+def _strict(monkeypatch, home="http://127.0.0.1:8088"):
+    monkeypatch.setattr(mcp_server.fetch, "_PASSTHROUGH", False)
+    monkeypatch.setattr(mcp_server, "RELAY_URL", home)
+    monkeypatch.setattr(mcp_server, "_visits", lambda: [])
+    monkeypatch.setattr(mcp_server, "_backups", lambda: [])
+    monkeypatch.delenv("EMPORIA_VISIT_RELAYS", raising=False)
+    monkeypatch.delenv("EMPORIA_TRUSTED_LOCAL_HOSTS", raising=False)
+
+
+@pytest.mark.parametrize("url", ["http://169.254.169.254/latest", "https://127.0.0.1:9000/x", "https://10.0.0.5/x",
+                                 "http://evil.example/x"])
+def test_a_relay_that_is_not_vouched_for_is_not_read_at_a_private_or_plain_address(monkeypatch, url):
+    _strict(monkeypatch)
+    monkeypatch.setattr(mcp_server.fetch, "get", _no_network)
+    with pytest.raises(mcp_server.httpx.HTTPError):
+        mcp_server._relay_get(url)
+
+
+def test_the_home_relay_and_a_trusted_local_host_are_read_directly(monkeypatch):
+    _strict(monkeypatch)
+    seen = []
+    monkeypatch.setattr(mcp_server.fetch, "get", lambda url, **k: seen.append((url, k)) or "ok")
+    assert mcp_server._relay_get("http://127.0.0.1:8088/health", timeout=5) == "ok"
+    monkeypatch.setenv("EMPORIA_TRUSTED_LOCAL_HOSTS", "10.0.0.7")
+    assert mcp_server._relay_get("http://10.0.0.7:8088/health") == "ok"
+    assert all("connect_ip" not in k for _u, k in seen) and len(seen) == 2
+
+
+def test_a_foreign_relay_is_read_at_the_address_checked(monkeypatch):
+    _strict(monkeypatch)
+    monkeypatch.setattr(mcp_server.fetch, "resolve_public", lambda url, **k: ("", ["93.184.216.34"]))
+    seen = []
+    monkeypatch.setattr(mcp_server.fetch, "get", lambda url, **k: seen.append(k) or "ok")
+    assert mcp_server._relay_get("https://relay.example/health", timeout=5) == "ok"
+    assert seen[0]["connect_ip"] == "93.184.216.34"
+
+
+def test_relay_log_comparison_reads_other_relays_through_the_public_check(monkeypatch):
+    _strict(monkeypatch)
+    monkeypatch.setattr(mcp_server.fetch, "get", _no_network)
+    from emporia import logcheck
+    code = None
+    try:
+        code, _ = logcheck.fetch_getter("http://169.254.169.254", getter=mcp_server._relay_get)("/log/seen", {})
+    except mcp_server.httpx.HTTPError:
+        pass
+    assert code is None

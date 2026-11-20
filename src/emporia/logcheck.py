@@ -405,12 +405,14 @@ def peer_problems(data: dict[str, Any] | None = None) -> list[str]:
     return out
 
 
-def fetch_getter(base: str, timeout: float = 15.0) -> Get:
-    """A `Get` over HTTP, for a client (emporia.fetch caps what a relay may send)."""
+def fetch_getter(base: str, timeout: float = 15.0, getter: Callable[..., Any] | None = None) -> Get:
+    """A `Get` over HTTP, for a client (emporia.fetch caps what a relay may send). `getter` replaces `fetch.get`
+    (the MCP tools pass one that reads a relay they were not configured with at a public address only)."""
     from emporia import fetch
+    getter = getter or fetch.get
 
     def get(path: str, params: dict) -> tuple[int, Any]:
-        r = fetch.get(f"{base}{path}", params=params or None, timeout=timeout)
+        r = getter(f"{base}{path}", params=params or None, timeout=timeout)
         try:
             return r.status_code, r.json()
         except ValueError:

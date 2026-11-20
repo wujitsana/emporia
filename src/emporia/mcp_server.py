@@ -640,6 +640,18 @@ def _visits() -> list[str]:
     return visiting()
 
 
+def _vouched_relays() -> list[str]:
+    """Relays this agent's own settings name: home, visits, backups, the operator's visit list. Any other relay
+    URL came from a tool argument or a stranger's list and is read only at a public address (`fetch.get_public`)."""
+    from emporia import visits
+    return [RELAY_URL, *_visits(), *_backups(), *visits.allowed()]
+
+
+def _relay_get(url: str, **kw: Any) -> Any:
+    """`fetch.get` for any relay URL: a vouched relay directly, any other only at a public https address."""
+    return fetch.get_public(url, vouched=_vouched_relays(), **kw)
+
+
 def _fit_tools_to_relays(ask_relays: bool = True) -> set[str]:
     """Show only the tools this agent has: those of its enabled features (`EMPORIA_FEATURES`, see
     `emporia.features`) that a relay it uses can serve (P291). Each relay says what it runs beyond its
@@ -838,7 +850,7 @@ def _trusted_relay_keys(relay: str, current: str | None,
 
     def _history() -> list[dict[str, str]]:
         try:
-            return fetch.get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
+            return _relay_get(f"{relay}/health", timeout=10).json().get("relay_key_history") or []
         except Exception:  # noqa: BLE001
             return []
     return trusted_relay_keys(relay, current, history, _history)
@@ -854,7 +866,7 @@ def _linked_relays() -> list[str]:
 def _read_feed(relay: str, path: str, key: str) -> tuple[list[dict], str]:
     """A relay's signed public feed, checked against its key as first seen. ("" or why not.)"""
     from emporia.identity import federation_signable_bytes, verify_raw
-    data = fetch.get(f"{relay}{path}", timeout=10).json()
+    data = _relay_get(f"{relay}{path}", timeout=10).json()
     items = data.get(key) or []
     pinned, changed = _pin_relay_key_for(relay, data.get("origin_public_key_hex"))
     if changed:
@@ -911,7 +923,7 @@ def scan_relays(
             skipped[relay] = "on this agent's deny list"
             continue
         try:
-            h = fetch.get(f"{relay}/health", timeout=5).json()
+            h = _relay_get(f"{relay}/health", timeout=5).json()
         except Exception as e:  # noqa: BLE001
             skipped[relay] = f"not answering ({type(e).__name__})"
             continue
@@ -994,7 +1006,7 @@ def _read_directory(relay: str) -> list[dict[str, Any]]:
     is `{"relay": <result>, "topics": [<result>, ...]}`; claims are the relay's own, marked as what it says."""
     from emporia.addresses import host_of
     from emporia.identity import verify_relay_card
-    r = fetch.get(f"{relay}/directory/v1/relays", timeout=10)
+    r = _relay_get(f"{relay}/directory/v1/relays", timeout=10)
     if r.status_code != 200:
         return []
     cards, why = _read_feed(relay, "/directory/v1/relays", "relays")
@@ -1170,9 +1182,13 @@ def agent_card(agent: str, passport: bool = False) -> dict[str, Any]:
     from emporia.addresses import base_url, fingerprint, is_address, split_address
     from emporia.identity import federation_signable_bytes, verify_raw
     agent_id, host = split_address(agent) if is_address(agent) else (agent, "")
-    relay = base_url(host) if host else RELAY_URL
     try:
-        r = fetch.get(f"{relay}/agents/{_seg(agent_id)}/card", timeout=10)
+        relay = base_url(host) if host else RELAY_URL
+    except ValueError:
+        return {"error": "an address is name@host, the host a bare name with an optional port: no path, query or "
+                         "userinfo", "success": False}
+    try:
+        r = _relay_get(f"{relay}/agents/{_seg(agent_id)}/card", timeout=10)
     except Exception as e:  # noqa: BLE001 — an unreachable relay falls through to the backups and visits
         # P190: its relay is gone or down — ask the backups and visits its own
         # signed list named, the last time this agent looked it up.
@@ -1271,7 +1287,7 @@ def _passport_of(relay: str, agent_id: str) -> dict[str, Any]:
     """The passport card a relay serves for an agent, with each whole statement's signature checked here."""
     from emporia import passport
     try:
-        r = fetch.get(f"{relay}/agents/{_seg(agent_id)}/passport", timeout=10)
+        r = _relay_get(f"{relay}/agents/{_seg(agent_id)}/passport", timeout=10)
         if r.status_code != 200:
             return {"error": f"{relay} serves no passport for {agent_id} ({r.status_code})"}
         card = r.json()
@@ -1352,7 +1368,7 @@ def _card_from_elsewhere(agent: str) -> dict[str, Any] | None:
     agent_id, _ = split_address(agent)
     for relay in [*(listed.get("backups") or []), *(listed.get("visits") or [])]:
         try:
-            card = fetch.get(f"{relay}/agents/{_seg(agent_id)}/card", timeout=10).json()["card"]
+            card = _relay_get(f"{relay}/agents/{_seg(agent_id)}/card", timeout=10).json()["card"]
         except Exception:  # noqa: BLE001
             continue
         if card.get("public_key_hex") == known.get("public_key_hex") and _relay_list_ok(card) \
@@ -5515,7 +5531,10 @@ def _counterparty_record(agent_id: str) -> dict[str, Any]:
     from emporia.addresses import base_url, is_address, split_address
     from emporia.identity import federation_signable_bytes, verify_raw
     name, host = split_address(agent_id) if is_address(agent_id) else (agent_id, "")
-    relay = base_url(host) if host else _base()
+    try:
+        relay = base_url(host) if host else _base()
+    except ValueError:
+        return {"error": "an address is name@host, the host a bare name with an optional port", "success": False}
     try:
         r = _bearer_request("get", f"{relay}/agents/{_seg(name)}/record", agent_id=AGENT_ID, timeout=10)
         body = r.json()
@@ -5975,7 +5994,9 @@ def check_relay_log(compare_with: str = "") -> dict[str, Any]:
     operator's choice, not a failure."""
     from emporia import logcheck
     others = [u.strip().rstrip("/") for u in compare_with.split(",") if u.strip()] or None
-    return logcheck.verify_relay(_base(), compare_with=others)   # the operator's visit rules apply
+    # the operator's visit rules apply; a relay named here or by the relay is read at a public address only
+    return logcheck.verify_relay(_base(), compare_with=others,
+                                 get_for=lambda base: logcheck.fetch_getter(base, getter=_relay_get))
 
 
 

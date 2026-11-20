@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import re
 from urllib.parse import urlparse
 
 
@@ -53,8 +54,21 @@ def split_address(name: str) -> tuple[str, str]:
     return agent_id, host.lower()
 
 
+_HOST = re.compile(r"(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?(?:\.[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?)*"
+                   r"|\[[0-9a-f:.]+\])(?::(?P<port>[0-9]{1,5}))?")
+
+
+def valid_host(host: str) -> bool:
+    """A bare host name (or IP literal) with an optional numeric port: no path, query, userinfo, fragment or space."""
+    m = _HOST.fullmatch(host or "")
+    return bool(m) and (m.group("port") is None or int(m.group("port")) <= 65535)
+
+
 def base_url(host: str) -> str:
-    """The relay at `host`: https, except on this machine or a private network."""
+    """The relay at `host`: https, except on this machine or a private network. A host that is not a bare
+    `name[:port]` (a path, a query, userinfo) is refused with ValueError: it came from text someone else wrote."""
+    if not valid_host(host):
+        raise ValueError(f"not a host name: {host[:60]!r}")
     name = host.rsplit(":", 1)[0].strip("[]")
     try:
         local = ipaddress.ip_address(name).is_private or ipaddress.ip_address(name).is_loopback
