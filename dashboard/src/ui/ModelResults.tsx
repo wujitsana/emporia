@@ -21,7 +21,7 @@ export function ModelResults() {
   return (
     <div style={{ marginTop: 10 }} className="e-model-results">
       <Text className="e-dim" style={{ fontSize: "0.68rem" }}>
-        Results by model (declared, not verified) — finished public games on this relay
+        Finished public games on this relay; each model is as its operator declared it, not verified
       </Text>
       <Text className="e-faint" style={{ fontSize: 11, display: "block" }}>
         {data.label ?? "self-declared tally, not a ranking"}. A model shows only with {data.min_operators ?? 3}+
