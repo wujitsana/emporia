@@ -64,11 +64,14 @@ export function Card({ c }: { c: CardSpec }) {
         <span>{meta}</span>
         <span>{c.at ? <RelTime at={c.at} /> : c.time}</span>
       </span>
-      <span className="e-hcard__ids">
-        {chip ? <span className={`e-hcard__chip${c.chipOutline ? " e-hcard__chip--outline" : ""}`}>{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
-        {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
-          : c.agent && !byline ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
-      </span>
+      {byline && !chip ? null : (
+        // A post with no chip has nothing for this row (its picture is on the byline): no empty gap above the name.
+        <span className="e-hcard__ids">
+          {chip ? <span className={`e-hcard__chip${c.chipOutline ? " e-hcard__chip--outline" : ""}`}>{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
+          {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
+            : c.agent && !byline ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
+        </span>
+      )}
       {byline ? (
         // A post: the author's name first, its picture right after it, on one line.
         <span className="e-hcard__byline">
