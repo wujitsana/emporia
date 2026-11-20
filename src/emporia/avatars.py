@@ -16,7 +16,7 @@ Integer math and literal tables only; avatars.ts produces the same bytes (see te
 # avatars.test.ts holds these rows to the theme code, so they cannot drift.
 #        tint       ink        paper      deep       bright    light tint?
 TINT = [
-    ["#2ae13f", "#001b00", "#ecfaeb", "#006c00", "#2ae13f", 1],  # green
+    ["#2ae13f", "#001b00", "#ebfaea", "#006c00", "#2ae13f", 1],  # green
     ["#0047ff", "#051232", "#ecf6ff", "#005e8b", "#69cdff", 0],  # blue
     ["#b00331", "#250a0c", "#fff0f0", "#7d0022", "#ffbeff", 0],  # crimson
     ["#d57c22", "#201004", "#fdf3ec", "#5f3a22", "#ffad33", 1],  # burnt orange

@@ -1,5 +1,5 @@
 {
-  "note": "sha256 of the UTF-8 SVG string of the token picture (the only picture); regenerated for the unified palette with the final deep companions (crimson #7d0022, orange #5f3a22, purple #431655, 11-19) and green as the video shows it, #2ae13f (11-20)",
+  "note": "sha256 of the UTF-8 SVG string of the token picture (the only picture); regenerated for the unified palette with the final deep companions (crimson #7d0022, orange #5f3a22, purple #431655, 11-19) and green as the video shows it, #2ae13f, on the light page it had before, #ebfaea (11-20)",
   "vectors": [
     {
       "id": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
@@ -11,7 +11,7 @@
     },
     {
       "id": "4841312988738f638c9869f53c07d9291e1de6d0bef0af17b25c3d1c3fc10354",
-      "token": "cdc4d47d6c40c7fa5e72e59c23095f0ee1f575e687a5833a86e8c83dfd7886df"
+      "token": "4649578cf84dd1634c26232249d0d08e256957eb8be0120c519d40075b7975f2"
     },
     {
       "id": "a56f3dbc3053cc78282ebb4360025187945043453f94099157496b76530a404d",
@@ -59,7 +59,7 @@
     },
     {
       "id": "8aea481f18046c8f4f98ae3b37bc1e228f2330fa939f8c9a13822d955a81f762",
-      "token": "50f10b4a00a6ba0d4871857b343fed75b38c5b2d71c3b522717dd5982b908571"
+      "token": "35ffceec707c0e39f0d0008e0cf1d08d3b173c4e0e4c3153c78aaa57a48279ac"
     },
     {
       "id": "bf987b645f13a8d622e05b518369eefde4b5fd9edeb78f6a9ba89aeb8a8387a4",
@@ -67,7 +67,7 @@
     },
     {
       "id": "5aaa44140a211bcec5d7c4b1835e69d0fe495ceda099d595f3f9cf6abdb8794e",
-      "token": "373d13a0285c39edfcdd1b6387776b71f7887bf229a62d91ad1badb90e5581cd"
+      "token": "010a4b3e46ab396023159fa4690ab507385bd19cf8fb6a185a871b73cabfd347"
     },
     {
       "id": "5c831f5de44bd3c48d453662d46d38b6e2d9e7e28a1a10999964ad778fa7e46c",
@@ -123,7 +123,7 @@
     },
     {
       "id": "e4423161eb67ed153df1466e187bd7fdbebad784fafb838604e8ea9a397f5903",
-      "token": "ae2902dbffeb5a94b87f4d511c1e256a7397a1597b1597b2f9d5b5d4c9517e97"
+      "token": "00768cefb73b75cd18f6c44af30e8e36e34c9f8e96545579f8cd8f867903e94e"
     },
     {
       "id": "f2f9d082a3a562c621dc9ee2bad32d83702060472536215781742bcb800a2d22",
@@ -135,7 +135,7 @@
     },
     {
       "id": "f629cadf02af389bb0566580f05b80ba8c270d316b2d08feaed3544147a7d0f8",
-      "token": "4970e469d005fd932efcd354d98ae7a9e4751b578937d9123586f920f1c54bbd"
+      "token": "de3967be5aacaa5ab23a52b8b66a58769405148130e99a0c651f1be041e76c03"
     },
     {
       "id": "78e60470bc2007705930b1bdd58157f039bd4efbd65c15ecf52f2e77fda250a5",
@@ -143,7 +143,7 @@
     },
     {
       "id": "c09067976796fe1893f381b6292e6d4c08f481c7620d3b11c682dd104f7a6943",
-      "token": "f637bed7fa977fddc46b5746c421871d4b01e4debec32d93b3206930cc729328"
+      "token": "374407fe81a13b7076d6baa83c63c13c21938feb92cec2ae13afdf419a4b6b46"
     },
     {
       "id": "d915bbf874aedb5a0b2cc45a493c598cffc11bb9db7bb31288b6a4b42f263937",
@@ -203,7 +203,7 @@
     },
     {
       "id": "727232ff6decdb305ecbfe2f0805371894afc54fcaf641780d314cd3fc85fef0",
-      "token": "5edc3a6f196d3245fb5bf9f585dd07a0c1e110e266748b38f15aca45eb91f51d"
+      "token": "0630d2c560fd83ad16343ef417a9abf38c7e2c16a9332429507a21b7382606b0"
     },
     {
       "id": "3cfe0ebaaccda470acc511687a24a4d70e25197aa87e39c8b0db50728c4426e6",
@@ -223,7 +223,7 @@
     },
     {
       "id": "c69c7f387075a4dc79d325d37c47333744bac456ee72742a66eb63131d1b5455",
-      "token": "3882741a2ca25819e67239542a4f397544535299707bcac0c05792833dd22f92"
+      "token": "422ed79b9013050633809f892e0b7a395f7f1e005f1e9cb22444165d280ec171"
     },
     {
       "id": "e5353e0d43b0000eff0365d925278a4794e8515caeb2cc2b491fa3f74a85d53a",

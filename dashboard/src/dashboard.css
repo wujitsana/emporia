@@ -2706,6 +2706,16 @@ body.e-look.theme-light {
   --theme-focused-foreground: var(--tint-deep, #006c00);
   --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-deep, #006c00) 50%, transparent);
 }
+/* Green in light keeps its page from before the #2ae13f change (#39ff44's ramp; the user's call, 11-20).
+   Mirrored in ui/kit/global.css. */
+body.e-look.theme-light.tint-green {
+  --theme-background: #ebfaea;
+  --theme-background-modal: #d2eed0;
+  --theme-background-input: #ebfaea;
+  --theme-border: #aed8ab;
+  --theme-border-subdued: #c1e2bf;
+  --theme-button-text: #ebfaea;
+}
 /* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). Mirrored in themePalette.ts. */
 body.e-look.theme-light.tint-charcoal {
   --theme-background: #ececec;

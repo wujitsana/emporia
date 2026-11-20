@@ -437,6 +437,22 @@ body.theme-light.tint-charcoal {
   --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);
 }
 
+/* Green in light keeps the page it had before green moved to #2ae13f (the user's call, 11-20): the same
+   ramp computed from the old tint #39ff44, so only the highlights changed. Mirrored in dashboard.css. */
+body.theme-light.tint-green {
+  --theme-background: #ebfaea;
+  --theme-background-modal: #d2eed0;
+  --theme-background-modal-footer: #bbdcb9;
+  --theme-background-input: #ebfaea;
+  --theme-border: #aed8ab;
+  --theme-border-subdued: #d2eed0;
+  --theme-button-text: #ebfaea;
+  --theme-button-foreground: #bbdcb9;
+  --theme-button-background: #d2eed0;
+  --theme-window-background: #d2eed0;
+  --theme-window-shadow: #83ab80;
+}
+
 /* Charcoal in light: a gray canvas and panel, not near-white (the user's call, 11-19). */
 body.theme-light.tint-charcoal {
   --theme-background: #ececec;

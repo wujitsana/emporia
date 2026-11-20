@@ -13806,10 +13806,16 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-purple"
 		];
 		LIGHT_PANEL = ["tint-orange", "tint-charcoal"];
-		LIGHT_NEUTRAL = { "tint-charcoal": {
-			bg: "#ececec",
-			panel: "#e0e0e0"
-		} };
+		LIGHT_NEUTRAL = {
+			"tint-charcoal": {
+				bg: "#ececec",
+				panel: "#e0e0e0"
+			},
+			"tint-green": {
+				bg: "#ebfaea",
+				panel: "#d2eed0"
+			}
+		};
 		LIGHT_PANEL_WHITE = .2;
 		toHex = (rgb) => "#" + rgb.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
 		rgbHex = toHex;
@@ -15691,7 +15697,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			[
 				"#2ae13f",
 				"#001b00",
-				"#ecfaeb",
+				"#ebfaea",
 				"#006c00",
 				"#2ae13f",
 				1

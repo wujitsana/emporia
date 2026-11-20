@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-wO2QJSXk.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-2uc_QKxb.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -2247,11 +2247,18 @@ var WHITE_INK = [
 ];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
 var LIGHT_PANEL = ["tint-orange", "tint-charcoal"];
-/** Light-theme canvas and panel for the neutral tint: gray, not near-white (the others derive theirs from the tint). */
-var LIGHT_NEUTRAL = { "tint-charcoal": {
-	bg: "#ececec",
-	panel: "#e0e0e0"
-} };
+/** Light-theme canvas and panel pinned per tint (the others derive theirs from the tint): charcoal is gray, not
+*  near-white; green keeps the page it had before its tint moved to #2ae13f (#39ff44's ramp, the user's call 11-20). */
+var LIGHT_NEUTRAL = {
+	"tint-charcoal": {
+		bg: "#ececec",
+		panel: "#e0e0e0"
+	},
+	"tint-green": {
+		bg: "#ebfaea",
+		panel: "#d2eed0"
+	}
+};
 var LIGHT_PANEL_WHITE = .2;
 function vividPalette(tint, gamut = "css") {
 	const t = TINT_COLORS[tint];
@@ -3793,7 +3800,7 @@ var TINT = [
 	[
 		"#2ae13f",
 		"#001b00",
-		"#ecfaeb",
+		"#ebfaea",
 		"#006c00",
 		"#2ae13f",
 		1

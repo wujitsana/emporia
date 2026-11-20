@@ -35,8 +35,12 @@ const hex = hexToRgb;
 export const WHITE_INK: readonly Tint[] = ["tint-blue", "tint-red", "tint-purple"];
 /** Tints whose vivid panel is the tint lightened (a mix with white), not darkened. */
 export const LIGHT_PANEL: readonly Tint[] = ["tint-orange", "tint-charcoal"];
-/** Light-theme canvas and panel for the neutral tint: gray, not near-white (the others derive theirs from the tint). */
-export const LIGHT_NEUTRAL: Partial<Record<Tint, { bg: string; panel: string }>> = { "tint-charcoal": { bg: "#ececec", panel: "#e0e0e0" } };
+/** Light-theme canvas and panel pinned per tint (the others derive theirs from the tint): charcoal is gray, not
+ *  near-white; green keeps the page it had before its tint moved to #2ae13f (#39ff44's ramp, the user's call 11-20). */
+export const LIGHT_NEUTRAL: Partial<Record<Tint, { bg: string; panel: string }>> = {
+  "tint-charcoal": { bg: "#ececec", panel: "#e0e0e0" },
+  "tint-green": { bg: "#ebfaea", panel: "#d2eed0" },
+};
 export const LIGHT_PANEL_WHITE = 0.2;
 
 export function vividPalette(tint: Tint, gamut: Gamut = "css"): Palette {
