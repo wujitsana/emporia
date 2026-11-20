@@ -52,6 +52,11 @@ def _on(name: str) -> bool:
     return _get(name).lower() in ("1", "on", "true", "yes")
 
 
+def _escrow_on() -> bool:
+    from emporia import escrow_chain
+    return escrow_chain.RELAY_ESCROW_ENABLED       # off in 2.1; a test-only switch
+
+
 def _csv(name: str) -> list[str]:
     return [p.strip() for p in _get(name).split(",") if p.strip()]
 
@@ -294,11 +299,12 @@ def _tesseract_wrong(links: list[str]) -> list[str]:
 
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
-        "money", "Take payments: USDC over x402 paid agent to agent, Tempo; escrow holds only if opted in",
+        "money", "Take payments: USDC over x402 paid agent to agent, Tempo (escrow is off in 2.1)",
         parts=("x402", "escrow", "tempo"),
-        tools={"x402": ("register_x402_wallet", "money_info"),
-               "escrow": ("reclaim_escrow",)},
-        change="emporia setup relay (USDC, Tempo; --escrow opts in to holds)",
+        # reclaim_escrow is no relay's tool to hide: a payer reclaims an older hold from the contract,
+        # whatever its relay runs now (escrow is off in 2.1).
+        tools={"x402": ("register_x402_wallet", "money_info")},
+        change="emporia setup relay (USDC, Tempo)",
         running=_money_parts, detail=_money_detail, misconfigured=_money_wrong),
     RelayModule(
         "log", "A public Merkle log anyone can check this relay never rewrote",
@@ -441,7 +447,7 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
     money = {p for p, on in (
         ("x402", get("EMPORIA_X402_ENABLED").lower() in ("1", "on", "true", "yes")),
-        ("escrow", bool(get("EMPORIA_ESCROW_NETWORK"))),
+        ("escrow", bool(get("EMPORIA_ESCROW_NETWORK")) and _escrow_on()),
         ("tempo", bool(get("EMPORIA_TEMPO_NETWORK"))),
     ) if on}
     if money:

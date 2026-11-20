@@ -794,7 +794,7 @@ class EmporiaAgent:
             offer = (_payment_detail(resp) or {}).get("escrow")
             if not offer:
                 raise PaymentRequiredError(resp, _payment_detail(resp)) from ValueError(
-                    "the relay offered no x402 escrow hold for this purchase")
+                    "this relay offers no escrow hold (escrow is off in 2.1); nothing was signed or paid")
             if not self._x402_private_key:
                 raise PaymentRequiredError(resp, _payment_detail(resp)) from ValueError(
                     "pay_with_x402=True but this agent has no x402_private_key")

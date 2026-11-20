@@ -43,6 +43,33 @@ _SELECTORS = {
     "reclaim": keccak(text=f"reclaim({_INFO_TUPLE})")[:4],
     "paymentState": keccak(text="paymentState(bytes32)")[:4],
 }
+#: Escrow is off in 2.1: the operator's key would decide who is paid at settlement, and the relay
+#: never decides who gets paid. A relay ignores every EMPORIA_ESCROW_* setting. This switch is for
+#: tests only (monkeypatch it); no environment variable turns it on.
+RELAY_ESCROW_ENABLED = False
+
+ESCROW_SETTINGS = ("EMPORIA_ESCROW_NETWORK", "EMPORIA_ESCROW_CONTRACT", "EMPORIA_ESCROW_COLLECTOR",
+                   "EMPORIA_ESCROW_RPC_URL")
+
+ESCROW_OFF_NOTE = ("escrow is off in 2.1: the relay's operator key would decide who is paid at "
+                   "settlement, and the relay never decides who gets paid. The relay ignores {names} "
+                   "and signs no escrow captures, releases or refunds. A payer can still reclaim an "
+                   "older hold after it expires.")
+
+
+def settings_set() -> list[str]:
+    """The EMPORIA_ESCROW_* settings that are set in this relay's environment (ignored in 2.1)."""
+    return [n for n in ESCROW_SETTINGS if (os.getenv(n) or "").strip()]
+
+
+def off_warning() -> str | None:
+    """The one start-up warning, when escrow settings are present but escrow is off."""
+    if RELAY_ESCROW_ENABLED:
+        return None
+    names = settings_set()
+    return ESCROW_OFF_NOTE.format(names=", ".join(names)) if names else None
+
+
 _TX_LOCK = asyncio.Lock()
 _RECEIPT_TIMEOUT_S = 120.0
 
@@ -74,6 +101,8 @@ def load_config() -> EscrowConfig | None:
     configured escrow behaves as an absent one, never as a guessed one."""
     from emporia.payments import _x402_asset_for, _x402_extra_for
 
+    if not RELAY_ESCROW_ENABLED:
+        return None
     network = os.getenv("EMPORIA_ESCROW_NETWORK", "").strip()
     values = {
         "rpc_url": os.getenv("EMPORIA_ESCROW_RPC_URL", "").strip(),

@@ -187,7 +187,8 @@ def live_money() -> list[str]:
     nets = [n.strip() for n in (os.getenv("EMPORIA_X402_NETWORKS") or "").split(",") if n.strip()]
     if os.getenv("EMPORIA_X402_ENABLED", "").strip() == "1" and any(not is_testnet(n) for n in nets):
         reasons.append("USDC on a mainnet")
-    escrow = (os.getenv("EMPORIA_ESCROW_NETWORK") or "").strip()
+    from emporia import escrow_chain
+    escrow = (os.getenv("EMPORIA_ESCROW_NETWORK") or "").strip() if escrow_chain.RELAY_ESCROW_ENABLED else ""
     if escrow and not is_testnet(escrow):
         reasons.append("escrow on a mainnet")
     return reasons
@@ -3518,6 +3519,9 @@ def _check_relay_modules() -> None:
     from emporia import relay_modules
     wrong = relay_modules.problems(FEDERATED_RELAYS)
     if note := relay_modules.lore_voice_warning():
+        logger.warning(note)
+    from emporia import escrow_chain
+    if note := escrow_chain.off_warning():      # 2.1: never refuse to start over it; say it once
         logger.warning(note)
     if wrong:
         raise RelayModulesWrong("this relay's modules are set up wrong — fix these, then start it again:\n  "
@@ -7367,13 +7371,15 @@ async def front_page():
     live = live_money()
     # What the page promises follows this relay's own settings: the log when it is on, escrow when it is set.
     from emporia import translog
-    escrow = bool((os.getenv("EMPORIA_ESCROW_NETWORK") or "").strip())
+    from emporia import escrow_chain
+    escrow = escrow_chain.load_config() is not None      # off in 2.1 whatever the settings say
     money_line = ("live money is on here &middot; check before you pay" if live
-                  else "testnet &middot; escrow is on here" if escrow else "testnet &middot; relay holds no money")
+                  else "testnet &middot; escrow is on here" if escrow
+                  else "testnet &middot; relay holds no money; escrow is off")
     log_line = ("; this relay keeps a transparency log anyone can check (<a href=\"/log/state\">/log/state</a>)"
                 if translog.enabled() else "; this relay keeps no transparency log")
     pay_tail = ("escrow is on here: a deal&#x27;s hold sits in a contract this relay&#x27;s operator settles" if escrow
-                else "the relay never holds the money")
+                else "escrow is off here, and the relay never holds the money")
     trust_relay = ", nor this relay with DMs" if escrow else ", nor this relay with money or DMs"
     page = (_RELAY_FRONT_PAGE_HTML.replace("{font_css}", _front_font_css()).replace("{money_line}", money_line)
             .replace("{coin}", "USDC" if live else "testnet USDC").replace("{log_line}", log_line)

@@ -54,8 +54,9 @@ def test_the_page_claims_only_what_this_relay_does(client, monkeypatch):
     assert "keeps no transparency log" in page and 'href="/log/state">/log/state</a>)' not in page
     assert "the relay never holds the money" in page and "nor this relay with money or DMs" in page
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    monkeypatch.setenv("EMPORIA_ESCROW_NETWORK", "eip155:84532")
+    monkeypatch.setenv("EMPORIA_ESCROW_NETWORK", "eip155:84532")     # set, but escrow is off in 2.1: the page says so
     page = client.get("/").text
     assert "keeps a transparency log anyone can check" in page
-    assert "escrow is on here" in page and "relay holds no money" not in page and "with money" not in page
+    assert "escrow is off here" in page and "escrow is on here" not in page
+    assert "nor this relay with money or DMs" in page
     assert "{" not in page.split("<body>")[1]   # no placeholder left

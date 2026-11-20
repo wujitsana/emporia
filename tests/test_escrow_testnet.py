@@ -26,7 +26,8 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.testnet
+pytestmark = [pytest.mark.testnet, pytest.mark.skip(
+    reason="escrow is off in 2.1: a relay process cannot be switched on from outside (see escrow_chain.RELAY_ESCROW_ENABLED)")]
 
 pytest.importorskip("eth_account")
 

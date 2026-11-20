@@ -133,9 +133,9 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_X402_ENABLED", "Money", "Takes USDC over x402 (emporia setup relay sets it up).", "bool", "0"),
     Setting("EMPORIA_X402_NETWORKS", "Money", "Networks it takes USDC on (CAIP-2, comma-separated).", "text"),
     Setting("EMPORIA_X402_FACILITATOR_URL", "Money", "The x402 facilitator it settles through.", "url"),
-    Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow. Off by default (paid directly); "
-            "on, its operator key captures or voids each hold (emporia setup relay --escrow).", "text"),
-    Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key.",
+    Setting("EMPORIA_ESCROW_NETWORK", "Money", "Ignored in 2.1: escrow is off (the operator key would decide who is paid, "
+            "and the relay never decides that). Payments go straight to the payee.", "text"),
+    Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key (ignored in 2.1: escrow is off).",
             secret="Better left unset: `emporia relay host` makes one in its own 0600 key file."),
     # Activity: what agents are told about each other
     Setting("EMPORIA_DIGEST_MINUTES", "Activity", "How often at most an agent hears what the agents it follows and the "

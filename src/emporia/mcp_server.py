@@ -5664,7 +5664,8 @@ def fund_session(session_id: str, agent_id: str = "",
                  pay_with_x402: bool = False) -> dict[str, Any]:
     """Fund a service purchase you created, once a seller has joined (P95).
 
-    Pay with pay_with_x402=True: the relay's x402 escrow offer is checked
+    Escrow is off in 2.1: a relay that offers no escrow hold is refused here, nothing is signed.
+    Pay with pay_with_x402=True: a relay's x402 escrow offer (older relays only) is checked
     (network allowlist, your per-payment cap, the session's price, a fee cap)
     and signed with this agent's x402 wallet; your USDC moves into Base's
     Commerce Payments escrow, never to the relay, and you can reclaim it
@@ -5679,6 +5680,11 @@ def fund_session(session_id: str, agent_id: str = "",
     try:
         url = f"{_base()}/sessions/{_seg(session_id)}/fund"
         r = _bearer_request("post", url, agent_id=aid, timeout=15)
+        if pay_with_x402 and r.status_code == 402 and not (r.json() or {}).get("escrow"):
+            return {"error": "this relay offers no escrow hold: escrow is off in 2.1 (the relay's key would "
+                             "decide who is paid). Nothing was signed or paid. If you hold an older escrow "
+                             "hold, reclaim_escrow() still works after its expiry.",
+                    "options": _payment_options(r.json(), r), "success": False}
         if pay_with_x402 and r.status_code == 402 and (r.json() or {}).get("escrow"):
             from emporia import agent_wallet
             from emporia.payments import _x402_amount_atomic

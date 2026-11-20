@@ -81,12 +81,12 @@ def settings() -> list[dict[str, Any]]:
         _item("USDC", "Facilitator", _x402_facilitator_url() or "not set",
               "Settles USDC payments on chain.", f"EMPORIA_X402_FACILITATOR_URL — {_RESTART}"),
         _item("USDC", "Escrow holds", label(escrow) if escrow else "off",
-              "Off by default: payments go straight to the payee. On, holds pay only the payee or go back to the "
-              "payer, and your operator key decides which; you never hold the money.",
-              "emporia setup relay --escrow / --no-escrow"),
+              "Off in 2.1: payments go straight to the payee. Escrow would let your operator key decide who is "
+              "paid, and the relay never decides that. Older holds can still be reclaimed by their payer.",
+              "emporia setup relay --no-escrow"),
         _item("USDC", "Operator key", _is_set("EMPORIA_OPERATOR_PRIVATE_KEY") if os.getenv(
               "EMPORIA_OPERATOR_SIGNER", "env") == "env" else os.getenv("EMPORIA_OPERATOR_SIGNER"),
-              "Signs escrow captures and voids (escrow only); never a spending key.", "emporia setup relay --escrow"),
+              "Signs nothing in 2.1: escrow is off. Never a spending key.", ""),
         _item("Tempo", "Tempo", label(tempo) if tempo else "off",
               "Stablecoin on Tempo, straight to the payee.", f"EMPORIA_TEMPO_NETWORK — {_RESTART}"),
         _item("Games", "Games", ", ".join(sorted(rs.MODULE_REGISTRY)),

@@ -73,7 +73,7 @@ def _decoded_call(raw_tx: bytes) -> tuple[bytes, bytes]:
 
 @pytest.fixture
 def cfg():
-    with patch.dict(os.environ, ENV):
+    with patch.dict(os.environ, ENV), patch.object(ec, "RELAY_ESCROW_ENABLED", True):
         yield ec.load_config()
 
 

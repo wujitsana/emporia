@@ -351,7 +351,7 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
                   "fee address and an operator key with a little Base Sepolia ETH for gas.",
                   "payments go straight to the payee; the relay never decides who gets paid.", False,
                   "No operator key to fund or guard."),
-           "emporia setup relay --escrow / --no-escrow"),
+           "emporia setup relay --no-escrow (escrow is off in 2.1)"),
 )}
 
 #: The yes/no questions' keys, whose answer is "yes"/"no".

@@ -1,6 +1,5 @@
 """A relay's money by default: x402 payments only, paid agent to agent through the PayAI
-facilitator; the fee address is optional (blank: no fee); escrow, and the operator key
-that captures or voids its holds, only on their own opt-in."""
+facilitator; the fee address is optional (blank: no fee); escrow is off in 2.1 (--escrow is refused)."""
 import os
 from unittest.mock import patch
 
@@ -69,34 +68,30 @@ def test_setup_relay_takes_a_fee_address_without_escrow(relay_profile):
     assert env["EMPORIA_FEE_ADDRESS"] == FEE and "EMPORIA_ESCROW_NETWORK" not in env and made == []
 
 
-def test_escrow_and_its_operator_key_only_with_the_opt_in(relay_profile, capsys):
+def test_escrow_is_refused_in_2_1_and_no_escrow_clears_old_settings(relay_profile, capsys):
     op, made = relay_profile
     with patch.dict(os.environ):
-        assert cli.main(["setup", "relay", "--escrow", "--yes"]) == 1, "escrow needs a fee address"
-        assert made == [] and "fee address" in capsys.readouterr().out
-        assert cli.main(["setup", "relay", "--escrow", "--fee-receiver", FEE, "--yes"]) == 0
-    env = _env(op)
-    for k, v in cli._BASE_SEPOLIA_ESCROW.items():
-        assert env[k] == v, k
-    assert env["EMPORIA_OPERATOR_ADDRESS"] == OPERATOR and made == [1]
-    assert "Fund the operator" in capsys.readouterr().out
+        assert cli.main(["setup", "relay", "--escrow", "--fee-receiver", FEE, "--yes"]) == 2
+    out = capsys.readouterr().out
+    assert "escrow is off in 2.1" in out and "never decides who is paid" in out
+    assert "EMPORIA_ESCROW_NETWORK" not in _env(op) and made == [], "nothing written, no operator key made"
+    (op / ".env").write_text("EMPORIA_ESCROW_NETWORK=eip155:84532\n")
     with patch.dict(os.environ):
         assert cli.main(["setup", "relay", "--fee-receiver", FEE, "--yes"]) == 0
-    assert _env(op)["EMPORIA_ESCROW_NETWORK"] == "eip155:84532", "no flag, nobody asked: it stays as it was"
+    assert _env(op)["EMPORIA_ESCROW_NETWORK"] == "eip155:84532", "no flag: left as it was (the relay ignores it)"
     with patch.dict(os.environ):
         assert cli.main(["setup", "relay", "--no-escrow", "--fee-receiver", FEE, "--yes"]) == 0
-    assert _env(op)["EMPORIA_ESCROW_NETWORK"] == "", "--no-escrow turns it off"
+    assert _env(op)["EMPORIA_ESCROW_NETWORK"] == "", "--no-escrow is harmless and clears it"
 
 
-def test_in_a_terminal_enter_means_no_fee_and_no_escrow(relay_profile, monkeypatch, capsys):
+def test_in_a_terminal_enter_means_no_fee_and_escrow_is_not_asked(relay_profile, monkeypatch, capsys):
     op, made = relay_profile
-    _typing(monkeypatch, "", "", "", "")      # networks: none · fee: none · escrow: no · write: yes
+    _typing(monkeypatch, "", "", "", "")      # networks: none · fee: none · write: yes
     with patch.dict(os.environ):
         assert cli.main(["setup", "relay"]) == 0
     out = capsys.readouterr().out
-    assert "Should the relay take a fee on payments?" in out and "Hold purchases in escrow?" in out
-    assert "no fee  (recommended)" in out and "no  (recommended)" in out
-    assert "has a say in who gets paid" in out
+    assert "Should the relay take a fee on payments?" in out and "Hold purchases in escrow?" not in out
+    assert "no fee  (recommended)" in out
     env = _env(op)
     assert env["EMPORIA_X402_ENABLED"] == "1" and "EMPORIA_FEE_ADDRESS" not in env
     assert "EMPORIA_ESCROW_NETWORK" not in env and made == []
@@ -134,7 +129,7 @@ def test_a_blank_fee_address_keeps_money_on_with_no_fee(tmp_path, monkeypatch):
     assert "EMPORIA_FEE_ADDRESS" not in env and not any(k.startswith("EMPORIA_ESCROW_") for k in env)
 
 
-def test_a_hosted_relays_escrow_is_its_own_flag(tmp_path, monkeypatch):
+def test_a_hosted_relays_escrow_flag_is_refused(tmp_path, monkeypatch):
     folder = tmp_path / "hosted"
     folder.mkdir()
     (folder / ".env").write_text("")
@@ -143,14 +138,13 @@ def test_a_hosted_relays_escrow_is_its_own_flag(tmp_path, monkeypatch):
     assert cli.main(["relay", "modules", "--dir", str(folder), "--modules", "money", "--fee-receiver", FEE,
                      "--yes"]) == 0
     assert "EMPORIA_ESCROW_NETWORK" not in _env(folder)
-    assert cli.main(["relay", "modules", "--dir", str(folder), "--modules", "money", "--escrow", "--yes"]) == 0
-    env = _env(folder)
-    assert env["EMPORIA_ESCROW_NETWORK"] == "eip155:84532" and env["EMPORIA_OPERATOR_SIGNER"] == "env"
+    assert cli.main(["relay", "modules", "--dir", str(folder), "--modules", "money", "--escrow", "--yes"]) == 2
+    assert "EMPORIA_ESCROW_NETWORK" not in _env(folder)
     assert cli.main(["relay", "modules", "--dir", str(folder), "--modules", "money", "--no-escrow", "--yes"]) == 0
     assert _env(folder)["EMPORIA_ESCROW_NETWORK"] == ""
 
 
-# -- relay host: the operator-key step follows escrow, not money -------------------
+# -- relay host: no operator-key step in 2.1 (escrow is off) -------------------
 
 def _host(folder, monkeypatch, *extra, typed=()):
     monkeypatch.setattr("shutil.which", lambda _: None)            # no Docker here: the steps are shown
@@ -161,17 +155,15 @@ def _host(folder, monkeypatch, *extra, typed=()):
                          "--fee-receiver", FEE, *extra])
 
 
-def test_relay_host_shows_the_operator_key_step_only_with_escrow(tmp_path, monkeypatch, capsys):
+def test_relay_host_shows_no_operator_key_step_and_refuses_escrow(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
-    assert _host(tmp_path / "plain", monkeypatch, typed=[""]) == 0      # escrow: Enter (no, recommended)
+    assert _host(tmp_path / "plain", monkeypatch) == 0
     out = capsys.readouterr().out
-    assert "Hold purchases in escrow?" in out
+    assert "Hold purchases in escrow?" not in out
     assert "operator_signer" not in out and "EMPORIA_OPERATOR_ADDRESS" not in out
     assert not any(k.startswith("EMPORIA_ESCROW_") for k in _env(tmp_path / "plain"))
-    assert _host(tmp_path / "held", monkeypatch, "--escrow") == 0
-    out = capsys.readouterr().out
-    assert "operator_signer generate" in out and "EMPORIA_OPERATOR_ADDRESS" in out
-    assert _env(tmp_path / "held")["EMPORIA_ESCROW_NETWORK"] == "eip155:84532"
+    assert _host(tmp_path / "held", monkeypatch, "--escrow") == 2
+    assert "escrow is off in 2.1" in capsys.readouterr().out
 
 
 def test_into_compose_steps_name_the_operator_key_only_when_it_is_needed():

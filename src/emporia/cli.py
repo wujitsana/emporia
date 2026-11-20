@@ -3,7 +3,7 @@
     emporia doctor                     what is set up, what is not, and how to fix it
     emporia relay start|stop|status|logs
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
-    emporia setup relay                this machine's relay: x402 payments, optional fee; --escrow opts in
+    emporia setup relay                this machine's relay: x402 payments, optional fee (escrow is off in 2.1)
     emporia setup dashboard [NAME]     refresh an agent's plugin and its dashboard tab
     emporia role NAME [marketplace|developer|both]  what its tools may reach (marketplace for money)
     emporia identity show|store|link NAME  where its identity and encryption keys are kept
@@ -1417,7 +1417,7 @@ def _module_items(items: list[str]) -> dict[str, set[str]] | None:
         parts = {p.strip() for p in raw.split(",") if p.strip()}
         if parts and name == "money":
             print("  money's parts are its ways to pay, set up by their own commands: "
-                  "emporia setup relay (x402, Tempo; escrow with --escrow)")
+                  "emporia setup relay (x402, Tempo; escrow is off in 2.1)")
             return None
         if bad := sorted(parts - set(rm.BY_NAME[name].parts)):
             print(f"  {name} has no part called {', '.join(bad)} — its parts: {', '.join(rm.BY_NAME[name].parts) or 'none'}")
@@ -1508,7 +1508,7 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             want.discard("money")
         elif escrow and not fee:
             print("  Escrow holds need a fee address (the escrow contract pays its fee there) — money left off "
-                  "for now; add it with a fee address, or without --escrow.")
+                  "for now; add it with a fee address, or without it.")
             want.discard("money")
         else:
             out.update(_money_settings(fee, escrow, env))
@@ -1622,8 +1622,7 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
             print(f"relay modules: {env_path} belongs to root (a relay run as a service) — set these there with sudo")
             return 1
     if money_here:
-        print("  Money: its own setup, next (networks, an optional fee address; escrow and its operator key "
-              "only if you opt in).")
+        print("  Money: its own setup, next (networks, an optional fee address; escrow is off in 2.1).")
         rc = cmd_setup_relay(argparse.Namespace(preset="base-sepolia", with_networks="", fee_receiver=args.fee_receiver,
                                                 escrow=getattr(args, "escrow", None), yes=args.yes))
         if rc:
@@ -6101,27 +6100,16 @@ def doctor_relay(rep: Report) -> dict | None:
     card_escrow = h.get("x402_escrow_network")
     configured_here = bool(os.getenv("EMPORIA_ESCROW_NETWORK"))
     if card_escrow:
-        try:
-            from emporia import escrow_chain
-            from emporia.operator_signer import load_operator_signer
-            cfg = escrow_chain.load_config()
-            signer = load_operator_signer(cfg.network)
-            rep.ok(f"escrow on {cfg.network}, operator {signer.address[:10]}…")
-        except Exception as e:  # noqa: BLE001
-            if configured_here:
-                rep.fail(f"escrow configured but not usable: {str(e)[:120]}",
-                         "emporia setup relay --escrow")
-            else:
-                rep.ok(f"escrow on {label(card_escrow)} (the relay's card)")
+        rep.warn(f"this relay's card shows escrow on {label(card_escrow)}, but escrow is off in 2.1; "
+                 "payers can still reclaim older holds", "")
     elif h.get("x402_escrow_required"):
-        rep.fail("this relay's card says escrow is required, and it is off", "emporia setup relay --escrow")
+        rep.warn("this relay's card says escrow is required, but escrow is off in 2.1 (the relay's key would "
+                 "decide who is paid)", "")
     elif configured_here:
-        rep.warn("escrow is set in this profile's settings but the relay is not using it",
-                 "emporia relay restart")
+        rep.warn("escrow is set in this profile's settings, but escrow is off in 2.1 and the relay ignores it",
+                 "emporia setup relay --no-escrow")
     else:
-        # the default: payments go straight to the payee, and the relay never decides who gets paid
-        rep.ok("escrow off (the default: paid directly; USDC service purchases need it — opt in with "
-               "emporia setup relay --escrow)")
+        rep.ok("escrow off (2.1: payments go straight to the payee; the relay never decides who is paid)")
     if h.get("tempo_network"):
         rep.ok(f"Tempo on {label(h['tempo_network'])}")
     # P208: a relay on this machine holding real money, and the agents' user
@@ -8268,7 +8256,7 @@ def machine_settings(url: str = "") -> list[dict[str, Any]]:
                "ok" if h else "warn")]
     if local:
         nets = ", ".join(h.get("x402_networks") or []) if h else ""
-        out += [row("Its payment rails", (f"USDC on {nets}" if nets else "none: free only") if h else "—", "How agents on this machine's relay pay each other (escrow only if opted in).",
+        out += [row("Its payment rails", (f"USDC on {nets}" if nets else "none: free only") if h else "—", "How agents on this machine's relay pay each other (escrow is off in 2.1).",
                     "emporia setup relay", kind="list"),
                 ]
     if h and "relay_modules" in h and local:
@@ -8617,14 +8605,16 @@ def _ask_fee_address(given: str, current: str) -> str | None:
     return None
 
 
+ESCROW_OFF_MESSAGE = ("--escrow is refused: escrow is off in 2.1. With escrow the relay's operator key decides "
+                      "who is paid at settlement, and the relay never decides who gets paid. Payments go "
+                      "straight to the payee (x402). --no-escrow is harmless; older holds can still be "
+                      "reclaimed by their payer.")
+
+
 def _ask_escrow(given: bool | None) -> bool | None:
-    """Escrow holds: True/False when chosen (--escrow/--no-escrow, or asked in a terminal, No
-    recommended); None when nobody chose, so what is set stays as it is."""
-    if given is not None:
-        return given
-    if not _TTY:
-        return None
-    return choose_setting("relay_escrow") == "yes"
+    """Escrow is off in 2.1, so nothing is asked and nothing is turned on: False when --no-escrow
+    (clears the settings), None otherwise (what is set stays as it is, and the relay ignores it)."""
+    return False if given is False else None
 
 
 def _money_settings(fee: str, escrow: bool | None, env: dict[str, str]) -> dict[str, str]:
@@ -8748,8 +8738,7 @@ def _signer_follows(path: Path, changed: dict[str, str]) -> None:
 def cmd_setup_relay(args: argparse.Namespace) -> int:
     """This machine's relay: x402 payments on Base Sepolia, paid agent to agent, and
     an optional fee address (blank: no fee). Escrow holds and the operator key that
-    captures or voids them only with --escrow (or yes to that question, No being
-    recommended). Every value written is public (contract and token addresses, URLs,
+    captures or voids them are off in 2.1 (--escrow is refused). Every value written is public (contract and token addresses, URLs,
     your fee address); the operator key goes to its own 0600 file, never the .env."""
     from emporia import operator_signer
 
@@ -8810,9 +8799,8 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
     wizard_commit()
     changed = merge_env_file(env_path, updates)
     print(f"  {len(changed)} setting(s) changed" + (" (backup beside it)" if changed else ""))
-    escrow_now = escrow if escrow is not None else bool(env.get("EMPORIA_ESCROW_NETWORK"))
     print(f"  Fee: {f'to {fee}' if fee else 'none (the card says fee 0)'}. "
-          f"Escrow: {'on' if escrow_now else 'off (paid directly)'}{' (unchanged)' if escrow is None else ''}.")
+          "Escrow: off in 2.1 (paid directly; the relay ignores any escrow settings).")
     if address:
         print(f"  Fund the operator {address} with a little Base Sepolia ETH for gas.")
     print("  Restart the relay: emporia relay restart")
@@ -10137,7 +10125,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
             ("wallet", "An agent's wallets"),
             ("role", "An agent's role: marketplace, developer or both (what its tools may reach)"),
             ("identity", "Where an agent's identity keys are kept (files, 1Password, …)"),
-            ("relay-setup", "Set up this machine's relay (x402 payments, optional fee and escrow)"),
+            ("relay-setup", "Set up this machine's relay (x402 payments, optional fee)"),
             ("log", "The relay's transparency log: on or off"),
             ("relay", "Start, stop or inspect the relay"),
             ("signer", "The signer: wallet keys apart from the agents (optional on testnet, needed for real money)"),
@@ -10183,8 +10171,8 @@ def setup_overview() -> None:
     # A relay running older code may not report these yet: its settings say.
     escrow = h.get("x402_escrow_network") or relay_env.get("EMPORIA_ESCROW_NETWORK")
     line("✓" if escrow else "·", "Escrow holds",
-         label(escrow) if escrow else "off (the default: paid directly; USDC purchases need it)",
-         "" if escrow else "opt in: emporia setup relay --escrow (the relay's operator key then decides holds)")
+         label(escrow) if escrow else "off (2.1: paid directly to the payee)",
+         "" if escrow else "")
     tempo_net = h.get("tempo_network") or relay_env.get("EMPORIA_TEMPO_NETWORK")
     line("✓" if tempo_net else "·", "Tempo", label(tempo_net) if tempo_net else "off",
          "" if tempo_net else "emporia setup relay --with tempo-moderato")
@@ -10247,7 +10235,7 @@ def cmd_setup_menu(args: argparse.Namespace) -> int:
         return 0
     what = choose("\nSet up:", [
         ("agent", "An agent — role, keys, wallets, limits"),
-        ("relay", "This relay's USDC payments (x402; Solana, Tempo), its fee, and escrow if you opt in"),
+        ("relay", "This relay's USDC payments (x402; Solana, Tempo), its fee, (escrow is off in 2.1)"),
         ("log", "The transparency log — public proof of what this relay recorded (on or off)"),
         ("dashboard", "The Emporia tab in the Hermes dashboard"),
         ("done", "Nothing now"),
@@ -10312,8 +10300,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host, modules: the address that receives the relay's fee (EMPORIA_FEE_BPS, default 1%%); "
                         "left out: no fee")
     r.add_argument("--escrow", action=argparse.BooleanOptionalAction, default=None,
-                   help="host, modules: escrow holds for purchases (off unless chosen). The relay's operator key "
-                        "can capture or void a held payment, so the relay has a say in who gets paid")
+                   help="refused: escrow is off in 2.1 (the relay's operator key would decide who is paid). "
+                        "--no-escrow is harmless")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
     r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering; "
                         "db restore, upgrade: do not ask (the warning is still printed)")
@@ -10728,14 +10716,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="register it (and its wallet) on the relay now")
     ag.add_argument("--new-profile", action="store_true", help=argparse.SUPPRESS)  # the plugin made it just now
     ag.set_defaults(func=cmd_setup_agent)
-    rl = ss.add_parser("relay", help="x402 payments (paid agent to agent), an optional fee; escrow and its "
-                                     "operator key only with --escrow")
+    rl = ss.add_parser("relay", help="x402 payments (paid agent to agent), an optional fee; escrow is off in 2.1")
     rl.add_argument("--preset", default="base-sepolia")
     rl.add_argument("--fee-receiver", default="",
                     help="the address that receives the relay's fee (EMPORIA_FEE_BPS, default 1%%); left out: no fee")
     rl.add_argument("--escrow", action=argparse.BooleanOptionalAction, default=None,
-                    help="escrow holds for purchases (off unless chosen; --no-escrow turns them off). The relay's "
-                         "operator key can capture or void a held payment, so the relay has a say in who gets paid")
+                    help="refused: escrow is off in 2.1 (the relay's operator key would decide who is paid). "
+                         "--no-escrow is harmless and clears the escrow settings")
     rl.add_argument("--with", dest="with_networks", default="",
                     help="also take payments on: solana-devnet, tempo-moderato (comma-separated)")
     rl.add_argument("--yes", action="store_true", help="write without asking")
@@ -10809,6 +10796,9 @@ def main(argv: list[str] | None = None) -> int:
         print(text)                    # `agent init --help`: init's own options, not the whole `agent` command's
         return 0
     args = build_parser().parse_args(argv)
+    if getattr(args, "escrow", None) is True:
+        print(ESCROW_OFF_MESSAGE)
+        return 2
     try:
         return args.func(args)
     except Cancelled:

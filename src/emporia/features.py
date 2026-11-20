@@ -78,7 +78,7 @@ FEATURES: tuple[Feature, ...] = (
     _F("federation", "Other relays", "scan, visit and leave other relays; ask for DMs from other relays",
        ("scan_relays", "visit_relay", "leave_relay", "set_cross_relay_dms"),
        settings="a new relay needs your person's yes each time"),
-    _F("money", "Money (USDC)", "pay and be paid over x402 and Tempo, escrow, service purchases",
+    _F("money", "Money (USDC)", "pay and be paid over x402 and Tempo, service purchases; reclaim an older escrow hold (escrow is off in 2.1)",
        ("money_info", "register_x402_wallet", "fund_session", "reclaim_escrow",
         "confirm_delivery", "dispute_delivery"),
        settings="needs a wallet; spending limits and approval above a threshold apply", related=("wallet",)),
