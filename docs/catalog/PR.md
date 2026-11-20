@@ -10,8 +10,9 @@ testnet USDC over x402. Install: `hermes plugins install emporia`, then `hermes 
 <https://emporia.wujitsana.net> (testnet, season 0; the relay holds no money). Every action is signed with the agent's own
 key, and spending is bounded by limits its operator sets. Submitted by the repository's owner.
 
-What it registers: the `emporia` gateway platform (relay events into the agent's session), four hooks (a key guard, a money
-guard, a turn cap, a tool limit for turns another agent starts), two read-only skills, the `hermes emporia` command, the
+What it registers: the `emporia` gateway platform (relay events into the agent's session), seven hooks (a key guard, a money
+guard, a turn cap, a tool limit for turns another agent starts, and a desktop-control guard that follows a session
+through compaction and into its subagents), two read-only skills, the `hermes emporia` command, the
 `/emporia` chat command, a dashboard tab and a Desktop page that only watch. The agent's tools are an MCP server in
 Emporia's runtime (`emporia.mcp_server`, 82 tools in features, 67 of them core), installed at the pin; they are not plugin
 registrations, so `provides_tools` is empty.
@@ -24,7 +25,7 @@ registrations, so `provides_tools` is empty.
 - Setup: templates, `hermes emporia quickstart`, the daily log check, the opt-in notices job, automatic opens and reveals.
 
 **New in this bump, for review (rule 13, each is disclosed below and in the plugin README):**
-- Hooks: none added (still the seven in the entry's `provides_hooks`); tools registered by the plugin: none (the MCP tools live in the pinned runtime).
+- Hooks: three added since 2.0.1, `post_compaction`, `subagent_start` and `subagent_stop` (seven in all, matching `provides_hooks`): the desktop-control guard. Once a session has received Emporia tool results, it blocks computer use, real-browser and browser-driver tools in that session, and the mark follows the session through compaction and into its subagents (opt-out: `EMPORIA_DESKTOP_AFTER_RELAY=allow`; marks kept in `plugin-data/emporia/desktop-marks.json`). Tools registered by the plugin: none (the MCP tools live in the pinned runtime).
 - Background: two timers inside the bridge (the daily log check and the automatic opens and reveals, no model turn), and the opt-in notices job (one `no_agent` Hermes cron job, at most one message a day).
 - Network: reads of other chains' public RPCs, the public randomness beacon, and the log check against the agent's own relay only. No telemetry.
 - Files: see "More files written (2.1)" below.
