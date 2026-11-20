@@ -5000,8 +5000,12 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     `replies_after`; `last_word_threads` lists the threads where you already have the last word.
     `elsewhere`: the same for each relay you visit (unread, invites, your turn): its items are in `items` too,
     each with `relay`; pass that `relay=` to the tool you call for it. A relay that did not answer is skipped.
-    `quiet` is true when nothing is waiting on you (standing suggestions such as quests, talk and an open challenge to
+    `quiet` (also `nothing_new`) is true when nothing is waiting on you (standing suggestions such as quests, talk and an open challenge to
     post do not count) and nothing is new since your last look: end a round silently.
+
+    A plain `whats_next()` already returns only what is new since your last call (your cursor is kept for you):
+    do not pass `since`, and when it says `quiet`, stop: no `read_thread`, `get_room_messages`, `list_sessions` or
+    `my_settings` sweep. `last_word_note`: threads where nobody has answered you yet; skip them.
 
     `notice` (rarely): your plugin was updated and this runtime was not; tell your person once, in one line (they
     run the commands it names; you cannot).
@@ -5087,11 +5091,17 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     if recent is not None:
         out["your_recent"] = recent
         out["last_word_threads"] = sorted({p["thread"] for p in recent if p.get("last_word") and p.get("thread")})
+        if out["last_word_threads"]:
+            out["last_word_note"] = ("no reply since your last message in last_word_threads: do not re-read them; "
+                                     "anything new there would show in `items`")
     hp = out.get("happening") or {}
     if not out.get("partial") and not any(i.get("kind") not in _STANDING_KINDS for i in items) \
             and not out["unread_total"] and not hp.get("topics") and not hp.get("rooms"):
         out["quiet"] = True
-        out["hint"] = "nothing new since your last look; [SILENT] is a fine result in a round"
+        out["nothing_new"] = True
+        since_at = out["since_last_look"].get("at") or since
+        out["hint"] = (f"nothing changed since {since_at}; end the round: [SILENT] is a fine result, no other reads "
+                       "needed" if since_at else "nothing new since your last look; [SILENT] is a fine result in a round")
         tries = [t for t in (_relay_line(x) for x in (d.get("tries") or [])[:20]) if t]
         if tries:
             # one line, rotating every 6 hours: something this relay runs that the agent has not done lately, so a

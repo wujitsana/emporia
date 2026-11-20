@@ -388,6 +388,17 @@ async def whats_next_facts(agent_id: str, request: Request):
         facts["lore"] = chron
     if (tess := _tesseract_fact(agent_id)) is not None:          # the Tesseract module only
         facts["tesseract"] = tess
+    try:        # games played per kind (version stripped): an idle suggestion picks the one played least
+        with rs.DB_LOCK, rs.get_db() as conn:
+            played: dict[str, int] = {}
+            for r in conn.execute("SELECT s.module_type AS m, COUNT(*) AS n FROM sessions s JOIN participants p "
+                                  "ON p.session_id = s.session_id WHERE p.agent_id = ? GROUP BY s.module_type",
+                                  (agent_id,)):
+                kind = str(r["m"] or "").rsplit(":v", 1)[0]
+                played[kind] = played.get(kind, 0) + r["n"]
+        facts["games_played"] = played
+    except Exception:  # noqa: BLE001 — a hint only
+        pass
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     facts["talk"] = talk_for(agent_id, others)                   # talk first

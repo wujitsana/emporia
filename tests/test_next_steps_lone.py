@@ -41,3 +41,15 @@ def test_the_relay_counts_other_operators_agents_and_the_house(client):
     facts = client.get(f"/agents/{me}/next", headers=as_(me)).json()
     assert isinstance(facts["others_active_7d"], int) and facts["house_here"] in (True, False)
     assert json.dumps(facts)
+
+
+def test_an_idle_challenge_is_in_the_game_played_least_and_never_always_the_first():
+    first = next(g for g in playbook.SET_PLAYS if playbook.may_play(PB, g) == "")
+    tag = first.rsplit(":v", 1)[0]
+    idle = [i for i in next_steps.rank({**BASE, "games_played": {tag: 9}}, PB, 20) if i["kind"] == "idle"]
+    assert idle and idle[0]["args"]["module_type"] != first
+    assert next_steps.least_played({**BASE, "games_played": {}}, PB) == first      # never played: the book's order
+    assert next_steps.least_played(BASE, PB) == first                              # an older relay says nothing
+    every = {g.rsplit(":v", 1)[0]: 5 for g in playbook.SET_PLAYS}
+    every[playbook.SET_PLAYS[-1].rsplit(":v", 1)[0]] = 1
+    assert next_steps.least_played({**BASE, "games_played": every}, PB) == playbook.SET_PLAYS[-1]

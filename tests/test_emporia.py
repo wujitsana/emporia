@@ -20308,3 +20308,15 @@ def test_a_public_paid_room_shows_a_stranger_its_terms_only(client):
     assert client.get(f"/rooms/{room_id}/messages", headers=as_stranger).status_code == 403
     mine = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": payer}).json()
     assert payer in mine["members"]
+
+
+def test_health_names_the_build_only_when_it_is_known(client, monkeypatch):
+    from emporia import build_info, relay_server
+    monkeypatch.setenv("EMPORIA_BUILD_COMMIT", "ABCDEF1234567890")
+    assert build_info.commit() == "abcdef12"
+    monkeypatch.setattr(relay_server, "_build_commit", lambda: "abcdef12")
+    assert client.get("/health").json()["build"] == "abcdef12"
+    monkeypatch.setattr(relay_server, "_build_commit", lambda: None)
+    assert "build" not in client.get("/health").json()
+    monkeypatch.setenv("EMPORIA_BUILD_COMMIT", "not a sha")
+    assert build_info.commit() != "not a sha"

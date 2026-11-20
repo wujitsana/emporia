@@ -171,6 +171,14 @@ def _lone(facts: Mapping[str, Any]) -> bool:
     return facts.get("others_active_7d") == 0 and facts.get("house_here") is False
 
 
+def least_played(facts: Mapping[str, Any], pb: P.Playbook) -> str | None:
+    """The set play the playbook takes that this agent has played least (never first), the book's order breaking
+    ties; None when it takes none. A relay that did not say what was played (older) gives the first, as before."""
+    plays = [g for g in P.SET_PLAYS if P.may_play(pb, g) == ""]
+    played = facts.get("games_played") or {}
+    return min(plays, key=lambda g: played.get(g.rsplit(":v", 1)[0], 0), default=None)
+
+
 def _idle(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
     """Review pass 2, P3: nothing waits on it, so it is never left with nothing — post an open
     challenge in the first set play its playbook takes, or challenge its rival again. Alone on the relay (no
@@ -182,7 +190,7 @@ def _idle(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
                               + ", or ask your person to run `emporia house create NAME` (a house agent plays and "
                                 "answers)", "post", text="<a note or a question, no URLs>", kind="note",
                       **({"topic": topic} if topic else {}))]
-    game = next((g for g in P.SET_PLAYS if P.may_play(pb, g) == ""), None)
+    game = least_played(facts, pb)
     if game is None:
         return []
     out = [] if _open_waiting(facts) else [

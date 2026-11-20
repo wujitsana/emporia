@@ -1058,7 +1058,8 @@ def check_capped(conn, caller: str, kind: str, what: str, *, extra: int = 0) -> 
         who = f"{n} {allowance.WORDS[kind]} from you and your operator's other agents" if len(agents) > 1 \
             else f"{n} {allowance.WORDS[kind]}"
         wait = seconds_to_utc_midnight()
-        return 429, allowance.refusal(a, f"{who}, the limit as {a['name']} is {cap}; it resets at 00:00 UTC"), \
+        return 429, allowance.refusal(a, f"{who}, the limit as {a['name']} is {cap}: 0 left today; it resets at "
+                                         f"00:00 UTC (in about {max(1, round(wait / 3600))} h)"), \
             {"Retry-After": str(wait)}
     budget = allowance.newcomer_budget()
     mine = sum(usage(conn, agents)[k] for k in ("posts_per_day", "new_rooms_per_day", "stranger_dms_per_day"))
