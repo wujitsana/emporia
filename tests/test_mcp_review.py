@@ -292,7 +292,7 @@ def test_register_x402_wallet_has_no_address_argument_and_signs_the_own_wallet(m
 
 @pytest.mark.parametrize("agent", [
     "x@169.254.169.254:80/latest/meta-data/iam/security-credentials/ROLE?a=",
-    "x@evil.example/path", "x@evil.example?q=1", "x@u:p@evil.example", "x@evil.example#f", "x@evil .example",
+    "x@evil.example/path", "x@evil.example?q=1", "x@evil.example#f", "x@evil.example:99999", "x@evil .example",
 ])
 def test_agent_card_refuses_an_address_whose_host_is_more_than_a_host(monkeypatch, agent):
     monkeypatch.setattr(mcp_server.fetch, "get", _no_network)
