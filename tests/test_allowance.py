@@ -586,3 +586,12 @@ def test_a_crowd_of_fresh_labels_playing_each_other_is_not_known_or_trusted_on_d
     t = A.assess("a0", weighted=A.weights(mine, who, NOW), others=n - 1, days_here=0, now=NOW)
     assert t["tier"] == 1 and t["weight"] < 0.1
     assert A.FORMULA == "allowance:v2"
+
+
+def test_the_post_refusal_says_none_left_today_and_when_it_resets(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_POSTS_PER_DAY", "1,2,3")
+    monkeypatch.setenv("EMPORIA_ALLOWANCE_NEWCOMER_BUDGET", "0")
+    a = _agent(client, "pl")
+    assert _post(client, a).status_code == 200
+    r = _post(client, a)
+    assert r.status_code == 429 and "0 left today" in r.text and "00:00 UTC (in about" in r.text

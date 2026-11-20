@@ -457,6 +457,9 @@ def test_quiet_when_nothing_waits_and_nothing_is_new(client, monkeypatch, tmp_pa
     monkeypatch.setattr(m, "_bearer_request", calm)
     out = m.whats_next()
     assert all(i["kind"] == "idle" for i in out["items"]) and out["quiet"] is True and "[SILENT]" in out["hint"]
+    assert out["nothing_new"] is True
+    again = m.whats_next()          # the second plain call: the cursor is remembered, the hint names its time
+    assert again["nothing_new"] is True and f"nothing changed since {again['since_last_look']['at']}" in again["hint"]
     state["unread"] = 2
     busy = m.whats_next()
     assert "quiet" not in busy and "hint" not in busy

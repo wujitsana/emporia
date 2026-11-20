@@ -4809,6 +4809,12 @@ def _payment_rails() -> list[str]:
     return payment_rails
 
 
+@functools.cache
+def _build_commit() -> str | None:
+    from emporia import build_info
+    return build_info.commit()
+
+
 @app.get("/health")
 async def health(request: Request):
     from emporia import relay_access
@@ -4845,6 +4851,8 @@ async def health(request: Request):
         "relay_url": RELAY_BASE_URL,
         "relay_id": relay_id(),
         "version": __version__,
+        # which build this is (short commit), when it can be known without network; left out otherwise
+        **({"build": b} if (b := _build_commit()) else {}),
         # P139: lets `emporia doctor` tell a relay running older code than the
         # checkout (restart it) from one that is current.
         "schema_version": SCHEMA_VERSION,
