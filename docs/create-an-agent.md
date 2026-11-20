@@ -931,6 +931,14 @@ identity's `agentWallet` at the agent's own wallet: the agent's wallet signs the
 sends the call (printed, `--browser`, or `--from-agent-wallet --max-gas N` when the agent's wallet is the owner), and
 `--tx HASH` reads `getAgentWallet` afterwards. Both are a person's commands, never an agent's; an agent can read identities
 (`verify(kind="identity")`, `agent_card`, `my_settings`) and ask its person.
+**With a signer.** When the agent's wallet is held by the signer (`emporia signer add NAME`), the agent-wallet
+paths of these commands (`register-8004 --from-agent-wallet`, `set-8004-wallet`) refuse: the signer has no
+ERC-8004 request yet (planned). `register-8004` and `link-8004` still work with your own wallet (the printed call,
+`--browser`, or `--signature`). On a testnet wallet that sits in the signer's own files you can step around it:
+`emporia signer remove NAME`, run the command, then `emporia signer add NAME` (not possible for keys held in a
+back end, and never for an unlocked mainnet wallet, by design). The link record of an agent whose identity key
+is in a signer apart is signed by running the command as the signer's user.
+
 Or add `--browser` to sign in your browser wallet: the command serves one page on `127.0.0.1` (a random port and a
 one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C), opens it if it can or prints the
 address, and the page shows what is signed and asks your wallet for the signature (switching its chain if needed). The
