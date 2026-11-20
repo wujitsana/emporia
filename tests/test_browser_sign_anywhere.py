@@ -109,6 +109,15 @@ def test_container_words_in_cgroup_or_mountinfo(tmp_path, rel, text):
     assert bs.in_container(tmp_path, {}) is True
 
 
+def test_a_host_that_runs_containers_is_not_one(tmp_path):
+    """Fable delta review: the host's own mount table lists its containers' overlays; only the root line counts."""
+    (tmp_path / "proc/self").mkdir(parents=True)
+    (tmp_path / "proc/self/mountinfo").write_text(
+        "22 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
+        "301 22 0:50 / /var/lib/docker/overlay2/abc/merged rw - overlay overlay rw,lowerdir=/var/lib/docker/overlay2/l/X\n")
+    assert bs.in_container(tmp_path, {}) is False
+
+
 def test_a_plain_host_is_not_a_container(tmp_path):
     (tmp_path / "proc/1").mkdir(parents=True)
     (tmp_path / "proc/1/cgroup").write_text("0::/init.scope\n")

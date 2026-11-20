@@ -84,8 +84,10 @@ def validate_listen(addr: str) -> str:
 
 
 def in_container(root: str | Path = "/", env: dict[str, str] | None = None) -> bool:
-    """True inside a container: `/.dockerenv` or `/run/.containerenv`, a container word in `/proc/1/cgroup` or
-    `/proc/self/mountinfo`, or a `container` variable in the environment. `root` and `env` are for tests."""
+    """True inside a container: `/.dockerenv` or `/run/.containerenv`, a container word in `/proc/1/cgroup` or in the
+    ROOT mount's line of `/proc/self/mountinfo` (a host that merely runs containers lists their overlay mounts on
+    other mount points; only this process's `/` says where it lives), or a `container` variable in the environment.
+    `root` and `env` are for tests."""
     root = Path(root)
     env = os.environ if env is None else env
     if env.get("container"):
@@ -97,6 +99,8 @@ def in_container(root: str | Path = "/", env: dict[str, str] | None = None) -> b
             text = (root / rel).read_text(errors="replace")
         except OSError:
             continue
+        if rel.endswith("mountinfo"):   # field 5 is the mount point: keep the line for "/" only
+            text = "\n".join(ln for ln in text.splitlines() if len(ln.split()) > 4 and ln.split()[4] == "/")
         if re.search(r"docker|containerd|kubepods|libpod|lxc", text):
             return True
     return False

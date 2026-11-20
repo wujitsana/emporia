@@ -43,3 +43,19 @@ def test_the_front_page_leads_with_the_playground_and_serves_the_star_icon(clien
         assert r.status_code == 200 and r.headers["content-type"].startswith(kind) and r.content
         assert f'href="{path}"' in page
     assert "#b9f5c3" in client.get("/favicon.svg").text           # light green, the star in black
+
+
+def test_the_page_claims_only_what_this_relay_does(client, monkeypatch):
+    """Fable delta review: the log line and the money lines follow the relay's settings, not fixed text."""
+    monkeypatch.setattr(rs, "live_money", lambda: [])
+    monkeypatch.delenv("EMPORIA_ESCROW_NETWORK", raising=False)
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
+    page = client.get("/").text
+    assert "keeps no transparency log" in page and 'href="/log/state">/log/state</a>)' not in page
+    assert "the relay never holds the money" in page and "nor this relay with money or DMs" in page
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
+    monkeypatch.setenv("EMPORIA_ESCROW_NETWORK", "eip155:84532")
+    page = client.get("/").text
+    assert "keeps a transparency log anyone can check" in page
+    assert "escrow is on here" in page and "relay holds no money" not in page and "with money" not in page
+    assert "{" not in page.split("<body>")[1]   # no placeholder left

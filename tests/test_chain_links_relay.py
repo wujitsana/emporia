@@ -60,18 +60,20 @@ async def stable_of(a):
     return (await a.get_agent_profile(a.agent_id))["stable_id"]
 
 
-async def link(a, key, signer, *, agent_id=AGENT, caip2=SEPOLIA, issued=None, sig=None, as_agent=None, registry=None):
+async def link(a, key, signer, *, agent_id=AGENT, caip2=SEPOLIA, issued=None, sig=None, as_agent=None, registry=None,
+               name=None):
     """Post a link the way the CLI does: the wallet's signature, then the agent's own over the record."""
     issued = issued or int(time.time()) - 5
     registry = registry or ERC8004_REGISTRIES[caip2]
     stable = await stable_of(a)
     cid = int(caip2.split(":")[1])
-    wallet = sig if sig is not None else sign(key, cid, registry, agent_id, signer, stable, issued=issued, name=a.agent_id)
+    name = name or a.agent_id
+    wallet = sig if sig is not None else sign(key, cid, registry, agent_id, signer, stable, issued=issued, name=name)
     reg = f"{caip2}:{registry.lower()}"
     at = datetime.now(UTC).isoformat()
-    payload = wire.signed_erc8004_link_payload(stable, reg, str(agent_id), signer, issued, wallet, at, a.agent_id)
+    payload = wire.signed_erc8004_link_payload(stable, reg, str(agent_id), signer, issued, wallet, at, name)
     body = {"agent_registry": reg, "agent_id": str(agent_id), "signer": signer, "issued_at": issued,
-            "agent_name": a.agent_id, "wallet_sig": wallet, "at": at, "signature": identity.sign(payload, a.agent_id)}
+            "agent_name": name, "wallet_sig": wallet, "at": at, "signature": identity.sign(payload, a.agent_id)}
     poster = as_agent or a
     return await poster._bearer_request("post", f"http://testserver/agents/{a.agent_id}/links/erc8004", json=body)
 
@@ -345,6 +347,22 @@ def test_another_agent_cannot_post_a_link_for_you(relay):
 
     r, links = run(go())
     assert r.status_code == 403 and links == []
+
+
+def test_a_statement_that_names_another_agent_is_refused(relay):
+    """Fable delta review: the owner read "... to the Emporia agent alice"; mallory must not record it on her card,
+    even with her own stable id in the signed key field."""
+    key, addr = keypair()
+    owned_by(relay, addr)
+
+    async def go():
+        m, v = agent(relay, "mallory"), agent(relay, "viewer")
+        await m.register(), await v.register()
+        r = await link(m, key, addr, name="alice")
+        return r, await card(v, m)
+
+    r, links = run(go())
+    assert r.status_code == 400 and "names the Emporia agent 'alice'" in r.text and links == []
 
 
 def test_a_mainnet_link_is_allowed_while_mainnet_money_is_locked(relay):

@@ -177,6 +177,11 @@ async def record_chain_link(agent_id: str, req: ChainLinkIn, request: Request):
     if not row:
         raise HTTPException(404, f"no agent {agent_id} on this relay")
     stable = row["stable_id"]
+    # The wallet's statement names the Emporia agent in words ("... to the Emporia agent NAME"): it must be this agent,
+    # or a statement made out to one agent could be recorded by another (the key field alone is not what the owner reads).
+    if req.agent_name not in (agent_id, agent_id.split("@", 1)[0]):
+        raise HTTPException(400, f"the wallet's statement names the Emporia agent {req.agent_name!r}, not {agent_id}: "
+                                 "sign a statement that names this agent (emporia agent link-8004)")
     link = {"agent_registry": req.agent_registry, "agent_id": req.agent_id, "signer": req.signer,
             "stable_id": stable, "issued_at": req.issued_at, "agent_name": req.agent_name, "wallet_sig": req.wallet_sig}
     if why := wire.erc8004_link_problem(link):
