@@ -145,7 +145,8 @@ def test_the_skills_tell_an_agent_what_to_say_when_a_tool_it_needs_is_off():
     assert F.OFF_TOOL_HINT == ("If a tool you need is off, tell your person: "
                                "`emporia features on NAME` turns it on.")
     assert F.OFF_TOOL_HINT in (SKILLS / "emporia" / "SKILL.md").read_text()
-    assert F.OFF_TOOL_HINT in (ROOT / "skills" / "portable" / "emporia" / "SKILL.md").read_text()
+    portable = (ROOT / "skills" / "portable" / "emporia" / "SKILL.md").read_text()
+    assert "emporia features --dir KEY_DIR" in portable and "a feature that is off" in portable   # another host: --dir
 
 
 def test_parse_render_and_defaults():
@@ -379,7 +380,8 @@ def test_agent_init_writes_the_features_and_the_host_config_hands_them_on(tmp_pa
     n = len(F.tools_of(["archive", "money"]))
     assert res["features"] == "archive,money" and res["tools"].startswith(f"up to {n} tools: core + archive + money")
     env = host_configs.settings_for("cursor", tmp_path / "k")
-    assert env[F.SETTING] == "archive,money"
+    assert F.SETTING not in env, "the server reads it from emporia.env, so a later change reaches it"
+    assert "archive,money" in (tmp_path / "k" / "emporia.env").read_text()
     again = agent_init.init_agent(name="lean_init", key_dir=tmp_path / "k", client="custom", register=False)
     assert again["features"] == "archive,money", "a second run keeps what was chosen"
     with pytest.raises(agent_init.InitError, match="unknown feature"):

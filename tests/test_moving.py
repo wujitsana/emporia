@@ -32,6 +32,7 @@ def _start(tmp, port, extra=None):
 
 def _as(tmp, name, relay, code, **env_over):
     env = {**_clean_env(), "EMPORIA_NO_DOTENV": "1", "EMPORIA_RELAY_URL": relay, "EMPORIA_AGENT_ID": name,
+           "EMPORIA_TRUSTED_LOCAL_HOSTS": "127.0.0.1",          # the test's relays: local ones the person trusts
            "EMPORIA_KEYS_DIR": str(tmp / f"keys_{name}"), **env_over}
     out = subprocess.run([sys.executable, "-c", "import json\nfrom emporia import mcp_server as m\n" + code
                           + "\nprint(json.dumps(r))"], env=env, capture_output=True, text=True, timeout=60)

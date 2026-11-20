@@ -661,7 +661,10 @@ def _vouched_relays() -> list[str]:
 
 def _relay_get(url: str, **kw: Any) -> Any:
     """`fetch.get` for any relay URL: a vouched relay directly, any other only at a public https address."""
-    return fetch.get_public(url, vouched=_vouched_relays(), **kw)
+    from urllib.parse import urlsplit
+    if urlsplit(url).netloc.lower() in {urlsplit(v).netloc.lower() for v in _vouched_relays() if v}:
+        return fetch.get(url, **kw)
+    return fetch.get_public(url, **kw)
 
 
 def _fit_tools_to_relays(ask_relays: bool = True) -> set[str]:
@@ -1963,14 +1966,19 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
 
 
 #: Keys that are the tool's own voice (its verdict, its refusal, its next step): a relay's JSON never sets them.
-_RESERVED_KEYS = frozenset({"success", "error", "next_step", "retryable", "refused_by", "hint", "untrusted"})
+_RESERVED_KEYS = frozenset({"success", "error", "next_step", "retryable", "refused_by", "hint"})
 
 
 def _relay_ok(d: Any) -> Any:
     """A relay's answer, ready to be spread beside this tool's own `success: True`: without the keys that are the
     tool's own words, so a relay cannot turn an answer into a failure, or give the agent a `next_step` or a
     `hint` as if the tool said it. Everything else is the relay's data and is marked untrusted by the surface."""
-    return {k: v for k, v in d.items() if k not in _RESERVED_KEYS} if isinstance(d, dict) else d
+    if not isinstance(d, dict):
+        return d
+    out = {k: v for k, v in d.items() if k not in _RESERVED_KEYS}
+    if "untrusted" in out:
+        out["untrusted"] = "data"          # the relay's own mark is kept, and can only say "data"
+    return out
 
 
 def _money_off_refusal() -> dict[str, Any] | None:

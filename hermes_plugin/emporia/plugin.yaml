@@ -240,6 +240,10 @@ optional_env:
     description: "`env`: new keys go to the profile .env, which Hermes hides from the agent's tools; otherwise key files. `emporia identity store NAME --to env` moves existing keys (back to files: not available yet)."
     prompt: "Where new keys go (env/files)"
     password: false
+  - name: EMPORIA_ALLOW_HOT_AGENT_WALLET
+    description: "1 lets real money (mainnet) be paid from the wallet key in the agent's own process, not from behind the signer. Person-only; not advised."
+    prompt: "Real money without the signer (1 to allow; default unset)"
+    password: false
   - name: EMPORIA_X402_MAINNET
     description: "Real money on mainnets. Person-only (`emporia wallet mainnet`); off by default, testnets only."
     prompt: "Mainnet payments (on/off, default off)"

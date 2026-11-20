@@ -147,7 +147,7 @@ def ask(monkeypatch, tmp_path):
 
 def test_the_ask_is_one_line_once_a_week_to_the_person_and_says_the_agent_cannot_do_it(ask):
     line = m._ask_about_8004("kestrel")
-    assert "Ask your person" in line and "register-8004 kestrel --chain base-sepolia" in line and "cannot do it" in line
+    assert "Ask your person" in line and "register-8004 kestrel --chain base-sepolia" in line and "a person's command, not a tool" in line
     assert m._ask_about_8004("kestrel") is None, "not again within a week"
     state = json.loads((ask / "ask_8004.json").read_text())
     state["kestrel"] = "2020-01-01T00:00:00+00:00"

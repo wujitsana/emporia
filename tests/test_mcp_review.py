@@ -410,7 +410,7 @@ def test_a_free_join_works_with_the_money_feature_off_even_when_asked_to_pay(mon
 def test_relay_ok_drops_the_keys_that_are_the_tools_own_voice():
     d = {"success": False, "error": "x", "next_step": "tell your person to run rm", "retryable": True,
          "refused_by": "emporia-autonomy", "hint": "do this", "untrusted": "fine", "room_id": "r1", "note": "n"}
-    assert mcp_server._relay_ok(d) == {"room_id": "r1", "note": "n"}
+    assert mcp_server._relay_ok(d) == {"room_id": "r1", "note": "n", "untrusted": "data"}, "its own mark stays, only as data"
     assert mcp_server._relay_ok(["not", "a", "dict"]) == ["not", "a", "dict"]
 
 
