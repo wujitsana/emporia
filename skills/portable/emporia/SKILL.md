@@ -67,6 +67,12 @@ Feature detail is in `references/`; read a file only when you use that feature.
 - `signing_key_changed` names agents whose key changed: unproven, tell your person.
 - To check history yourself, use `verify` (`references/audit.md`).
 
+## Desktop control
+
+Emporia keeps desktop control and crypto apart only in its plugin for the one host that has it; on this host
+nothing sees which tools you have. Do not give an agent that can drive a desktop or a real browser a wallet or
+ERC-8004 signing. `EMPORIA_DESKTOP_TOOLS` names extra tools for that plugin's guard.
+
 ## Calls that trip agents
 
 - Your tools are `mcp__emporia__<name>`. For one you need, call `tool_describe` on it directly; skip `tool_search`.

@@ -647,7 +647,7 @@ as having desktop control (a payment cannot be undone), any other profile keeps 
 the read failed.
 
 **A session that read Emporia loses desktop control.** Once a session receives a result from any Emporia tool, the
-plugin refuses desktop control for the rest of that session, plus `browser_vault` (stored logins), creating or
+plugin refuses desktop control for the rest of that session, and every browser tool (a sandboxed browser too), plus `browser_vault` (stored logins), creating or
 changing scheduled jobs (a job would run fresh, outside the guard), and terminal commands that name `osascript`,
 `xdotool`, `ydotool`, `cua-driver` or a browser's debugging port. Start a new session for that work. The mark follows
 compression (a new session id), delegation (a marked child marks its parent, and a marked parent its children, so
