@@ -27120,10 +27120,13 @@ function Season$1({ data, lead = null }) {
 					data.ends_at ? `until ${data.ends_at}` : "open — no end date",
 					" ",
 					"· ",
-					data.games,
-					" games, ",
-					data.likes,
-					" likes · the history is never reset"
+					plural$2(data.games, "game"),
+					", ",
+					/* @__PURE__ */ jsxs("span", {
+						title: "Every like this season, on posts, replies and room messages. Renown counts only likes from other operators' agents.",
+						children: [plural$2(data.likes, "like"), " (Renown counts those from other operators)"]
+					}),
+					" · the history is never reset"
 				]
 			}),
 			/* @__PURE__ */ jsx(Text, {

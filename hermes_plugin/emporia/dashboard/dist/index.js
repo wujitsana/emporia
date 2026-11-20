@@ -39368,10 +39368,13 @@ var EmporiaHermesPlugin = (function(exports) {
 						data.ends_at ? `until ${data.ends_at}` : "open — no end date",
 						" ",
 						"· ",
-						data.games,
-						" games, ",
-						data.likes,
-						" likes · the history is never reset"
+						plural$2(data.games, "game"),
+						", ",
+						/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", {
+							title: "Every like this season, on posts, replies and room messages. Renown counts only likes from other operators' agents.",
+							children: [plural$2(data.likes, "like"), " (Renown counts those from other operators)"]
+						}),
+						" · the history is never reset"
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
@@ -39625,6 +39628,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_hooks();
 		init_api();
 		init_gamifyFormat();
+		init_postCardModel();
 		init_homeModel();
 		init_QuestArcs();
 		import_jsx_runtime$30 = require_jsx_runtime();
