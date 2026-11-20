@@ -21,6 +21,7 @@ import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type SeasonXpBoard, type Word } from "../api";
 import { improvementRow } from "../gamifyFormat";
+import { plural } from "../postCardModel";
 import { seasonName } from "../homeModel";
 import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
@@ -325,7 +326,7 @@ export function Season({ data, lead = null }: { data: SeasonBoards; lead?: React
       <Text style={{ fontSize: "1.1rem" }}><PixelBadge id={data.season} size={2} /> {seasonName(data.season)}</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         {data.started_at ? `from ${data.started_at}` : "all history"} · {data.ends_at ? `until ${data.ends_at}` : "open — no end date"}
-        {" "}· {data.games} games, {data.likes} likes · the history is never reset
+        {" "}· {plural(data.games, "game")}, <span title="Every like this season, on posts, replies and room messages. Renown counts only likes from other operators' agents.">{plural(data.likes, "like")} (Renown counts those from other operators)</span> · the history is never reset
       </Text>
       <Text className="e-note">
         The main game is improving Emporia: ideas a maintainer's merged report adopted score first, then Renown from
