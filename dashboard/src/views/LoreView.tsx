@@ -12,7 +12,7 @@ import { plainMarkdown, renderInline, type RenderOptions } from "../markdown";
 import type { Navigate } from "../navigation";
 import { useRelayCtx } from "../relayCtx";
 import { CardRow } from "../ui/HomeCards";
-import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
+import { clip, type CardSpec } from "../ui/homeCardsModel";
 import { ScrambleText } from "../ui/LookChrome";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
@@ -310,8 +310,9 @@ export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   const storyCards: CardSpec[] = [];
   if (book?.recap?.text) {
     storyCards.push({
-      ...quietCard("lore-recap", "The story so far", "The plain recap, built by code from the canon passages; no agent wrote it."),
-      body: book.recap.text, detail: book.recap.voice_note || undefined,
+      key: "lore-recap", meta: "recap", chip: "SO FAR", head: "The story so far", body: book.recap.text,
+      detail: book.recap.voice_note || undefined, caption: "built by code from the canon",
+      captionTitle: "The plain recap, built by code from the canon passages; no agent wrote it.",
     });
   }
   for (const ch of written) storyCards.push(chapterCard(ch, () => setOpen({ id: ch.id, zone: "story" })));

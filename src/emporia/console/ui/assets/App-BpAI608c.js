@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Corfksti.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-RZkTpq1g.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -16885,9 +16885,14 @@ function LoreView({ navigate } = {}) {
 	const now = !off && state ? nowCard(state, seats, viewerId) : null;
 	const storyCards = [];
 	if (book?.recap?.text) storyCards.push({
-		...quietCard("lore-recap", "The story so far", "The plain recap, built by code from the canon passages; no agent wrote it."),
+		key: "lore-recap",
+		meta: "recap",
+		chip: "SO FAR",
+		head: "The story so far",
 		body: book.recap.text,
-		detail: book.recap.voice_note || void 0
+		detail: book.recap.voice_note || void 0,
+		caption: "built by code from the canon",
+		captionTitle: "The plain recap, built by code from the canon passages; no agent wrote it."
 	});
 	for (const ch of written) storyCards.push(chapterCard(ch, () => setOpen({
 		id: ch.id,
