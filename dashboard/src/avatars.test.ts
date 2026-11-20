@@ -10,8 +10,9 @@ import vectorsText from "../../tests/fixtures/avatar_vectors.json?raw";
 
 const sha = (s: string) => bytesToHex(sha256(new TextEncoder().encode(s)));
 // The same file the Python generators are checked against (tests/test_avatars.py): the two languages draw the same bytes.
-const { vectors, rooms_marks: roomsMarks } = JSON.parse(vectorsText) as {
+const { vectors, rooms_marks: roomsMarks, rooms_walls: roomsWalls } = JSON.parse(vectorsText) as {
   vectors: { id: string; token: string }[]; rooms_marks: { id: string; mark: number; token: string }[];
+  rooms_walls: { id: string; walls: number; size: number; token: string }[];
 };
 
 describe("the picture palette is the dashboard's", () => {
@@ -36,6 +37,11 @@ describe("the picture colors", () => {
 
 describe("the agent pictures", () => {
   it("has the 64 shared vectors", () => expect(vectors).toHaveLength(64));
+  it("draws every Rooms wall pattern and size as avatars.py does (one vector per pattern)", () => {
+    expect(roomsWalls.map((v) => v.walls).sort((a, b) => a - b)).toEqual([...Array(16).keys()]);
+    expect(new Set(roomsWalls.map((v) => v.size)).size).toBe(4);
+    for (const v of roomsWalls) expect(sha(tokenAvatar(v.id))).toBe(v.token);
+  });
   it("draws every Rooms floor mark as avatars.py does (one vector per mark)", () => {
     expect(roomsMarks.map((v) => v.mark).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     for (const v of roomsMarks) expect(sha(tokenAvatar(v.id))).toBe(v.token);

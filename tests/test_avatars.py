@@ -17,6 +17,7 @@ target, fake = _reg.target, _reg.fake      # the registration tests' fixtures
 _FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures" / "avatar_vectors.json").read_text())
 VECTORS = _FIXTURE["vectors"]
 ROOMS_MARKS = _FIXTURE["rooms_marks"]      # one Rooms picture per floor mark, so every mark is held to both ports
+ROOMS_WALLS = _FIXTURE["rooms_walls"]      # one per wall pattern (and every room size), likewise
 
 
 def sha(s):
@@ -37,6 +38,15 @@ def test_every_rooms_floor_mark_has_a_vector_and_matches_it():
     for v in ROOMS_MARKS:
         b = bytes.fromhex(v["id"])
         assert b[31] % 8 in (0, 2, 5) and b[9] % 12 == v["mark"]
+        assert sha(avatars.token_avatar(v["id"])) == v["token"]
+
+
+def test_every_rooms_wall_pattern_and_size_has_a_vector_and_matches_it():
+    assert sorted(v["walls"] for v in ROOMS_WALLS) == list(range(16))
+    assert {v["size"] for v in ROOMS_WALLS} == {0, 1, 2, 3}
+    for v in ROOMS_WALLS:
+        b = bytes.fromhex(v["id"])
+        assert b[31] % 8 in (0, 2, 5) and b[6] % 16 == v["walls"] and b[3] % 4 == v["size"]
         assert sha(avatars.token_avatar(v["id"])) == v["token"]
 
 

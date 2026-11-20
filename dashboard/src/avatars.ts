@@ -87,10 +87,11 @@ export function palette(b: number[]): (string | number)[] {
 }
 
 // ---- Rooms: a room seen from above, the far wall off-center, the four walls lit in a pattern -----------------
-const ROOM_WALLS = [[1, 0, 0, 0], [1, 1, 0, 0], [1, 0, 1, 0], [1, 2, 0, 0], [1, 0, 2, 0], [1, 2, 1, 2], [1, 1, 2, 2], [1, 1, 1, 0], [1, 2, 3, 0], [1, 3, 0, 0], [1, 0, 3, 0], [3, 1, 3, 1]];
+const ROOM_WALLS = [[1, 0, 0, 0], [1, 1, 0, 0], [1, 0, 1, 0], [1, 2, 0, 0], [1, 0, 2, 0], [1, 2, 1, 2], [1, 1, 2, 2], [1, 1, 1, 0], [1, 2, 3, 0], [1, 3, 0, 0], [1, 0, 3, 0], [3, 1, 3, 1],
+  [1, 1, 1, 1], [1, 2, 3, 2], [1, 2, 2, 0], [1, 3, 2, 0]];
 export function rooms(id: string): string {
   const b = idBytes(id), col = palette(b) as string[];
-  const h = [4, 6, 8][b[3] % 3], lo = h + 2, hi = 30 - h;
+  const h = [4, 6, 8, 10][b[3] % 4], lo = h + 2, hi = 30 - h;   // a fourth size, the big room
   let cx = [8, 12, 16, 20, 24][b[4] % 5], cy = [8, 12, 16, 20, 24][b[5] % 5];
   cx = cx < lo ? lo : cx > hi ? hi : cx;
   cy = cy < lo ? lo : cy > hi ? hi : cy;
@@ -101,7 +102,7 @@ export function rooms(id: string): string {
     "M32 32L0 32L" + x0 + " " + y1 + "L" + x1 + " " + y1 + "z",
     "M0 32L0 0L" + x0 + " " + y0 + "L" + x0 + " " + y1 + "z",
   ];
-  const pat = ROOM_WALLS[b[6] % 12], turn = b[7] % 4;
+  const pat = ROOM_WALLS[b[6] % 16], turn = b[7] % 4;
   const d = ["", "", "", ""];
   for (let i = 0; i < 4; i++) d[pat[(i + turn) % 4]] += wall[i];
   const floor = [2, 1, 3][b[8] % 3];

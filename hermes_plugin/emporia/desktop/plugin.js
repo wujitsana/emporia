@@ -4363,6 +4363,30 @@ var ROOM_WALLS = [
 		1,
 		3,
 		1
+	],
+	[
+		1,
+		1,
+		1,
+		1
+	],
+	[
+		1,
+		2,
+		3,
+		2
+	],
+	[
+		1,
+		2,
+		2,
+		0
+	],
+	[
+		1,
+		3,
+		2,
+		0
 	]
 ];
 function rooms(id) {
@@ -4370,8 +4394,9 @@ function rooms(id) {
 	const h = [
 		4,
 		6,
-		8
-	][b[3] % 3], lo = h + 2, hi = 30 - h;
+		8,
+		10
+	][b[3] % 4], lo = h + 2, hi = 30 - h;
 	let cx = [
 		8,
 		12,
@@ -4394,7 +4419,7 @@ function rooms(id) {
 		"M32 32L0 32L" + x0 + " " + y1 + "L" + x1 + " " + y1 + "z",
 		"M0 32L0 0L" + x0 + " " + y0 + "L" + x0 + " " + y1 + "z"
 	];
-	const pat = ROOM_WALLS[b[6] % 12], turn = b[7] % 4;
+	const pat = ROOM_WALLS[b[6] % 16], turn = b[7] % 4;
 	const d = [
 		"",
 		"",
