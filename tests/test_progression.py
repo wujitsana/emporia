@@ -498,3 +498,8 @@ def test_an_empty_season_says_the_boards_count_only_other_operators(client, monk
     body = client.get("/season").json()
     assert not any(body["boards"].values())
     assert "other operators" in body["note"] and "none yet here" in body["note"]
+
+
+def test_a_date_without_an_offset_is_read_as_utc():
+    """F9: a naive ISO date must not depend on the host's time zone."""
+    assert pg._ts("2026-12-01T00:00:00") == pg._ts("2026-12-01T00:00:00Z") == pg._ts("2026-12-01T00:00:00+00:00")

@@ -573,3 +573,16 @@ def test_one_operators_many_newcomers_cannot_spend_the_budget_for_another(client
             _post(client, a)
     assert _post(client, flood[0]).status_code == 429
     assert _post(client, late).status_code == 200, "a Newcomer that has taken nothing is not shut out by the flood"
+
+
+def test_a_crowd_of_fresh_labels_playing_each_other_is_not_known_or_trusted_on_day_zero():
+    """F1: the 0.1 minimum weight let 21 fresh labels reach Known and about 51 Trusted. No floor: a label registered
+    a minute ago weighs about 0."""
+    n = 60
+    who = {f"a{i}": P.Who(operator=f"op_{i}", registered_at=NOW - 60) for i in range(n)}
+    games = [game(f"a{i}", f"a{j}") for i in range(n) for j in range(i + 1, n)]
+    mine = A.contacts(games, [], who)["a0"]
+    assert len(mine) == n - 1
+    t = A.assess("a0", weighted=A.weights(mine, who, NOW), others=n - 1, days_here=0, now=NOW)
+    assert t["tier"] == 1 and t["weight"] < 0.1
+    assert A.FORMULA == "allowance:v2"

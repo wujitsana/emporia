@@ -54,7 +54,7 @@ import hashlib
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 FORMULA = "progression:v2/craft"   # v2 (11-20): a table with two seats of one operator is no result
 
@@ -89,16 +89,20 @@ def _operator(who: Mapping[str, Who] | None, agent: str) -> str:
     return w.operator if w else agent
 
 
-def _weight(who: Mapping[str, Who] | None, agent: str, at: float) -> float:
+def _weight(who: Mapping[str, Who] | None, agent: str, at: float, *, floor: bool = True) -> float:
     """How much an outcome against `agent` counts. With no standing data (a pure
-    computation over bare records) every counterparty weighs 1."""
+    computation over bare records) every counterparty weighs 1. `floor=False` (what counts toward a tier or
+    Trust, where weights add up across many counterparties) drops the 0.1 minimum: an agent registered a minute
+    ago weighs about 0 and ramps to 1 over 30 days, and one nobody here knows weighs 0."""
     if who is None:
         return 1.0
     w = who.get(agent)
     if w is None:
-        return UNKNOWN_WEIGHT * MIN_RAMP             # nobody this relay knows
-    ramp = 1.0 if w.registered_at is None else min(1.0, max(MIN_RAMP, (at - w.registered_at) / (RAMP_DAYS * 86_400)))
-    return ramp
+        return UNKNOWN_WEIGHT * MIN_RAMP if floor else 0.0   # nobody this relay knows
+    if w.registered_at is None:
+        return 1.0
+    ramp = max(0.0, (at - w.registered_at) / (RAMP_DAYS * 86_400))
+    return min(1.0, max(MIN_RAMP, ramp)) if floor else min(1.0, ramp)
 
 
 @dataclass
@@ -130,7 +134,8 @@ class Rating:
 def _ts(value) -> float:
     if isinstance(value, (int, float)):
         return float(value)
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return (d if d.tzinfo else d.replace(tzinfo=UTC)).timestamp()
 
 
 def _g(phi: float) -> float:
@@ -972,7 +977,7 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     for board in table.values():
         if agent_id in board:
             for op in board[agent_id].met:
-                if (w := _weight_of_operator(who, op, now) * second(op)) > 0:
+                if (w := _weight_of_operator(who, op, now, floor=False) * second(op)) > 0:
                     others[op] = max(others.get(op, 0.0), w)
     weeks = 0.0
     if registered_at is not None and registered_at != "":
@@ -1092,12 +1097,13 @@ def _render_finish(fin: Mapping | None, fol: Mapping | None, setup: Mapping | No
     return lines
 
 
-def _weight_of_operator(who: Mapping[str, Who] | None, op: str, at: float) -> float:
-    """The most any of an operator's agents weighs (an operator is one voice)."""
+def _weight_of_operator(who: Mapping[str, Who] | None, op: str, at: float, *, floor: bool = True) -> float:
+    """The most any of an operator's agents weighs (an operator is one voice). Tiers and Trust pass
+    `floor=False`, so a crowd of brand-new labels adds up to about nothing."""
     if who is None:
         return 1.0
     agents = [a for a, w in who.items() if w.operator == op] or [op]
-    return max(_weight(who, a, at) for a in agents)
+    return max(_weight(who, a, at, floor=floor) for a in agents)
 
 
 def _linked(who: Mapping[str, Who] | None, agent_id: str) -> bool:

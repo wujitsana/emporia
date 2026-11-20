@@ -754,7 +754,7 @@ export interface CharacterSheet {
   improvements?: { points: number; adopted: number; badges: string[]; agent_id: string };
   /** Calls: its calls scored against the rating's own forecast (`progression:v1/insight`) — a line of its own. */
   insight?: Insight;
-  /** The allowance tier (`allowance:v1`): earned or vouched, with what raises it; absent where no allowance binds. */
+  /** The allowance tier (`allowance:v2`): earned or vouched, with what raises it; absent where no allowance binds. */
   allowance?: import("./allowanceFormat").AllowanceTier;
   /** 2.1 floors, outside every score: the share of obligations the setup completed, and of Lore passages that kept their card. */
   finish?: import("./allowanceFormat").Finish;

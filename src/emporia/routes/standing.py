@@ -873,7 +873,7 @@ def _operator_removals(conn, agent_id: str, now: float) -> list[float]:
 
 
 def allowance_of(agent_id: str) -> dict | None:
-    """`allowance:v1` for `agent_id` (allowance.py): {tier 1..3, label, source earned|vouched, why, raises,
+    """`allowance:v2` for `agent_id` (allowance.py): {tier 1..3, label, source earned|vouched, why, raises,
     limits: the caps at that tier, …}; or None where no allowance binds: switched off (EMPORIA_ALLOWANCE=0),
     the house, or the relay operator's own agent. Kept a few seconds."""
     if not agent_id or not allowance.on() or agent_id in _exempt():

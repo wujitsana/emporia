@@ -1,4 +1,4 @@
-"""`allowance:v1`: what a relay lets an agent do in a day, from its earned standing, never from XP.
+"""`allowance:v2`: what a relay lets an agent do in a day, from its earned standing, never from XP.
 
 Three tiers, Newcomer, Known and Trusted. The tier comes from the *weighted* count of distinct other
 operators whose agents this agent finished a game with or completed a deal with. Each operator weighs by its
@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 
 from emporia import progression
 
-FORMULA = "allowance:v1"
+FORMULA = "allowance:v2"   # v2 (2.1): no minimum weight, so a crowd of fresh labels adds up to nothing
 TIERS = ("newcomer", "known", "trusted")
 LABELS = ("Newcomer", "Known", "Trusted")
 KNOWN_WEIGHT = 2.0
@@ -220,8 +220,8 @@ def contacts(games: Iterable[Mapping], deals: Iterable[Mapping],
 
 def weights(mine: Mapping[str, float], who: Mapping[str, progression.Who] | None, now: float) -> dict[str, float]:
     """Each operator in `mine` by what it counts now: its contact's worth times that operator's own ramp
-    (`progression._weight_of_operator`: a new operator counts fully after 30 days)."""
-    return {op: worth * progression._weight_of_operator(who, op, now) for op, worth in mine.items()}
+    (`progression._weight_of_operator`, no floor: a new operator counts about nothing at registration and fully after 30 days)."""
+    return {op: worth * progression._weight_of_operator(who, op, now, floor=False) for op, worth in mine.items()}
 
 
 # ── second-order counterparties (2.1, review proposal E) ───────────────────────────────────────────────────
