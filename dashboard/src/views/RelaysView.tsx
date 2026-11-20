@@ -4,6 +4,7 @@ import { useInterval } from "../hooks";
 import { isOff } from "../loreBook";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
+import { Card, SectionHead } from "../ui/HomeCards";
 
 /** What a card says of itself, in words. Claims are the relay's own: the count is shown as "says". */
 function cardFacts(c: RelayCard): string[] {
@@ -29,28 +30,31 @@ export function RelaysView() {
   const shared = fed?.shared_topics;
   return (
     <ViewBody>
-      <h2 className="e-topic-head__name">RELAYS</h2>
-      <p className="e-faint">Relays that asked to be listed, as this relay's directory shows them. A card's own claims are that relay's word.</p>
+      {/* In the card style of Home: a section head, then one card per relay and per shared topic. */}
+      <SectionHead title="Relays" />
+      <p className="e-faint e-section-note">Relays that asked to be listed, as this relay's directory shows them. A card's own claims are that relay's word.</p>
       {off ? <p className="e-faint">This relay does not serve a directory (its operator turns it on with EMPORIA_DIRECTORY).</p>
-        : <ViewStatus loading={loading} error={error} empty={!dir?.relays.length} emptyHint="No relay is listed yet." />}
-      <ul className="e-settlement-list" aria-label="Listed relays">
-        {(dir?.relays ?? []).map((c) => (
-          <li key={c.relay_id} className="e-settlement-list__item">
-            <span className="e-dim">{hostLabel(c.host) ?? c.host} <span className="e-faint">({c.relay_id})</span></span>
-            <span className="e-faint">{cardFacts(c).join(" · ")}</span>
-            {(c.shared_topics ?? []).length > 0 && (
-              <span>shares {(c.shared_topics ?? []).map((t) => `${t.slug}@${c.host}`).join(", ")}</span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <h3>Shared topics here</h3>
-      {shared && (shared.shares.length || shared.carried.length) ? (
-        <ul className="e-settlement-list" aria-label="Shared topics">
-          {shared.shares.map((s) => <li key={`s-${s}`} className="e-settlement-list__item"><span>{s}</span><span className="e-faint">shared by this relay</span></li>)}
-          {shared.carried.map((t) => <li key={t.topic} className="e-settlement-list__item"><span>{t.topic}</span><span className="e-faint">{carriedLine(t)}</span></li>)}
-        </ul>
-      ) : <p className="e-faint">This relay shares and carries no topic.</p>}
+        : <ViewStatus loading={loading} error={error} />}
+      {!off && dir ? (
+        <div className="e-cardrow" role="list" aria-label="Listed relays">
+          {dir.relays.length ? dir.relays.map((c) => (
+            <Card key={c.relay_id} c={{
+              key: c.relay_id, meta: c.relay_id, chip: "RELAY", head: hostLabel(c.host) ?? c.host, detail: cardFacts(c).join(" · "),
+              caption: (c.shared_topics ?? []).length ? `shares ${(c.shared_topics ?? []).map((t) => `${t.slug}@${c.host}`).join(", ")}` : "",
+              theirs: true,
+            }} />
+          )) : <Card c={{ key: "none", meta: "", chip: "RELAY", head: "None listed", caption: "", detail: "No relay is listed yet." }} />}
+        </div>
+      ) : null}
+      <SectionHead title="Shared topics here" />
+      <div className="e-cardrow" role="list" aria-label="Shared topics">
+        {shared && (shared.shares.length || shared.carried.length) ? (
+          <>
+            {shared.shares.map((s) => <Card key={`s-${s}`} c={{ key: `s-${s}`, meta: "", chip: "SHARED", head: s, caption: "shared by this relay" }} />)}
+            {shared.carried.map((t) => <Card key={t.topic} c={{ key: t.topic, meta: "", chip: "CARRIED", head: t.topic, caption: carriedLine(t) }} />)}
+          </>
+        ) : <Card c={{ key: "none", meta: "", chip: "TOPICS", head: "None shared", caption: "", detail: "This relay shares and carries no topic." }} />}
+      </div>
     </ViewBody>
   );
 }

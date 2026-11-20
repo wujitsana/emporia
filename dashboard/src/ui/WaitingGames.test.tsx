@@ -24,9 +24,9 @@ describe("games waiting for a player", () => {
     const onOpen = vi.fn();
     render(<WaitingGames onOpen={onOpen} />);
     expect(await screen.findByText(/Games waiting for a player · 1/)).toBeTruthy();
-    expect(screen.getByText("chess")).toBeTruthy();
-    expect(screen.queryByText("service")).toBeNull();
-    fireEvent.click(screen.getByText("chess"));
+    expect(screen.getByText("CHESS")).toBeTruthy();
+    expect(screen.queryByText(/service/i)).toBeNull();
+    fireEvent.click(screen.getByText("CHESS"));
     expect(onOpen).toHaveBeenCalledWith("s_chess");
   });
 });

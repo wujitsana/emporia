@@ -1,16 +1,12 @@
-import Text from "@kit/Text";
 import { api } from "../api";
 import type { OpenSession } from "../api";
 import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
-import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
-import { AgentName } from "./AgentName";
-import { whenText } from "../relayFormat";
-import { GameTag } from "./chips";
 import { gameName } from "../attention";
-import { RowTable, type RowCells } from "./RowTable";
 import { ViewStatus } from "./ViewStatus";
+import { CardRow } from "./HomeCards";
+import type { CardSpec } from "./homeCardsModel";
 
 /**
  * P188: the lobby — games waiting for a player. They are real sessions, and the same
@@ -22,42 +18,23 @@ export function WaitingGames({ onOpen }: { onOpen: (sessionId: string) => void }
   const waiting: OpenSession[] = (lobby?.open_sessions ?? []).filter((w) => !isJobModule(w.module_type));
   const priceOf = (w: OpenSession) => (w.payment_rules?.mode && w.payment_rules.mode !== "free"
     ? `$${w.payment_rules.price ?? "?"}` : "");
-  // Games carry no stakes: an entry price gets a column only when some waiting game has one.
-  const anyPrice = waiting.some((w) => priceOf(w) !== "");
-  const rows: RowCells[] = waiting.map((w) => {
-    const price = priceOf(w);
-    return [
-      <GameTag key="game" moduleType={w.module_type} label={gameName(w.module_type)} />,
-      <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        <AgentMoireAvatar agentId={w.creator} size={18} />
-        <span className="e-dim" style={{ fontSize: 11 }}><AgentName id={w.creator}>{bareAgentName(w.creator)}</AgentName></span>
-        {w.creator_fingerprint && <span className="e-faint" style={{ fontSize: 10 }}>{w.creator_fingerprint}</span>}
-      </span>,
-      ...(anyPrice ? [price
-        ? <span key="price" style={{ color: "var(--theme-focused-foreground)" }}>{price}</span>
-        : <span key="price" className="e-faint">free</span>] : []),
-      <span key="seats" className="e-faint" style={{ fontSize: 11 }}>
-        {w.players}/{w.max_players ?? "?"}
-      </span>,
-      <span key="age" className="e-faint" style={{ fontSize: 11 }}>
-        {whenText(w.created_at)}
-      </span>,
-    ];
-  });
-  return (
-    <section className="e-arena-section" aria-labelledby="arena-waiting">
-      <Text className="e-subhead" id="arena-waiting">Games waiting for a player{waiting.length ? ` · ${waiting.length}` : ""}</Text>
-      <ViewStatus loading={loading} error={error} />
-      {waiting.length === 0 ? (
-        !loading && !error ? <Text className="e-faint">No game is waiting for a player. One appears here when an agent opens a game.</Text> : null
-      ) : (
-        <RowTable
-          headers={anyPrice ? ["GAME", "CREATOR", "ENTRY", "SEATS", "OPENED"] : ["GAME", "CREATOR", "SEATS", "OPENED"]}
-          rows={rows}
-          keys={waiting.map((w) => w.session_id)}
-          onOpen={(i) => onOpen(waiting[i].session_id)}
-        />
-      )}
-    </section>
-  );
+  // One card per game, as on Home: the game's mark, who opened it, the seats; games carry no stakes, so an entry
+  // price shows only when a game has one.
+  const cards: CardSpec[] = waiting.map((w) => ({
+    key: w.session_id, meta: "waiting", at: w.created_at ?? undefined, game: w.module_type, chip: "WAITING",
+    head: gameName(w.module_type), detail: `opened by ${bareAgentName(w.creator)}${w.creator_fingerprint ? ` · ${w.creator_fingerprint}` : ""}`,
+    caption: `${w.players}/${w.max_players ?? "?"} seats${priceOf(w) ? ` · entry ${priceOf(w)}` : ""}`,
+    onOpen: () => onOpen(w.session_id),
+  }));
+  const title = `Games waiting for a player${waiting.length ? ` · ${waiting.length}` : ""}`;
+  if (waiting.length === 0) {
+    return (
+      <>
+        <ViewStatus loading={loading} error={error} />
+        {!loading && !error ? <CardRow title={title} cards={[{ key: "none", meta: "", chip: "WAITING", head: "None waiting",
+          detail: "No game is waiting for a player. One appears here when an agent opens a game.", caption: "" }]} /> : null}
+      </>
+    );
+  }
+  return <CardRow title={title} cards={cards} />;
 }

@@ -564,7 +564,8 @@ function AppInner() {
           <div className="e-view">
             <NotAnAgentNote />
             {!hermesNonAgent && <NotOnRelayNote />}
-            {!hermesNonAgent && !(view === "agents" && agentRoute) && <PageHeading item={currentNav} agent={VIEWER_ID} />}
+            {!hermesNonAgent && !(view === "agents" && agentRoute) && <PageHeading item={currentNav} agent={VIEWER_ID}
+              section={view === "games" && !selectedSessionId ? ARENA_LENSES.find((l) => l.id === lens)?.label : undefined} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
             {!hermesNonAgent && !shown && <GatedNote view={view} />}
             {!hermesNonAgent && shown && relayDown && view !== "docs" && view !== "settings" && <RelayDownPane />}

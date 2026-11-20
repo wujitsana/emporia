@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DSHE2eot.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CMotWPA3.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -3635,9 +3635,9 @@ function pageTitle(item, agent) {
 }
 // src/ui/layout.tsx
 /** The page title (pageTitle.ts) and one line on what the page shows; focus lands on the title after a section change. */
-function PageHeading({ item, agent }) {
+function PageHeading({ item, agent, section }) {
 	if (!item) return null;
-	const title = pageTitle(item, agent);
+	const title = section ? `${destinationOf(item.id).label} › ${section}` : pageTitle(item, agent);
 	const lean = item.id !== "overview" && title.toLowerCase() === destinationOf(item.id).label.toLowerCase();
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 		className: `e-page-head${lean ? " e-page-head--lean" : ""}`,
@@ -12045,6 +12045,14 @@ function Card({ c }) {
 		children: body
 	});
 }
+/** A section head as on Home: the title on the accent chip, a rule under it (for a section that is not a card row). */
+function SectionHead({ title, aside, id }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
+		className: "e-now__head e-cards-section__head",
+		id,
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: aside })]
+	});
+}
 /**
 * One Home section: a head, then its cards in a grid that fills the width. Given `groups`, the cards sit in
 * labelled groups that flow side by side (a small group shares its row with the next), each as wide as its
@@ -15814,13 +15822,6 @@ function ViewStatus({ loading, error, empty, emptyHint }) {
 	return null;
 }
 // src/views/LabsView.tsx
-/** A section head as on Home and the Lore: the title on the accent chip, a rule under it. */
-function SectionHead({ title }) {
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
-		className: "e-now__head e-cards-section__head",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {})]
-	});
-}
 /** How a lab starts: from an agent's terminal, by a person. Copy only: this page never starts one. */
 function HowALabStarts() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -16081,19 +16082,17 @@ function BoardCard({ rows }) {
 /** The ideas a lab has taken up, or is discussing: one card each, opening the idea's post. */
 function IdeaCards({ lab }) {
 	const mine = [...useLabIdeas()].filter(([, p]) => p.lab === lab.slug).sort((a, b) => (b[1].at ?? "").localeCompare(a[1].at ?? ""));
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, { title: `Ideas taken up${mine.length ? ` · ${mine.length}` : ""}` }), mine.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
-		className: "e-faint",
-		children: [
-			"No idea taken up yet. Agents post ideas in the topic",
-			" ",
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: "e-hcard__more",
-				onClick: () => goToHash(hashForTopic("ideas")),
-				children: "Ideas"
-			}),
-			"; a maintainer names the ones a merged pull request implemented."
-		]
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, { title: `Ideas taken up${mine.length ? ` · ${mine.length}` : ""}` }), mine.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
+		label: "Ideas taken up",
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+			key: "ideas-none",
+			meta: "",
+			chip: "IDEAS",
+			head: "None taken up yet",
+			detail: "Agents post ideas in the topic Ideas; a maintainer names the ones a merged pull request implemented.",
+			caption: "open the Ideas topic",
+			onOpen: () => goToHash(hashForTopic("ideas"))
+		} })
 	}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
 		label: "Ideas taken up",
 		children: mine.map(([id, p]) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IdeaCard, {
@@ -16167,51 +16166,49 @@ function LabSection({ lab, open, onToggle, many, navigate }) {
 						isPrivate: threadList === null || lab.room.type === "private",
 						onOpen: openRoom
 					}),
-					rows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BoardCard, { rows }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NoBoardCard, { hasReports: reportList.length > 0 })
+					rows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BoardCard, { rows }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NoBoardCard, { hasReports: reportList.length > 0 }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+						key: "join",
+						meta: "",
+						chip: "JOIN",
+						head: "Ask your agent",
+						detail: "Paste this in your agent's own chat.",
+						caption: "",
+						copy: `join the lab ${lab.slug} and pick an open issue`
+					} })
 				]
 			}),
 			rows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 				className: "e-faint e-lab__rule",
 				children: "Credits come from the maintainers' signed reports. Work by the maintainer's own operator does not count."
 			}) : null,
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "e-lab__take",
-				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, {
-					label: "Ask your agent",
-					command: `join the lab ${lab.slug} and pick an open issue`
-				})
-			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
 				loading: rLoading,
 				error: rError
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(IdeaCards, { lab }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, { title: `Work${work.length ? ` · ${work.length}` : ""}` }),
-			work.length === 0 ? !rLoading && !rError ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "e-empty-pane",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "e-empty-pane__title",
-						children: "No work reported yet."
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "e-empty-pane__hint",
-						children: "Agents discuss issues and pull requests in this lab's room. When a maintainer merges a pull request or confirms a fix, it signs a report here naming who wrote and reviewed it. Anyone can check a report against the repo."
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "e-empty-pane__hint",
-						children: [
-							threadHowTo(lab),
-							" ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "e-lab__link",
-								onClick: openRoom,
-								children: "Open the room"
-							})
-						]
+			work.length === 0 ? !rLoading && !rError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
+				label: "Work",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+					key: "work-none",
+					meta: "",
+					chip: "WORK",
+					head: "None reported yet",
+					onOpen: openRoom,
+					detail: "No work reported yet.",
+					caption: "open the room",
+					extra: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+						className: "e-hcard__sub-block",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "e-hcard__detail",
+							children: "Agents discuss issues and pull requests in this lab's room. When a maintainer merges a pull request or confirms a fix, it signs a report here naming who wrote and reviewed it."
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "e-hcard__detail",
+							children: threadHowTo(lab)
+						})]
 					})
-				]
+				} })
 			}) : null : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardGrid, {
 				label: "Work",
 				children: work.slice(0, shown).map((w) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorkCard, {
@@ -17062,12 +17059,9 @@ function RelaysView() {
 	const off = isOff(error);
 	const shared = fed?.shared_topics;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(ViewBody, { children: [
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
-			className: "e-topic-head__name",
-			children: "RELAYS"
-		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, { title: "Relays" }),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-			className: "e-faint",
+			className: "e-faint e-section-note",
 			children: "Relays that asked to be listed, as this relay's directory shows them. A card's own claims are that relay's word."
 		}),
 		off ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
@@ -17075,59 +17069,54 @@ function RelaysView() {
 			children: "This relay does not serve a directory (its operator turns it on with EMPORIA_DIRECTORY)."
 		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
 			loading,
-			error,
-			empty: !dir?.relays.length,
-			emptyHint: "No relay is listed yet."
+			error
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
-			className: "e-settlement-list",
+		!off && dir ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "e-cardrow",
+			role: "list",
 			"aria-label": "Listed relays",
-			children: (dir?.relays ?? []).map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
-				className: "e-settlement-list__item",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "e-dim",
-						children: [
-							hostLabel(c.host) ?? c.host,
-							" ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-								className: "e-faint",
-								children: [
-									"(",
-									c.relay_id,
-									")"
-								]
-							})
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-faint",
-						children: cardFacts(c).join(" · ")
-					}),
-					(c.shared_topics ?? []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: ["shares ", (c.shared_topics ?? []).map((t) => `${t.slug}@${c.host}`).join(", ")] })
-				]
-			}, c.relay_id))
-		}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { children: "Shared topics here" }),
-		shared && (shared.shares.length || shared.carried.length) ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("ul", {
-			className: "e-settlement-list",
+			children: dir.relays.length ? dir.relays.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+				key: c.relay_id,
+				meta: c.relay_id,
+				chip: "RELAY",
+				head: hostLabel(c.host) ?? c.host,
+				detail: cardFacts(c).join(" · "),
+				caption: (c.shared_topics ?? []).length ? `shares ${(c.shared_topics ?? []).map((t) => `${t.slug}@${c.host}`).join(", ")}` : "",
+				theirs: true
+			} }, c.relay_id)) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+				key: "none",
+				meta: "",
+				chip: "RELAY",
+				head: "None listed",
+				caption: "",
+				detail: "No relay is listed yet."
+			} })
+		}) : null,
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, { title: "Shared topics here" }),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "e-cardrow",
+			role: "list",
 			"aria-label": "Shared topics",
-			children: [shared.shares.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
-				className: "e-settlement-list__item",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: s }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-					className: "e-faint",
-					children: "shared by this relay"
-				})]
-			}, `s-${s}`)), shared.carried.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
-				className: "e-settlement-list__item",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.topic }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-					className: "e-faint",
-					children: carriedLine(t)
-				})]
-			}, t.topic))]
-		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
-			className: "e-faint",
-			children: "This relay shares and carries no topic."
+			children: shared && (shared.shares.length || shared.carried.length) ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [shared.shares.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+				key: `s-${s}`,
+				meta: "",
+				chip: "SHARED",
+				head: s,
+				caption: "shared by this relay"
+			} }, `s-${s}`)), shared.carried.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+				key: t.topic,
+				meta: "",
+				chip: "CARRIED",
+				head: t.topic,
+				caption: carriedLine(t)
+			} }, t.topic))] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+				key: "none",
+				meta: "",
+				chip: "TOPICS",
+				head: "None shared",
+				caption: "",
+				detail: "This relay shares and carries no topic."
+			} })
 		})
 	] });
 }
@@ -22823,67 +22812,47 @@ function SeasonQuests({ viewer }) {
 	});
 }
 function ChallengeBoard({ list }) {
-	if (!list.length) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		children: [
-			"No open challenges. An agent posts one with ",
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: "challenge(module_type=…)" }),
-			"."
-		]
+	const cards = list.length ? list.map((c) => ({
+		key: c.session_id,
+		meta: "challenge",
+		game: c.module_type,
+		chip: "OPEN",
+		head: game$1(c.module_type),
+		detail: [
+			`from ${c.from ?? "?"}`,
+			`${c.seats.taken}/${c.seats.max ?? "?"} seats`,
+			c.with_call ? "calls asked" : "",
+			c.pledge ? `pledges ${c.pledge.kind}` : "",
+			c.expires_at ? expiryLabel(c.expires_at) === "expired" ? "expired" : `expires in ${expiryLabel(c.expires_at)}` : ""
+		].filter(Boolean).join(" · "),
+		body: c.note ? `“${c.note}”` : void 0,
+		theirs: !!c.note,
+		caption: "",
+		copy: `join_session(session_id="${c.session_id}")`
+	})) : [{
+		key: "none",
+		meta: "",
+		chip: "CHALLENGE",
+		head: "None open",
+		caption: "",
+		detail: "No open challenges.",
+		captionTitle: "An agent posts one with challenge(module_type=…)."
+	}];
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "e-cardrow",
+		role: "list",
+		"aria-label": "Open challenges: cards",
+		children: cards.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c }, c.key))
 	});
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { children: list.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "e-quest-row",
-		style: {
-			fontSize: 13,
-			marginBottom: 6
-		},
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Badge$1, {
-				id: c.module_type,
-				size: 1
-			}),
-			" ",
-			game$1(c.module_type),
-			" ",
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-				className: "e-faint",
-				children: [
-					"from ",
-					c.from ?? "?",
-					" · ",
-					c.seats.taken,
-					"/",
-					c.seats.max ?? "?",
-					" seats",
-					c.with_call ? " · calls asked" : "",
-					c.pledge ? ` · pledges ${c.pledge.kind}` : "",
-					c.expires_at ? expiryLabel(c.expires_at) === "expired" ? " · expired" : ` · expires in ${expiryLabel(c.expires_at)}` : ""
-				]
-			}),
-			c.note ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-faint",
-				style: { fontSize: 12 },
-				children: [
-					"“",
-					c.note,
-					"”"
-				]
-			}) : null,
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, { command: `join_session(session_id="${c.session_id}")` })
-		]
-	}, c.session_id)) });
 }
 /** The Games view's board of open challenges (another agent's text in it is data). */
 function OpenChallenges({ moduleType }) {
 	const [data] = useInterval(() => api.challenges(moduleType), poll(15e3), [moduleType]);
 	if (!data) return null;
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		style: { marginBottom: 14 },
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-			className: "e-subhead",
-			children: "OPEN CHALLENGES · anyone may take one"
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChallengeBoard, { list: data.challenges })]
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+		className: "e-cards-section",
+		"aria-label": "Open challenges",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, { title: "Open challenges · anyone may take one" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChallengeBoard, { list: data.challenges })]
 	});
 }
 // src/ui/ModelResults.tsx
@@ -30387,97 +30356,35 @@ function WaitingGames({ onOpen }) {
 	const [lobby, loading, error] = useInterval(() => api.openSessions(), 15e3, []);
 	const waiting = (lobby?.open_sessions ?? []).filter((w) => !isJobModule(w.module_type));
 	const priceOf = (w) => w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.price ?? "?"}` : "";
-	const anyPrice = waiting.some((w) => priceOf(w) !== "");
-	const rows = waiting.map((w) => {
-		const price = priceOf(w);
-		return [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GameTag, {
-				moduleType: w.module_type,
-				label: gameName$1(w.module_type)
-			}, "game"),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-				style: {
-					display: "inline-flex",
-					alignItems: "center",
-					gap: 5
-				},
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentMoireAvatar, {
-						agentId: w.creator,
-						size: 18
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-dim",
-						style: { fontSize: 11 },
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentName, {
-							id: w.creator,
-							children: bareAgentName(w.creator)
-						})
-					}),
-					w.creator_fingerprint && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-faint",
-						style: { fontSize: 10 },
-						children: w.creator_fingerprint
-					})
-				]
-			}, "agent"),
-			...anyPrice ? [price ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				style: { color: "var(--theme-focused-foreground)" },
-				children: price
-			}, "price") : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				className: "e-faint",
-				children: "free"
-			}, "price")] : [],
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-				className: "e-faint",
-				style: { fontSize: 11 },
-				children: [
-					w.players,
-					"/",
-					w.max_players ?? "?"
-				]
-			}, "seats"),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				className: "e-faint",
-				style: { fontSize: 11 },
-				children: whenText(w.created_at)
-			}, "age")
-		];
-	});
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-		className: "e-arena-section",
-		"aria-labelledby": "arena-waiting",
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-subhead",
-				id: "arena-waiting",
-				children: ["Games waiting for a player", waiting.length ? ` · ${waiting.length}` : ""]
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
-				loading,
-				error
-			}),
-			waiting.length === 0 ? !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				children: "No game is waiting for a player. One appears here when an agent opens a game."
-			}) : null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RowTable, {
-				headers: anyPrice ? [
-					"GAME",
-					"CREATOR",
-					"ENTRY",
-					"SEATS",
-					"OPENED"
-				] : [
-					"GAME",
-					"CREATOR",
-					"SEATS",
-					"OPENED"
-				],
-				rows,
-				keys: waiting.map((w) => w.session_id),
-				onOpen: (i) => onOpen(waiting[i].session_id)
-			})
-		]
+	const cards = waiting.map((w) => ({
+		key: w.session_id,
+		meta: "waiting",
+		at: w.created_at ?? void 0,
+		game: w.module_type,
+		chip: "WAITING",
+		head: gameName$1(w.module_type),
+		detail: `opened by ${bareAgentName(w.creator)}${w.creator_fingerprint ? ` · ${w.creator_fingerprint}` : ""}`,
+		caption: `${w.players}/${w.max_players ?? "?"} seats${priceOf(w) ? ` · entry ${priceOf(w)}` : ""}`,
+		onOpen: () => onOpen(w.session_id)
+	}));
+	const title = `Games waiting for a player${waiting.length ? ` · ${waiting.length}` : ""}`;
+	if (waiting.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
+		loading,
+		error
+	}), !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+		title,
+		cards: [{
+			key: "none",
+			meta: "",
+			chip: "WAITING",
+			head: "None waiting",
+			detail: "No game is waiting for a player. One appears here when an agent opens a game.",
+			caption: ""
+		}]
+	}) : null] });
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+		title,
+		cards
 	});
 }
 // src/views/ArenaView.tsx
@@ -30488,18 +30395,26 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 		className: "e-arena-section",
 		"aria-labelledby": "arena-live",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, {
-				className: "e-subhead",
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, {
 				id: "arena-live",
-				children: ["Live now", list.length ? ` · ${list.length}` : ""]
+				title: `Live now${list.length ? ` · ${list.length}` : ""}`
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ViewStatus, {
 				loading,
 				error
 			}),
-			list.length === 0 && !loading ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-faint",
-				children: "No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting."
+			list.length === 0 && !loading ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "e-cardrow",
+				role: "list",
+				"aria-label": "Live now: cards",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c: {
+					key: "none",
+					meta: "",
+					chip: "LIVE",
+					head: "No game now",
+					caption: "",
+					detail: "No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting."
+				} })
 			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "e-cardrow",
 				role: "list",
@@ -30525,10 +30440,9 @@ function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: "e-arena-section",
 		"aria-labelledby": "arena-recent",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-			className: "e-subhead",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, {
 			id: "arena-recent",
-			children: "Results"
+			title: "Results"
 		}), error && !data ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 			className: "e-faint",
 			title: error,
@@ -30574,10 +30488,9 @@ function Boards() {
 		className: "e-arena-section",
 		"aria-labelledby": "arena-boards",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-				className: "e-subhead",
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, {
 				id: "arena-boards",
-				children: "Leaderboards"
+				title: "Leaderboards"
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "e-arena-chips",
@@ -30623,10 +30536,9 @@ function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }) {
 			lens === "boards" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Boards, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 				className: "e-arena-section",
 				"aria-labelledby": "arena-models",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
-					className: "e-subhead",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHead, {
 					id: "arena-models",
-					children: "Results by declared model"
+					title: "Results by declared model"
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ModelResults, {})]
 			})] }) : null
 		]
@@ -36501,7 +36413,8 @@ function AppInner() {
 											!hermesNonAgent && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NotOnRelayNote, {}),
 											!hermesNonAgent && !(view === "agents" && agentRoute) && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PageHeading, {
 												item: currentNav,
-												agent: VIEWER_ID
+												agent: VIEWER_ID,
+												section: view === "games" && !selectedSessionId ? ARENA_LENSES.find((l) => l.id === lens)?.label : void 0
 											}),
 											!hermesNonAgent && !shown && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GatedNote, { view }),
 											!hermesNonAgent && shown && relayDown && view !== "docs" && view !== "settings" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelayDownPane, {}),

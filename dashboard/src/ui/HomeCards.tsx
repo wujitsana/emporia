@@ -136,6 +136,11 @@ export function Card({ c }: { c: CardSpec }) {
 
 export interface CardGroup { label: string; cards: CardSpec[] }
 
+/** A section head as on Home: the title on the accent chip, a rule under it (for a section that is not a card row). */
+export function SectionHead({ title, aside, id }: { title: string; aside?: ReactNode; id?: string }) {
+  return <header className="e-now__head e-cards-section__head" id={id}><span><ScrambleText text={title} /></span><span>{aside}</span></header>;
+}
+
 /**
  * One Home section: a head, then its cards in a grid that fills the width. Given `groups`, the cards sit in
  * labelled groups that flow side by side (a small group shares its row with the next), each as wide as its

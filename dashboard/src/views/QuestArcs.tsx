@@ -11,6 +11,8 @@ import { expiryLabel } from "../discoveryFormat";
 import { PixelBadge } from "../badges";
 import { CopyCommand } from "../ui/CopyCommand";
 import { api, type AgentQuests, type OpenChallenge, type QuestBook } from "../api";
+import { Card, SectionHead } from "../ui/HomeCards";
+import type { CardSpec } from "../ui/homeCardsModel";
 
 const PILLAR_TITLE: Record<string, string> = { start: "Start", talk: "Talk", trust: "Trust", act: "Act" };
 const game = (m: string) => m.replace("emporia:", "").replace(/:v\d+$/, "");
@@ -128,23 +130,21 @@ export function SeasonQuests({ viewer }: { viewer: string | null }) {
 }
 
 export function ChallengeBoard({ list }: { list: OpenChallenge[] }) {
-  if (!list.length) {
-    return <Text className="e-faint" style={{ fontSize: 12 }}>No open challenges. An agent posts one with <code>challenge(module_type=…)</code>.</Text>;
-  }
+  // One card per challenge, as on Home: the game's mark, who posted it, the seats and terms; the call to take it on the
+  // caption bar, to copy (the dashboard never joins). The note is the challenger's words: data.
+  const cards: CardSpec[] = list.length ? list.map((c) => ({
+    key: c.session_id, meta: "challenge", game: c.module_type, chip: "OPEN", head: game(c.module_type),
+    detail: [`from ${c.from ?? "?"}`, `${c.seats.taken}/${c.seats.max ?? "?"} seats`, c.with_call ? "calls asked" : "",
+      c.pledge ? `pledges ${c.pledge.kind}` : "",
+      c.expires_at ? (expiryLabel(c.expires_at) === "expired" ? "expired" : `expires in ${expiryLabel(c.expires_at)}`) : ""]
+      .filter(Boolean).join(" · "),
+    body: c.note ? `“${c.note}”` : undefined, theirs: !!c.note,
+    caption: "", copy: `join_session(session_id="${c.session_id}")`,
+  })) : [{ key: "none", meta: "", chip: "CHALLENGE", head: "None open", caption: "",
+    detail: "No open challenges.", captionTitle: "An agent posts one with challenge(module_type=…)." }];
   return (
-    <div>
-      {list.map((c) => (
-        <div key={c.session_id} className="e-quest-row" style={{ fontSize: 13, marginBottom: 6 }}>
-          <PixelBadge id={c.module_type} size={1} /> {game(c.module_type)}{" "}
-          <span className="e-faint">
-            from {c.from ?? "?"} · {c.seats.taken}/{c.seats.max ?? "?"} seats
-            {c.with_call ? " · calls asked" : ""}{c.pledge ? ` · pledges ${c.pledge.kind}` : ""}
-            {c.expires_at ? (expiryLabel(c.expires_at) === "expired" ? " · expired" : ` · expires in ${expiryLabel(c.expires_at)}`) : ""}
-          </span>
-          {c.note ? <Text className="e-faint" style={{ fontSize: 12 }}>“{c.note}”</Text> : null}
-          <CopyCommand command={`join_session(session_id="${c.session_id}")`} />
-        </div>
-      ))}
+    <div className="e-cardrow" role="list" aria-label="Open challenges: cards">
+      {cards.map((c) => <Card key={c.key} c={c} />)}
     </div>
   );
 }
@@ -154,9 +154,9 @@ export function OpenChallenges({ moduleType }: { moduleType?: string }) {
   const [data] = useInterval(() => api.challenges(moduleType), poll(15_000), [moduleType]);
   if (!data) return null;
   return (
-    <div style={{ marginBottom: 14 }}>
-      <Text className="e-subhead">OPEN CHALLENGES · anyone may take one</Text>
+    <section className="e-cards-section" aria-label="Open challenges">
+      <SectionHead title="Open challenges · anyone may take one" />
       <ChallengeBoard list={data.challenges} />
-    </div>
+    </section>
   );
 }

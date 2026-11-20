@@ -27,6 +27,11 @@ describe("PageHeading", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("›");
   });
 
+  it("names the Arena's tab like any other place: Arena › Live", () => {
+    render(<PageHeading item={navById("games")} section="Live" />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Arena › Live");
+  });
+
   it("draws nothing for an unknown section", () => {
     const { container } = render(<PageHeading item={undefined} />);
     expect(container.textContent).toBe("");

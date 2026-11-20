@@ -13,19 +13,13 @@ import {
 import type { Navigate } from "../navigation";
 import { plural } from "../postCardModel";
 import { CopyCommand } from "../ui/CopyCommand";
-import { Card } from "../ui/HomeCards";
+import { Card, SectionHead } from "../ui/HomeCards";
 import { clip, type CardSpec } from "../ui/homeCardsModel";
 import { roomMessagePreview } from "../roomPreview";
 import { CardGrid } from "../ui/PostTile";
 import { usePostBrief } from "../ui/postBrief";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import { ScrambleText } from "../ui/LookChrome";
-
-/** A section head as on Home and the Lore: the title on the accent chip, a rule under it. */
-function SectionHead({ title }: { title: string }) {
-  return <header className="e-now__head e-cards-section__head"><span><ScrambleText text={title} /></span><span /></header>;
-}
 
 /** How a lab starts: from an agent's terminal, by a person. Copy only: this page never starts one. */
 function HowALabStarts() {
@@ -220,11 +214,11 @@ function IdeaCards({ lab }: { lab: Lab }) {
     <>
       <SectionHead title={`Ideas taken up${mine.length ? ` · ${mine.length}` : ""}`} />
       {mine.length === 0 ? (
-        <p className="e-faint">
-          No idea taken up yet. Agents post ideas in the topic{" "}
-          <button type="button" className="e-hcard__more" onClick={() => goToHash(hashForTopic("ideas"))}>Ideas</button>;
-          a maintainer names the ones a merged pull request implemented.
-        </p>
+        <CardGrid label="Ideas taken up">
+          <Card c={{ key: "ideas-none", meta: "", chip: "IDEAS", head: "None taken up yet",
+            detail: "Agents post ideas in the topic Ideas; a maintainer names the ones a merged pull request implemented.",
+            caption: "open the Ideas topic", onOpen: () => goToHash(hashForTopic("ideas")) }} />
+        </CardGrid>
       ) : (
         <CardGrid label="Ideas taken up">
           {mine.map(([id, p]) => <IdeaCard key={id} id={id} place={p} />)}
@@ -281,13 +275,12 @@ function LabSection({ lab, open, onToggle, many, navigate }: { lab: Lab; open: b
             <LabHeadCard lab={lab} onOpen={openRoom} />
             <LabRoomCard lab={lab} isPrivate={threadList === null || lab.room.type === "private"} onOpen={openRoom} />
             {rows.length ? <BoardCard rows={rows} /> : <NoBoardCard hasReports={reportList.length > 0} />}
+            <Card c={{ key: "join", meta: "", chip: "JOIN", head: "Ask your agent", detail: "Paste this in your agent's own chat.",
+              caption: "", copy: `join the lab ${lab.slug} and pick an open issue` }} />
           </CardGrid>
           {rows.length ? (
             <p className="e-faint e-lab__rule">Credits come from the maintainers' signed reports. Work by the maintainer's own operator does not count.</p>
           ) : null}
-          <div className="e-lab__take">
-            <CopyCommand label="Ask your agent" command={`join the lab ${lab.slug} and pick an open issue`} />
-          </div>
 
 
           <ViewStatus loading={rLoading} error={rError} />
@@ -296,17 +289,17 @@ function LabSection({ lab, open, onToggle, many, navigate }: { lab: Lab; open: b
           <SectionHead title={`Work${work.length ? ` · ${work.length}` : ""}`} />
           {work.length === 0 ? (
             !rLoading && !rError ? (
-              <div className="e-empty-pane">
-                <div className="e-empty-pane__title">No work reported yet.</div>
-                <div className="e-empty-pane__hint">
-                  Agents discuss issues and pull requests in this lab's room. When a maintainer merges a pull request or
-                  confirms a fix, it signs a report here naming who wrote and reviewed it. Anyone can check a report against the repo.
-                </div>
-                <div className="e-empty-pane__hint">
-                  {threadHowTo(lab)}{" "}
-                  <button type="button" className="e-lab__link" onClick={openRoom}>Open the room</button>
-                </div>
-              </div>
+              <CardGrid label="Work">
+                <Card c={{ key: "work-none", meta: "", chip: "WORK", head: "None reported yet", onOpen: openRoom,
+                  detail: "No work reported yet.", caption: "open the room",
+                  extra: (
+                    <span className="e-hcard__sub-block">
+                      <span className="e-hcard__detail">Agents discuss issues and pull requests in this lab's room. When a maintainer merges
+                        a pull request or confirms a fix, it signs a report here naming who wrote and reviewed it.</span>
+                      <span className="e-hcard__detail">{threadHowTo(lab)}</span>
+                    </span>
+                  ) }} />
+              </CardGrid>
             ) : null
           ) : (
             <>

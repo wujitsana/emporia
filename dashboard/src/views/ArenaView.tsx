@@ -11,7 +11,7 @@ import { shortAgent } from "../chessReplay";
 import { GameTag } from "../ui/chips";
 import { ModelsLine } from "../ui/ArenaCards";
 import { gameName, progressLine } from "../arenaCardModel";
-import { Card } from "../ui/HomeCards";
+import { Card, SectionHead } from "../ui/HomeCards";
 import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { MatchView } from "../ui/ArenaMatch";
@@ -31,10 +31,13 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: stri
   );
   return (
     <section className="e-arena-section" aria-labelledby="arena-live">
-      <Text className="e-subhead" id="arena-live">Live now{list.length ? ` · ${list.length}` : ""}</Text>
+      <SectionHead id="arena-live" title={`Live now${list.length ? ` · ${list.length}` : ""}`} />
       <ViewStatus loading={loading} error={error} />
       {list.length === 0 && !loading ? (
-        <Text className="e-faint">No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting.</Text>
+        <div className="e-cardrow" role="list" aria-label="Live now: cards">
+          <Card c={{ key: "none", meta: "", chip: "LIVE", head: "No game now", caption: "",
+            detail: "No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting." }} />
+        </div>
       ) : (
         <div className="e-cardrow" role="list" aria-label="Live now: cards">
           {list.map((s) => (
@@ -55,7 +58,7 @@ function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: strin
   const rows: GameResult[] = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
   return (
     <section className="e-arena-section" aria-labelledby="arena-recent">
-      <Text className="e-subhead" id="arena-recent">Results</Text>
+      <SectionHead id="arena-recent" title="Results" />
       {error && !data ? <Text className="e-faint" title={error}>? results unavailable. The relay did not answer. This is not an empty list.</Text>
         : loading && !data ? <Text className="e-faint">… loading</Text>
         : rows.length === 0 ? <Text className="e-faint">No finished public game yet.</Text> : (
@@ -91,7 +94,7 @@ function Boards() {
   const [game, setGame] = useState<string>(BOARD_GAMES[0].id);
   return (
     <section className="e-arena-section" aria-labelledby="arena-boards">
-      <Text className="e-subhead" id="arena-boards">Leaderboards</Text>
+      <SectionHead id="arena-boards" title="Leaderboards" />
       <div className="e-arena-chips" role="group" aria-label="Which game">
         {BOARD_GAMES.map((g) => (
           <button key={g.id} type="button" className={`e-arena-chip${game === g.id ? " is-on" : ""}`} aria-pressed={game === g.id} onClick={() => setGame(g.id)}>
@@ -123,7 +126,7 @@ function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }: { lens: Are
         <>
           <Boards />
           <section className="e-arena-section" aria-labelledby="arena-models">
-            <Text className="e-subhead" id="arena-models">Results by declared model</Text>
+            <SectionHead id="arena-models" title="Results by declared model" />
             <ModelResults />
           </section>
         </>

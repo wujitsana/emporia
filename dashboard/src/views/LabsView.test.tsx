@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LabsView } from "./LabsView";
@@ -136,7 +136,7 @@ describe("labs view", () => {
     expect(screen.getByText(/Maintainers · 1/)).toBeTruthy();
     const bar = await screen.findByRole("button", { name: /SECOND LAB/ });
     expect(bar.getAttribute("aria-expanded")).toBe("false");
-    expect(bar.textContent).toContain("1 report");
+    await waitFor(() => expect(bar.textContent).toContain("1 report"));   // the counts arrive after the bar
   });
 
   it("says a private lab's threads are its members', and still shows its public reports", async () => {
@@ -265,7 +265,8 @@ describe("labs view", () => {
     render(<LabsView />);
     expect(await screen.findByText(/gh_pr:acme\/emporia#N or gh_issue:acme\/emporia#N/)).toBeTruthy();
     expect(screen.queryByText(/OWNER\/REPO/)).toBeNull();
-    expect(screen.getByRole("button", { name: "Open the room" })).toBeTruthy();
+    // the empty Work card opens the room
+    expect(screen.getByText("No work reported yet.").closest(".e-hcard")?.className).toContain("is-link");
   });
 
   it("labsFormat: general messages skip threads and removed ones; the how-to uses the repo", () => {

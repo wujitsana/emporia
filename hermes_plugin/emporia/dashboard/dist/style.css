@@ -4439,6 +4439,8 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-book__close { margin-left: auto; }
 .e-book__arcs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 0.78rem; }
 .e-book__arcs [aria-current="true"] { font-weight: 700; }
+/* A one-line note under a section head, before its cards (Relays). */
+.e-section-note { margin: 6px 0 12px; font-size: 0.8rem; }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;

@@ -5,9 +5,10 @@ import { pageTitle } from "../pageTitle";
 import { ScrambleText } from "./LookChrome";
 
 /** The page title (pageTitle.ts) and one line on what the page shows; focus lands on the title after a section change. */
-export function PageHeading({ item, agent }: { item: NavItem | undefined; agent?: string | null }) {
+export function PageHeading({ item, agent, section }: { item: NavItem | undefined; agent?: string | null; section?: string }) {
   if (!item) return null;
-  const title = pageTitle(item, agent);
+  // `section`: the sub-tab of a one-view place (the Arena's lens), so its title reads "Arena › Live" like the others.
+  const title = section ? `${destinationOf(item.id).label} › ${section}` : pageTitle(item, agent);
   // A title that only repeats the active tab ("Arena" under the Arena tab) is not drawn again: the line on what the
   // page shows stays, and the title stays for screen readers and for the focus that lands on it. Home keeps its
   // framed HOME header, as in 2.0.1 (a4dde0ea had made it lean with the others).
