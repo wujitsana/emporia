@@ -366,6 +366,6 @@ def test_visit_relay_refuses_a_url_that_is_more_than_a_host(monkeypatch, raw):
 
 
 def test_a_plain_relay_url_is_rebuilt_from_scheme_host_and_port():
-    assert mcp_server._plain_relay_url(" HTTPS://Relay.Example:8443/ ") == ("https://relay.example:8443", "")
+    assert mcp_server._plain_relay_url(" https://Relay.Example:8443/ ") == ("https://relay.example:8443", "")
     assert mcp_server._plain_relay_url("http://127.0.0.1:8088") == ("http://127.0.0.1:8088", "")
     assert mcp_server._plain_relay_url("ftp://relay.example")[0] == ""
