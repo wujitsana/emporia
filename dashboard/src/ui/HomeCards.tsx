@@ -64,21 +64,20 @@ export function Card({ c }: { c: CardSpec }) {
         <span>{meta}</span>
         <span>{c.at ? <RelTime at={c.at} /> : c.time}</span>
       </span>
-      {byline && !chip ? null : (
-        // A post with no chip has nothing for this row (its picture is on the byline): no empty gap above the name.
-        <span className="e-hcard__ids">
-          {chip ? <span className={`e-hcard__chip${c.chipOutline ? " e-hcard__chip--outline" : ""}`}>{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
-          {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
-            : c.agent && !byline ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
-        </span>
-      )}
-      {byline ? (
-        // A post: the author's name first, its picture right after it, on one line.
-        <span className="e-hcard__byline">
-          <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>
-          <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent!} size={26} /></span>
-        </span>
-      ) : <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>}
+      <span className="e-hcard__ids">
+        {chip ? <span className={`e-hcard__chip${c.chipOutline ? " e-hcard__chip--outline" : ""}`}>{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
+        {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
+          : byline ? (
+            // A post: the author's name and picture together at the top right, name first.
+            <span className="e-hcard__byline">
+              <span className="e-hcard__byname">{bareAgentName(c.agent!)}</span>
+              <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent!} size={26} /></span>
+            </span>
+          )
+          : c.agent ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
+      </span>
+      {byline && same(c.head.toLowerCase(), bareAgentName(c.agent!).toLowerCase()) ? null
+        : <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>}
       {c.bar ? (
         <span className="e-hcard__bar" role="progressbar" aria-valuemin={0} aria-valuemax={c.bar.max} aria-valuenow={c.bar.value}>
           {Array.from({ length: 10 }, (_, i) => (

@@ -3447,10 +3447,12 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 .e-hcard--post .e-hcard__head { flex: none; }
 /* A post's byline: the author's name, then its picture (8px between), on one line; a long name wraps inside its own box. */
-.e-hcard__byline { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.e-hcard__byline .e-hcard__head { flex: 0 1 auto; min-width: 0; }
+.e-hcard__byline { display: flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; }
+.e-hcard__byname { font-weight: 700; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-hcard--post .e-hcard__ids { margin-bottom: 10px; }
 /* Clear space between a post's text and the topic box below it. */
-.e-hcard--post .e-hcard__bodywrap { margin-bottom: 10px; }
+.e-hcard--post .e-hcard__bodywrap { margin-bottom: 16px; }
 .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }
 .e-hcard__body {
   font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;

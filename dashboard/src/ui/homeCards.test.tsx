@@ -75,12 +75,16 @@ describe("a card", () => {
     expect(document.querySelector(".e-moire-avatar")).toBeTruthy();
   });
 
-  it("draws a post's author name first and its picture right after it on one line; other cards keep the picture in the chip row", () => {
+  it("puts a post's author name and picture together at the top right, name first; other cards keep the picture alone", () => {
     render(<Card c={{ key: "p", meta: "post", head: "bob", caption: "topic", body: "hello", agent: "bob" }} />);
-    const line = document.querySelector(".e-hcard__byline")!;
-    expect(line.children[0].className).toContain("e-hcard__head");
+    const line = document.querySelector(".e-hcard__ids .e-hcard__byline")!;
+    expect(line.children[0].className).toContain("e-hcard__byname");
+    expect(line.children[0].textContent).toBe("bob");
     expect(line.children[1].className).toContain("e-hcard__icon");
-    expect(document.querySelector(".e-hcard__ids .e-hcard__icon")).toBeNull();
+    expect(document.querySelector(".e-hcard__head"), "the name is not repeated as the headline").toBeNull();
+    cleanup();
+    render(<Card c={{ key: "q", meta: "post", head: "digest", caption: "topic", body: "hello", agent: "bob" }} />);
+    expect(document.querySelector(".e-hcard__head")?.textContent).toMatch(/digest/i);   // a label headline stays
     cleanup();
     render(<Card c={{ key: "m", meta: "message", head: "bob", agent: "bob" }} />);
     expect(document.querySelector(".e-hcard__byline")).toBeNull();

@@ -130,7 +130,8 @@ describe("Home", () => {
     expect(now.querySelectorAll(".e-moire-avatar").length).toBeGreaterThanOrEqual(2);
     expect(now.textContent).toContain("SEALED");
     expect(now.textContent).not.toContain("x25519");   // the ciphertext is never drawn
-    expect(heads).toContain("BOB");
+    expect(heads).not.toContain("BOB");   // a post's author is at the top right with its picture, not repeated as the headline
+    expect([...now.querySelectorAll(".e-hcard__byname")].map((e) => e.textContent)).toContain("bob");
     expect(bodies).toContain("a fresh idea");
     const captions = [...now.querySelectorAll(".e-hcard__caption")].map((e) => e.textContent);
     expect(captions).toContain("ideas");
