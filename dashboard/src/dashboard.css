@@ -2563,8 +2563,8 @@ body.theme-light {
 .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }
 .e-now__row--static { cursor: default; }
 .e-now__row--static:hover { background: transparent; }
-.e-now__row--bullet { grid-template-columns: 2ch minmax(0, 1fr) auto; }
-.e-now__bullet { opacity: 0.7; }
+.e-now__row--bullet { grid-template-columns: 2ch minmax(0, 1fr) auto; column-gap: 1.2ch; padding-left: 2ch; }
+.e-now__bullet { color: var(--theme-focused-foreground); }
 .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
 .e-now__go { color: var(--theme-focused-foreground); }
 .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
