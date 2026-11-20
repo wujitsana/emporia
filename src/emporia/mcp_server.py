@@ -1572,7 +1572,7 @@ def supported_games() -> dict[str, Any]:
     try:
         r = _bearer_request("get", f"{_base()}/modules", timeout=10)
         if r.status_code == 200:
-            return {"success": True, **r.json()}
+            return {"success": True, **_relay_ok(r.json())}
     except Exception as e:  # noqa: BLE001 — an unreachable relay is logged and the install's own list is used
         logger.warning("supported_games: relay unreachable: %s", e)
     # P133: the relay's list, not this process's — a relay may load games
@@ -1789,7 +1789,7 @@ def list_rooms(
             return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
         if not detail:
             d["rooms"] = [_brief_room(x) for x in d.get("rooms") or []]
-        return {"success": True, **d}
+        return {"success": True, **_relay_ok(d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
 
@@ -1950,6 +1950,17 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
     return _bearer_request(method, url, agent_id=aid, headers=headers, **kwargs)
 
 
+#: Keys that are the tool's own voice (its verdict, its refusal, its next step): a relay's JSON never sets them.
+_RESERVED_KEYS = frozenset({"success", "error", "next_step", "retryable", "refused_by", "hint", "untrusted"})
+
+
+def _relay_ok(d: Any) -> Any:
+    """A relay's answer, ready to be spread beside this tool's own `success: True`: without the keys that are the
+    tool's own words, so a relay cannot turn an answer into a failure, or give the agent a `next_step` or a
+    `hint` as if the tool said it. Everything else is the relay's data and is marked untrusted by the surface."""
+    return {k: v for k, v in d.items() if k not in _RESERVED_KEYS} if isinstance(d, dict) else d
+
+
 def _money_off_refusal() -> dict[str, Any] | None:
     """A paid join or subscription is spending: with the `money` feature off (the person did not choose it), the
     paying path refuses, though the wallet's own limits would also hold. Free joins never come here."""
@@ -2022,7 +2033,7 @@ def join_room(
                 r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, max_cents=fee, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d, **_settlement(r, d)}
+            return {"success": True, **_relay_ok(d), **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "success": False, "requires_payment": True}
@@ -2164,7 +2175,7 @@ def send_room_message(
             r = _post(content)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -2817,7 +2828,7 @@ def invite_to_room(room_id: str, agent_id: str, invited_by: str = "") -> dict[st
             timeout=10,
         )
         if r.status_code == 200:
-            return {"success": True, **r.json()}
+            return {"success": True, **_relay_ok(r.json())}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -2841,7 +2852,7 @@ def leave_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
         r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/leave", agent_id=aid, timeout=10,
                             json={"at": at, "signature": signing.sign(aid, "room-leave", room_id, aid, at)})
         if r.status_code == 200:
-            return {"success": True, **r.json()}
+            return {"success": True, **_relay_ok(r.json())}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -2862,7 +2873,7 @@ def revoke_room_invite(room_id: str, agent_id: str, creator_id: str = "") -> dic
         r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/invite/revoke", agent_id=creator_id,
                             json=_signed_room_act(creator_id, "uninvite", room_id, agent_id), timeout=10)
         if r.status_code == 200:
-            return {"success": True, **r.json()}
+            return {"success": True, **_relay_ok(r.json())}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -2885,7 +2896,7 @@ def close_room(room_id: str, creator_id: str = "") -> dict[str, Any]:
                             json={"at": at, "signature": signing.sign(creator_id, "room-close", room_id, at)},
                             timeout=15)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d,
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d,
                                                                     "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -2923,7 +2934,7 @@ def kick_from_room(
         )
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3140,7 +3151,7 @@ def unsubscribe_agora_topic(topic_slug: str, agent_id: str = "") -> dict[str, An
     try:
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{_seg(topic_slug)}/subscribe", agent_id=aid,
                             params={"agent_id": aid}, timeout=10)
-        return {"success": True, **r.json()} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(r.json())} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3183,7 +3194,7 @@ def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str = "") 
         r = _bearer_request("post", f"{_base()}/agoras/topics/{_seg(topic_slug)}/kick", agent_id=creator_id,
                             json={"target_agent_id": agent_id,
                                   **_signed_topic_act("kick", topic_slug, agent_id, creator_id)}, timeout=10)
-        return {"success": True, **r.json()} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(r.json())} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3200,7 +3211,7 @@ def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str = "") ->
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{_seg(topic_slug)}/invite/{_seg(agent_id)}",
                             agent_id=invited_by, params=_signed_topic_act("uninvite", topic_slug, agent_id, invited_by),
                             timeout=10)
-        return {"success": True, **r.json()} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(r.json())} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3252,7 +3263,7 @@ def subscribe_agora_topic(topic_slug: str, pay_with_x402: bool = False,
                 "hint": "Pay the entry fee with pay_with_x402=True or pay_with_tempo=True, then retry",
             }
         if r.status_code == 200:
-            return {"success": True, **r.json(), **_settlement(r, r.json())}
+            return {"success": True, **_relay_ok(r.json()), **_settlement(r, r.json())}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3494,7 +3505,7 @@ def send_dm(
             result = send_r.json()
             result["thread_id"] = thread_id
             result["to_agent_id"] = to_agent_id
-            # P20-6 (A5): send_room_message returns {"success": True, **d} on the
+            # P20-6 (A5): send_room_message returns {"success": True, **_relay_ok(d)} on the
             # same shape — this tool didn't, so a caller checking
             # result.get("success") on every send tool treated a successful DM
             # send as a failure.
@@ -3550,7 +3561,7 @@ def block_dm_sender(sender: str = "", list: bool = False, agent_id: str = "") ->
     if list:
         try:
             r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/dm-blocks", agent_id=aid, timeout=10)
-            return {"success": True, **r.json()} if r.status_code == 200 else {
+            return {"success": True, **_relay_ok(r.json())} if r.status_code == 200 else {
                 "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
             return {"error": str(e), "success": False}
@@ -3559,7 +3570,7 @@ def block_dm_sender(sender: str = "", list: bool = False, agent_id: str = "") ->
     try:
         r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/dm-blocks", agent_id=aid,
                             json={"agent": sender}, timeout=10)
-        return {"success": True, **r.json()} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(r.json())} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -3952,7 +3963,7 @@ def _delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "",
         return {"error": str(e), "success": False}
     if r.status_code != 200:
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
-    return {"success": True, **r.json()}
+    return {"success": True, **_relay_ok(r.json())}
 
 
 @mcp.tool()
@@ -4325,7 +4336,7 @@ def _create_session(
             # P241: a public game with no named opponent is offered to other
             # relays' agents, signed by this agent; anything else is not.
             offered = not (config or {}).get("opponent") and _offer_session(aid, d.get("session_id", ""))
-            return {"success": True, **d, "offered": bool(offered)}
+            return {"success": True, **_relay_ok(d), "offered": bool(offered)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "success": False}
@@ -4566,7 +4577,7 @@ def join_session(
             # P182: who you are now playing or trading with, before any money moves.
             _GUIDE_SENT.add(session_id)       # the join carries the game's how_to_play
             _record_reason("join_session", session_id, "joined", reason)
-            return {"success": True, **d, **_counterparties(session, aid)}
+            return {"success": True, **_relay_ok(d), **_counterparties(session, aid)}
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -4619,7 +4630,7 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
         r = httpx.get(f"{_base()}/agents/{_seg(who)}/sheet", timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"success": False, "error": str(e)}
@@ -4637,7 +4648,7 @@ def season(limit: int = 10) -> dict[str, Any]:
         r = httpx.get(f"{_base()}/season", params={"limit": limit}, timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"success": False, "error": str(e)}
@@ -4654,7 +4665,7 @@ def season_board(limit: int = 25, agent_id: str = "") -> dict[str, Any]:
                             params={"limit": limit}, timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"success": False, "error": str(e)}
@@ -4687,7 +4698,7 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
                 d["quests"] = _note_needs(d["quests"], ("how",))
             if isinstance(d.get("next"), dict):
                 d["next"] = _note_needs([d["next"]], ("how",))[0]
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"success": False, "error": str(e)}
@@ -4765,7 +4776,7 @@ def list_challenges(module_type: str = "", limit: int = 20) -> dict[str, Any]:
                       timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
-            return {"success": True, **d, "untrusted": _UNTRUSTED}     # challengers' notes are their text
+            return {"success": True, **_relay_ok(d), "untrusted": _UNTRUSTED}     # challengers' notes are their text
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"success": False, "error": str(e)}
@@ -4786,7 +4797,7 @@ def decline_challenge(session_id: str, reason: str = "") -> dict[str, Any]:
         d = r.json() if r.content else {}
         if r.status_code == 200:
             _record_reason("decline_challenge", session_id, "declined", reason)
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"success": False, "error": str(e)}
@@ -4850,7 +4861,7 @@ def make_pledge(kind: str, session_id: str, terms: dict[str, Any] | None = None,
                 "terms": terms, "note": note, "nonce": nonce, "at": at, "signature": sig}
         r = _bearer_request("post", f"{_base()}/pledges", agent_id=aid, json=body, timeout=10)
         d = r.json() if r.content else {}
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except signing.Refused as e:
         return {"error": str(e), "success": False}
@@ -4904,7 +4915,7 @@ def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str,
                                                                                _signing_identity(aid), at)}
         r = _bearer_request("post", f"{_base()}/pledges/{_seg(pledge_id)}/acts", agent_id=aid, json=body, timeout=10)
         d = r.json() if r.content else {}
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except signing.Refused as e:
         return {"error": str(e), "success": False}
@@ -4936,7 +4947,7 @@ def list_pledges(which: str = "mine", status: str = "", agent_id: str = "") -> d
         d = r.json() if r.content else {}
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
-        return {"success": True, **d, "untrusted": _UNTRUSTED}
+        return {"success": True, **_relay_ok(d), "untrusted": _UNTRUSTED}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
 
@@ -5666,7 +5677,7 @@ def fund_session(session_id: str, agent_id: str = "",
                                 headers={"PAYMENT-ESCROW": header}, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d, **_settlement(r, d)}
+            return {"success": True, **_relay_ok(d), **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "success": False}
@@ -5698,7 +5709,7 @@ def register_payout_address(address: str = "", network_family: str = "evm",
                                   "at": at, "signature": signature},
                             timeout=10)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -5746,7 +5757,7 @@ def publish_accept_networks(networks: list[str], agent_id: str = "") -> dict[str
         r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/accept-networks", agent_id=aid,
                             json={"networks": nets, "at": at, "signature": signature}, timeout=10)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
@@ -5950,7 +5961,7 @@ def submit_action(
                 _salts(aid).remember(_model_key(session_id), step_number, model, salt)
             if d.get("is_terminal"):
                 d["models"] = _reveal_models(aid, session_id)
-            return {"success": True, **d}
+            return {"success": True, **_relay_ok(d)}
         out = {"error": f"Relay {r.status_code}", "detail": d, "success": False}
         # P226: each topic is its own conversation, so a game started from a
         # room is played in the game's thread (where "Your turn" arrives) while
@@ -6545,7 +6556,7 @@ def confirm_delivery(
         # failure for a capture that went through on a slow block.
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/confirm-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
 
@@ -6590,7 +6601,7 @@ def dispute_delivery(
         )
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/dispute-delivery", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
 
@@ -6646,7 +6657,7 @@ def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
                 timeout=_CHAIN_TIMEOUT_S,
             )
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
 
@@ -6751,7 +6762,7 @@ def post(
                 return {"error": "Relay 404", "success": False,
                         "detail": f"Topic not found: no topic named {topic} here; carried topics that match: "
                                   + ", ".join(names) + " (post to one by its full name)"}
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except signing.Refused as e:
         return {"error": str(e), "success": False}
@@ -6841,7 +6852,7 @@ def read_feed(
         d["posts"] = _open_posts(aid, d.get("posts", []))
         if not detail:
             d["posts"] = [_brief_post(x) for x in d["posts"]]
-        return {"success": True, **d}
+        return {"success": True, **_relay_ok(d)}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
 
@@ -6913,7 +6924,7 @@ def react(target: str, value: str = "like", on: bool = True, to_agent: str = "",
                 "signature": signing.sign(aid, "reaction", target, value, to_stable, _signing_identity(aid), on, at)}
         r = _bearer_request("post", f"{_base()}/reactions", agent_id=aid, json=body, timeout=10)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except (signing.Refused, ValueError) as e:
         return {"error": str(e), "success": False}
@@ -6970,7 +6981,7 @@ def x_link(handle: str, post_id: str = "bio", agent_id: str = "") -> dict[str, A
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
         xlink.note_proof(aid, clean, made["token"])
-        return {"success": True, **d}
+        return {"success": True, **_relay_ok(d)}
     except signing.Refused as e:
         return {"error": str(e), "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
@@ -7011,7 +7022,7 @@ def confirm_x_link(agent: str, seen_text: str, agent_id: str = "") -> dict[str, 
         r = _bearer_request("post", f"{_base()}/agents/{_seg(profile['agent_id'])}/x-confirmations", agent_id=aid,
                             json=body, timeout=10)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except (signing.Refused, ValueError) as e:
         return {"error": str(e), "success": False}
@@ -7037,7 +7048,7 @@ def follow(target: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
             r = _bearer_request("post", f"{_base()}/game-watches", agent_id=aid,
                                 json={"session_id": target, "on": on}, timeout=10)
             d = r.json()
-            return {"success": True, **d} if r.status_code == 200 else {
+            return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
                 "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
         except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
             return {"error": str(e), "success": False}
@@ -7048,7 +7059,7 @@ def follow(target: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
                 "signature": signing.sign(aid, "follow", _signing_identity(aid), target, on, at)}
         r = _bearer_request("post", f"{_base()}/follows", agent_id=aid, json=body, timeout=10)
         d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
+        return {"success": True, **_relay_ok(d)} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
     except signing.Refused as e:
         return {"error": str(e), "success": False}
