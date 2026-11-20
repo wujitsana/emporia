@@ -400,13 +400,18 @@ async def season_ladders(limit: int = 25):
     made once their rating had settled), then Craft per set play — over the season's records.
     Open: no end date until the operator sets one; history is never reset."""
     _sheets_on()
+    limit = rs._clamp_limit(limit)
+    return await cached_public(("season", limit), lambda: _season_body(limit))
+
+
+def _season_body(limit: int) -> dict:
     from emporia.routes.likes import all_likes
     ideas = _ideas_adopted() if relay_modules.on("labs", "reports") else None
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
     _, games, who = _craft_table()
     out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                       progression.house_agents(), rs._clamp_limit(limit), ideas,
+                                       progression.house_agents(), limit, ideas,
                                        tiers=_renown_tiers(), off_board=_operator_agents(who)),
            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     if not any(out["boards"].values()):
@@ -1190,32 +1195,39 @@ async def season_board(request: Request, limit: int = 25):
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     caller = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
-    if _season_ended(s, now):
-        with rs.DB_LOCK, rs.get_db() as conn:
-            row = conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
-                               (s["season"],)).fetchone()
+    def _standing() -> tuple[dict, str | None]:
+        """The board's body and, from the end, the stored final's signature. Runs in a thread: computing it walks
+        every agent's records, and the final is computed outside the database lock."""
+        if _season_ended(s, now):
+            def stored():
+                with rs.DB_LOCK, rs.get_db() as conn:
+                    return conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
+                                        (s["season"],)).fetchone()
+            row = stored()
             if row is None:
                 per, ctx, exp = season_inputs()
-                body = _season_standing_body(s, per, ctx, exp, now)
-                sig = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "season-final", [body]))
-                conn.execute("INSERT OR IGNORE INTO season_finals (season, body_json, signature, frozen_at) "
-                             "VALUES (?, ?, ?, ?)", (s["season"], json.dumps(body, sort_keys=True), sig,
-                                                      datetime.now(UTC).isoformat(timespec="seconds")))
-                row = conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
-                                   (s["season"],)).fetchone()
-        body = json.loads(row["body_json"])
+                fresh = _season_standing_body(s, per, ctx, exp, now)
+                sig = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "season-final", [fresh]))
+                with rs.DB_LOCK, rs.get_db() as conn:     # only the write holds the lock; the first freeze wins
+                    conn.execute("INSERT OR IGNORE INTO season_finals (season, body_json, signature, frozen_at) "
+                                 "VALUES (?, ?, ?, ?)", (s["season"], json.dumps(fresh, sort_keys=True), sig,
+                                                          datetime.now(UTC).isoformat(timespec="seconds")))
+                row = stored()
+            return json.loads(row["body_json"]), row["signature"]
+        hit = _SEASON_CACHE.get(s["season"])
+        if hit and now - hit[0] < _SEASON_TTL:
+            return hit[1], None
+        per, ctx, exp = season_inputs()
+        live = _season_standing_body(s, per, ctx, exp, now)
+        _SEASON_CACHE[s["season"]] = (now, live)
+        return live, None
+    body, final_sig = await run_in_threadpool(_standing)
+    if final_sig is not None:
         return {**body, "final": True, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-                "signature": row["signature"], "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
+                "signature": final_sig, "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
                 "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
                 if caller else None, "scope": "this_relay",
                 "total": len(body["standings"])}
-    hit = _SEASON_CACHE.get(s["season"])
-    if hit and now - hit[0] < _SEASON_TTL:
-        body = hit[1]
-    else:
-        per, ctx, exp = season_inputs()
-        body = _season_standing_body(s, per, ctx, exp, now)
-        _SEASON_CACHE[s["season"]] = (now, body)
     return {**body, "final": False, "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
             "total": len(body["standings"]),
             "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
