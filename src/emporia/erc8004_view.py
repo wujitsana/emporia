@@ -94,4 +94,4 @@ def local_view(link: dict[str, Any], loaded: dict[str, Any]) -> dict[str, Any]:
 def ask_line(name: str) -> str:
     """The one line `whats_next` gives an agent with a wallet and no identity: a request to its person, not a thing to try."""
     return (f"Ask your person: an ERC-8004 identity is optional and free to read, and they can mint one for you from your "
-            f"own wallet or theirs (`emporia agent register-8004 {name} --chain base-sepolia`, testnet). You cannot do it.")
+            f"own wallet or theirs (`emporia agent register-8004 {name} --chain base-sepolia`, testnet). It is a person's command, not a tool.")

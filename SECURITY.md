@@ -378,7 +378,11 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
   signature is checked against is the relay's recorded time, so a relay that also holds a replaced
   key could backdate something signed with it.
 - **Wallet keys at rest** are 0600 files unless linked to a password manager; encrypting them with
-  a passphrase, and an AWS KMS signer, are planned.
+  a passphrase is planned. Behind the signer, wallet keys may instead live in a password manager (1Password,
+  Bitwarden, a vault) or in AWS KMS, or be held by a hosted wallet (Privy, CDP, MetaMask Agent Wallet): those back
+  ends are built but tested only against fakes, never against the live services (`emporia signer backend` says
+  so). Behind a signer, an escrow reclaim, an escrow hold against contracts a person named, and a custom Tempo
+  token are always refused: the signer's policy has no names for them (fail closed).
 - **The operator's escrow key** sits in a local file. It cannot redirect funds (holds name their
   payee) but can capture or void them early. Moving it to a KMS or HSM is deferred.
 - **Solana payments are unproven** on a live network (built to the spec, never submitted).

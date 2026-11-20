@@ -11,21 +11,24 @@ and `--browser` for ERC-8004 (`agent_card_cli`). `--signature` (signed on anothe
 Desktop control, for a profile (the plugin's `desktop_guard.detect` reads the same; a test holds them equal):
 
 * the `computer_use` toolset: named in a saved list, or part of Hermes's default set (every `hermes-*` bundle holds
-  it, and it is not default-off) while the tool is usable, i.e. a cua-driver is present (`HERMES_CUA_DRIVER_CMD`,
-  `cua-driver` on PATH, or Hermes's own install folder; a best-effort mirror of the tool's `check_fn`);
+  it, and it is not default-off) while the tool is usable, i.e. a cua-driver is present (`HERMES_CUA_DRIVER_CMD`
+  resolving, or the one Hermes's package manager installed, from the store's `facts.json`; a bare `cua-driver` on
+  PATH does not count, Hermes does not use one: a best-effort mirror of the tool's `check_fn`);
 * the `browser-cdp` toolset (it attaches to a running Chrome);
 * the `browser` toolset (named, or in the default set) AND a real browser: `browser.use_real_profile: true`, a
   `browser.cdp_url`, or `BROWSER_CDP_URL` / `BU_CDP_WS` / `BU_CDP_URL` (read from the profile's `.env` by name, as a
   yes or no: an MCP server's own environment is filtered, so the process environment alone would miss it). A plain
   sandboxed browser is not desktop control;
 * an MCP server in `mcp_servers` whose name looks like a browser or desktop driver (browser, playwright, puppeteer,
-  chrome, devtools, computer, desktop);
+  chrome, chromium, devtools, cdp, computer-use, cua: `MCP_DESKTOP`; a server merely called browser, computer or
+  desktop is not guessed at, a person lists it in `EMPORIA_DESKTOP_TOOLS`);
 * any tool a person names in `EMPORIA_DESKTOP_TOOLS` (comma-separated names or prefixes).
 
 The default set counts unless every platform in use has a saved list: `cli`, `cron`, `emporia` and any platform
 named in `platform_toolsets` (a list-literal string such as "['a','b']" is a saved list, as Hermes reads it).
-`agent.disabled_toolsets` removes a name. Not seen: a live `/browser connect` (the plugin's session guard asks
-Hermes for that; a runtime run outside Hermes cannot).
+`agent.disabled_toolsets` removes a name. Not seen: a live `/browser connect` (in-process state of Hermes that neither
+this module nor the plugin can see; the plugin's session guard does not need it, it refuses every `browser_*` tool in a
+marked session).
 
 The profile's config.yaml is read with `yaml.safe_load`, read-only; an unreadable or missing one is *unknown*, which
 never blocks anything (doctor says so). Which profile: the one named by the caller, else `HERMES_HOME` when it holds

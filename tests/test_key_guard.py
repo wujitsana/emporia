@@ -380,3 +380,77 @@ def test_the_2_1_person_settings_are_not_an_agents_to_change(tool, args):
 ])
 def test_reading_notices_or_changing_other_config_stays_free(tool, args):
     assert guard.pre_tool_call(tool, args) is None
+
+
+# ── guards review F1, F2, F4, F5 ───────────────────────────────────────────
+
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "hermes plugins disable emporia"}),
+    ("terminal", {"command": "hermes -p shop plugins remove emporia"}),
+    ("terminal", {"command": "hermes plugins uninstall emporia"}),
+    ("terminal", {"command": "hermes config set plugins.disabled '[\"emporia\"]'"}),
+    ("write_file", {"path": "/opt/data/profiles/a/config.yaml", "content": "plugins:\n  disabled:\n  - emporia\n"}),
+    ("write_file", {"path": "/opt/data/profiles/a/config.yaml", "content": "plugins:\n  disabled: [emporia]\n"}),
+    ("terminal", {"command": "echo 'plugins: {disabled: [emporia]}' >> config.yaml"}),
+])
+def test_f1_turning_the_plugin_off_is_a_persons(tool, args):
+    r = guard.pre_tool_call(tool, args)
+    assert r and r["action"] == "block", (tool, args)
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "hermes plugins list"}),
+    ("terminal", {"command": "hermes plugins disable some-other-plugin"}),
+    ("terminal", {"command": "hermes plugins enable emporia"}),
+    ("write_file", {"path": "/opt/data/profiles/a/config.yaml", "content": "plugins:\n  disabled:\n  - other\n"}),
+    ("write_file", {"path": "notes.md", "content": "disabled: [emporia]"}),
+])
+def test_f1_other_plugin_commands_and_files_stay_free(tool, args):
+    assert guard.pre_tool_call(tool, args) is None
+
+
+def test_f2_input_typed_into_a_background_process_is_a_command():
+    for action in ("submit", "write"):
+        out = guard.pre_tool_call("process_manage", {"action": action, "session_id": "p1",
+                                                      "data": "cat /opt/data/profiles/a/home/.hermes/keys/a.priv"})
+        assert out and out["action"] == "block" and "keys" in out["message"], action
+    for text in ("emporia signer approve 12", "hermes emporia wallet mainnet on", "hermes plugins disable emporia"):
+        out = guard.pre_tool_call("process_manage", {"action": "submit", "session_id": "p1", "data": text})
+        assert out and out["action"] == "block", text
+    assert guard.pre_tool_call("process_manage", {"action": "submit", "session_id": "p1", "data": "ls -la"}) is None
+    assert guard.pre_tool_call("process_manage", {"action": "poll", "session_id": "p1"}) is None
+    # a `data` argument of another tool is not typed into anything
+    assert guard.pre_tool_call("terminal", {"command": "ls", "data": "emporia wallet mainnet"}) is None
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("write_file", {"path": "/opt/data/profiles/a/plugin-data/emporia/desktop-marks.json", "content": "{}"}),
+    ("terminal", {"command": "echo '{}' > plugin-data/emporia/desktop-marks.json"}),
+    ("patch", {"path": "plugin-data/emporia/autonomy.json", "old_string": "relay", "new_string": "person"}),
+    ("terminal", {"command": "rm plugin-data/emporia/turns.json"}),
+    ("write_file", {"path": "/opt/data/profiles/a/plugin-data/emporia/x-proofs.json", "content": "{}"}),
+])
+def test_f4_the_plugins_state_files_are_not_an_agents_to_write(tool, args):
+    r = guard.pre_tool_call(tool, args)
+    assert r and r["action"] == "block", (tool, args)
+
+
+@pytest.mark.parametrize("command", [
+    "hermes cron create 'every 1h' 'water the plants'",
+    "hermes cron edit 123abc --prompt 'do x'",
+    "hermes -p shop cron resume 123abc",
+    "hermes cron remove 123abc",
+])
+def test_f5_a_job_made_or_edited_from_the_terminal_needs_the_persons_yes(command):
+    r = guard.pre_tool_call("terminal", {"command": command})
+    assert r and r["action"] == "approve" and r["rule_key"].startswith("emporia-cron-"), command
+    assert guard.pre_tool_call("terminal", {"command": "hermes cron list"}) is None
+    assert guard.pre_tool_call("terminal", {"command": "hermes cron status"}) is None
+
+
+def test_a9_the_hot_wallet_override_is_a_persons_to_set():
+    for tool, args in (("terminal", {"command": "echo EMPORIA_ALLOW_HOT_AGENT_WALLET=1 >> /opt/data/profiles/a/.env"}),
+                       ("write_file", {"path": "/opt/data/profiles/a/.env", "content": "EMPORIA_ALLOW_HOT_AGENT_WALLET=1\n"}),
+                       ("terminal", {"command": "hermes config set EMPORIA_ALLOW_HOT_AGENT_WALLET 1"})):
+        r = guard.pre_tool_call(tool, args)
+        assert r and r["action"] == "block", (tool, args)

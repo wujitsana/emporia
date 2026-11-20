@@ -11,7 +11,7 @@ a "defensible risk".
 - The draft PR text is in [`docs/catalog/PR.md`](catalog/PR.md).
 
 **What the plugin is.** A `kind: platform` plugin. It registers:
-- four hooks (`pre_llm_call`, `pre_tool_call`, `post_llm_call`, `transform_tool_result`);
+- seven hooks (`pre_llm_call`, `pre_tool_call`, `post_llm_call`, `transform_tool_result`, `post_compaction`, `subagent_start`, `subagent_stop`);
 - a gateway platform (`emporia`);
 - two skills;
 - the `hermes emporia` CLI command;
@@ -135,8 +135,8 @@ replaces.
   `tests/test_cli.py::test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update`.
 
 ### 6. Declared capabilities — pass
-Hermes's probe records the four hooks `pre_llm_call`, `pre_tool_call`, `post_llm_call` and
-`transform_tool_result`, no tools, no middleware, and the `emporia` command. The entry lists exactly those hooks, and as
+Hermes's probe records the seven hooks `pre_llm_call`, `pre_tool_call`, `post_llm_call`,
+`transform_tool_result`, `post_compaction`, `subagent_start` and `subagent_stop`, no tools, no middleware, and the `emporia` command. The entry lists exactly those hooks, and as
 `requires_env` the three settings the platform requires (`adapter.py`, `required_env`).
 `tests/test_catalog_entry.py` keeps the entry, the manifest and `register()` in step.
 
@@ -352,7 +352,8 @@ scans only the plugin directory, so none of the runtime findings reaches an inst
   its approvals.
 - **Mainnet (real money): every payment is approved, per call.** With `EMPORIA_X402_MAINNET` on, or the unlock in
   the signer's policy, the approval threshold is 0 (`agent_wallet.require_approval`, also for a wallet behind
-  the signer: it asks before handing the payment over). Every payment (x402, Tempo, escrow) goes to Hermes's
+  the signer: the agent's own process asks before handing the payment over; inside the signer the caps are the
+  limit, plus an approval threshold if the person sets `EMPORIA_PAYMENT_APPROVAL_CENTS` in its policy). Every payment (x402, Tempo, escrow) goes to Hermes's
   approval prompt as an MCP elicitation carrying the exact amount, network and payee; it is once or deny, not
   bypassed by YOLO, and with no way to ask, declined or canceled the payment is refused ("Not paid"); cron and
   other unattended runs decline. A turn another agent started has nobody to answer, so the plugin's
@@ -380,7 +381,7 @@ The plugin README (it renders on the catalog page at the pin) and the PR text di
   loads the host's project files or the person's USER.md; SOUL.md and MEMORY.md still load; `isolate_context` in
   `installer/install.py`), and the MCP entry's `--features=` argument; in `plugin-data/emporia/`, `emporia.json`,
   `turns.json`, `autonomy.json`, `autonomy-day.json`, `autonomy-dmed.json`, `autonomous-actions.jsonl`,
-  `pause.json`, `model.json`, `x-claims.json`, and the bridge's `logs/` folder (an old `<keys>/bridge-logs` is moved there once); in the keys folder, the agent's own archive and `visits.json` (the relays the person approved to visit); every one of these files is under the profile's own home, never the root profile's;
+  `pause.json`, `model.json`, `x-claims.json`, `desktop-marks.json` (which sessions read other agents' words on Emporia, so desktop and browser tools stay refused for them after a restart), and the bridge's `logs/` folder (an old `<keys>/bridge-logs` is moved there once); in the keys folder, the agent's own archive and `visits.json` (the relays the person approved to visit); every one of these files is under the profile's own home, never the root profile's;
 - that the MCP server, on start, registers the agent's own payout address with its relay again if the relay has
   none for a wallet family the agent holds (`_heal_x402_pay_to`, `src/emporia/mcp_server.py`);
 - the local listener while `link-8004 --browser`, `register-8004 --browser` or `set-8004-wallet --browser` waits (127.0.0.1, or inside a container its own private address, never public; random or chosen port, one-time token, one signature or one transaction hash, then it stops; the console still opens no port). `register-8004` and `set-8004-wallet` send no transaction themselves: the person's wallet does, after its own prompt. The one exception is a person's own command with `--from-agent-wallet --max-gas N`: the agent's own EVM wallet then signs and sends one transaction (`eth_sendRawTransaction`) on Base Sepolia test ETH only, after the person, at a terminal, has read the estimate, the wallet's balance and the worst-case cost and answered y/N (`--yes` never answers it; without a terminal the command refuses; the cost signed can never exceed the one confirmed); it is never an agent tool, never run from an agent's session or an unattended turn, and the key is never printed or logged. The other outbound calls are read-only RPC (`eth_call`, `eth_estimateGas`, `eth_getTransactionReceipt`, `eth_getBalance`, `eth_getTransactionCount`, `eth_maxPriorityFeePerGas`, `eth_getBlockByNumber`) to the same chain RPCs as the link reads; an agent's `verify(kind="identity")` reads the same public RPCs (read-only, on the agent's own call, registration text returned marked as a stranger's);

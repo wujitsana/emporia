@@ -7360,14 +7360,20 @@ def _service_install_command(unit_file: Path, service: str) -> str:
 
 def _approval_phrase(env: dict[str, str]) -> str:
     """What the mainnet unlock says about approvals, true to what the signer enforces."""
+    raw = str(env.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "") or "").strip()
     try:
-        cents = int(str(env.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "") or "").strip() or 0)
+        cents = int(raw) if raw else None
     except ValueError:
-        cents = 0
+        cents = None
+    if cents is None:
+        return ("no approval threshold at the signer: the agent's own app asks you before every mainnet payment, but a "
+                "process holding the agent's signer token can pay up to the caps without it (set a threshold with "
+                "`emporia signer policy NAME set EMPORIA_PAYMENT_APPROVAL_CENTS 0` to hold every payment for "
+                "`emporia signer approve`)")
     if cents <= 0:
-        return ("no approval threshold at the signer; Hermes still asks you before every mainnet payment "
-                "(real money is never signed unasked)")
-    return f"Hermes asks you before every mainnet payment, and payments above ${cents / 100:.2f} wait for `emporia signer approve`"
+        return "every mainnet payment waits for `emporia signer approve` at the signer, besides the question in the agent's app"
+    return (f"the agent's own app asks you before every mainnet payment, and payments above ${cents / 100:.2f} wait for "
+            "`emporia signer approve` at the signer")
 
 
 def _print_seeded_policy(name: str, policy: dict[str, str]) -> None:

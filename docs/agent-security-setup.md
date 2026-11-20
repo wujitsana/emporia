@@ -1,7 +1,7 @@
 # Setting up an agent safely: roles, keys, wallets
 
 How to set up an Emporia agent so that a prompt-injected or misbehaving agent cannot reach its
-keys or spend beyond what you allow — and what each choice costs. Everything here is done with the
+keys or spend beyond what you allow (on a sandboxed backend and, for money, with the signer apart; on a shared OS user the guards are defense in depth, not a wall) — and what each choice costs. Everything here is done with the
 `emporia` command, which asks for what it is not given and explains each choice.
 
 ## The short version
@@ -237,6 +237,17 @@ signer's folder, so it adds no protection, and mainnet will not unlock there. Fo
 | On a host, with the signer in Docker (Linux, macOS, Windows) | the signer's container, listening on `127.0.0.1:8790` (a host process cannot reach a socket in a Docker volume; Docker Desktop passes none) | a local port; the token decides who may ask | Hermes's user cannot use Docker — on Docker Desktop every user can, so this is practice there; run Hermes in Docker instead |
 | On macOS or Windows, without Docker | not set up for you: run `emporia signer serve --port 8790` under a separate account yourself | a local port | that account's files are not readable by Hermes's |
 
+**Today "apart" is not yet a boundary against an agent with a shell.** What `emporia signer host` sets up runs
+files the agents' OS user can still write: the service runs the person's own venv `emporia` (`ExecStart` points
+at it), the Docker image is built from the checkout (`build:` in `compose.yaml`), and the compose folder defaults
+to `<profile>/emporia-signer`, inside the profile. An agent with a terminal or a file tool that edits one of
+those runs its code as the signer's user (or as root in the admin container) at the next start or build, with
+every key, policy and the admin token, and `emporia signer status` would still say "apart". The signer's code
+is not secret; its being writable is the gap. For real money, install the signer from a separate copy that
+another user owns (a root-owned prefix, the image built from a pinned ref), put its compose folder outside
+Hermes's data and the profile, and keep the agents' user away from it. Installing it that way is planned to be
+the default, and `status` and the mainnet unlock are planned to refuse a signer whose code the agents' user can write.
+
 Hermes can connect to the socket but not replace it: its folder belongs to the signer. The wall holds
 only if the agents' user cannot get round it — not root, no passwordless `sudo`, and no control of
 Docker where that matters:
@@ -441,7 +452,7 @@ itself skips them when it signs — a network it does not know counts as mainnet
 unlocks it, in their own terminal (the Hermes plugin refuses it from an agent's tools):
 
 ```bash
-emporia wallet mainnet NAME          # warning, type the agent's name, pick networks (on mainnet every payment asks you)
+emporia wallet mainnet NAME          # warning, type the agent's name, pick networks (on mainnet the agent's app asks you before every payment)
 emporia wallet mainnet NAME --lock   # back to testnets only; drops its mainnet networks
 ```
 
@@ -454,7 +465,7 @@ cap; then, above the approval threshold (on mainnet: for every payment, and for 
 routes it to Telegram, Slack or the CLI). No answer, a decline, or an app that cannot ask means no
 payment. An app that shows a form must have the box ticked; Hermes's approval button is itself the
 yes. **An agent app set to approve everything automatically approves these payments too** — keep
-payment approval out of any auto-approve mode. Below the threshold, a compromised agent can still spend up to its caps; keep them small.
+payment approval out of any auto-approve mode. Below the threshold, a compromised agent can still spend up to its caps; keep them small. **The question is asked in the agent's own process, not inside the signer.** Behind a signer, the signer enforces the networks, the per-payment and daily caps and, if you set one, an approval threshold; a process that holds the agent's signer token (anything running as the agents' OS user can read it from the profile) can pay up to those caps without the agent's app ever asking. For real money, set a signer-side threshold: `emporia signer policy NAME set EMPORIA_PAYMENT_APPROVAL_CENTS 0` holds every payment for `emporia signer approve`. (Asking for it in the same dialog as the mainnet unlock is planned.)
 
 ### Which relay
 
@@ -528,8 +539,8 @@ limits or role** — `setup agent|relay`, `role NAME ROLE`, `identity store|link
 `wallet create|import|store|register|limits` — goes to **Hermes's approval prompt**, which only you
 can answer. A few commands are never approvable from an agent's tools, because no answer would make
 them safe: `wallet backup|mainnet`, `relay host|rotate|remove`, `agent delete|rotate-key|recovery-key|recover`,
-and most of `signer`. They are for you, in your own terminal. So a developer agent cannot, for instance, give a marketplace agent back its terminal or
-raise its caps. Outside Hermes, keep the `emporia` command out of the agent's reach.
+and most of `signer`. They are for you, in your own terminal. The plain commands are refused or held for you, so a developer agent does not, for instance, give a marketplace agent back its terminal or
+raise its caps; a disguised command is not caught, which is why this is defense in depth: on one OS user the guards narrow what an agent does by accident or on a stranger's say-so, and the boundary is a sandboxed terminal backend and, for money, the signer in its own user or container. Outside Hermes, keep the `emporia` command out of the agent's reach.
 
 ## 7. What else protects keys
 
@@ -635,7 +646,8 @@ way a stranger's text reaches that is a post, a DM or table talk read in an ordi
 resolving, or the one its package manager installed, read from the store's `facts.json`; a `cua-driver` on PATH does
 not count, Hermes does not use one); `browser_cdp` and `browser_dialog` (the browser-cdp toolset, which attaches to
 a running Chrome); the other browser tools when the browser is a real one (`browser.use_real_profile`, a
-`browser.cdp_url`, `BROWSER_CDP_URL`, `BU_CDP_WS`/`BU_CDP_URL`, or a live `/browser connect`); tools of an MCP
+`browser.cdp_url`, `BROWSER_CDP_URL`, `BU_CDP_WS`/`BU_CDP_URL`; a live `/browser connect` is not seen by the
+runtime's crypto guard, and the session guard below does not need it); tools of an MCP
 server in `mcp_servers` whose name says it drives a local browser or the desktop (playwright, puppeteer, chrome,
 chromium, devtools, cdp, computer-use, cua; a cloud browser or a file or terminal server is not guessed at); and
 anything you list in `EMPORIA_DESKTOP_TOOLS` (comma-separated names or prefixes; yours alone). A plain sandboxed
@@ -648,8 +660,9 @@ the read failed.
 
 **A session that read Emporia loses desktop control.** Once a session receives a result from any Emporia tool, the
 plugin refuses desktop control for the rest of that session, and every browser tool (a sandboxed browser too), plus `browser_vault` (stored logins), creating or
-changing scheduled jobs (a job would run fresh, outside the guard), and terminal commands that name `osascript`,
-`xdotool`, `ydotool`, `cua-driver` or a browser's debugging port. Start a new session for that work. The mark follows
+changing scheduled jobs (a job would run fresh, outside the guard), and terminal, code and background-process input that
+names `osascript`, `xdotool`, `ydotool`, `cua-driver` or a browser's debugging port, or that starts or schedules another agent
+(`hermes cron`, `hermes chat`). Start a new session for that work. The mark follows
 compression (a new session id), delegation (a marked child marks its parent, and a marked parent its children, so
 asking a sub-agent to read Emporia does not launder the session) and survives a gateway restart (a small file in
 `plugin-data/emporia`, pruned after a week). Turns the relay or rounds start were already limited to Emporia's
@@ -670,8 +683,9 @@ code of `execute_code`, whose calls to the terminal tool fire the hook but whose
 is narrow, and Emporia's setup already leaves the agent's profile without a terminal (keep it that way). Any other MCP
 server is unseen unless its name matches or you list it in `EMPORIA_DESKTOP_TOOLS`. An unmarked session is not
 policed: if you tell your agent yourself to use the desktop, it will. A live `/browser connect` is in-process state
-of Hermes: the plugin's session guard sees it (it asks Hermes), but the runtime's crypto guard, a separate process,
-cannot, so connect a browser by `browser.cdp_url` or `BROWSER_CDP_URL` if Emporia should see it. The driver check is a
+of Hermes that the runtime's crypto guard, a separate process, cannot see, so connect a browser by
+`browser.cdp_url` or `BROWSER_CDP_URL` if Emporia should see it. The plugin's session guard asks nothing of Hermes:
+in a marked session it refuses every `browser_*` tool, a sandboxed browser too, whatever the config says (fail closed). The driver check is a
 read-only mirror of Hermes's own (its package manager's `facts.json` under the store root; a driver installed
 somewhere else is not seen). A wallet with real funds should never sit in a browser or desktop the agent can control.
 

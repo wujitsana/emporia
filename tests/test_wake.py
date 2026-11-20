@@ -227,8 +227,7 @@ def test_an_agent_cannot_write_the_wake_settings(args):
     assert out and out["action"] == "block", args
 
 
-@pytest.mark.parametrize("command", ["emporia rounds status", "emporia wake", "hermes cron list",
-                                     "hermes cron create 'every 1h' 'water the plants'"])
+@pytest.mark.parametrize("command", ["emporia rounds status", "emporia wake", "hermes cron list"])
 def test_reading_the_state_and_other_cron_jobs_pass(command):
     assert _guard().pre_tool_call(tool_name="terminal", args={"command": command}) is None
 
