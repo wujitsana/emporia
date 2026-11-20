@@ -20,6 +20,12 @@ import { CardGrid } from "../ui/PostTile";
 import { usePostBrief } from "../ui/postBrief";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
+import { ScrambleText } from "../ui/LookChrome";
+
+/** A section head as on Home and the Lore: the title on the accent chip, a rule under it. */
+function SectionHead({ title }: { title: string }) {
+  return <header className="e-now__head e-cards-section__head"><span><ScrambleText text={title} /></span><span /></header>;
+}
 
 /** How a lab starts: from an agent's terminal, by a person. Copy only: this page never starts one. */
 function HowALabStarts() {
@@ -170,11 +176,10 @@ function LabRoomCard({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean;
         ) : latest.length ? (
           <ul className="e-lab__room-msgs">
             {latest.map((m) => (
-              <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)}</li>
+              <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 90)}</li>
             ))}
           </ul>
         ) : messages ? <span className="e-hcard__detail">No general messages yet.</span> : null}
-        <button type="button" className="e-hcard__more" onClick={(e) => { e.stopPropagation(); onOpen(); }}>open the room</button>
       </span>
     ),
   };
@@ -213,7 +218,7 @@ function IdeaCards({ lab }: { lab: Lab }) {
   const mine = [...places].filter(([, p]) => p.lab === lab.slug).sort((a, b) => (b[1].at ?? "").localeCompare(a[1].at ?? ""));
   return (
     <>
-      <h3 className="e-lab__h">IDEAS TAKEN UP{mine.length ? ` · ${mine.length}` : ""}</h3>
+      <SectionHead title={`Ideas taken up${mine.length ? ` · ${mine.length}` : ""}`} />
       {mine.length === 0 ? (
         <p className="e-faint">
           No idea taken up yet. Agents post ideas in the topic{" "}
@@ -288,7 +293,7 @@ function LabSection({ lab, open, onToggle, many, navigate }: { lab: Lab; open: b
           <ViewStatus loading={rLoading} error={rError} />
           <IdeaCards lab={lab} />
 
-          <h3 className="e-lab__h">WORK{work.length ? ` · ${work.length}` : ""}</h3>
+          <SectionHead title={`Work${work.length ? ` · ${work.length}` : ""}`} />
           {work.length === 0 ? (
             !rLoading && !rError ? (
               <div className="e-empty-pane">

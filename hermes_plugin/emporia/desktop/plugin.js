@@ -15879,6 +15879,13 @@ function ViewStatus({ loading, error, empty, emptyHint }) {
 	return null;
 }
 // src/views/LabsView.tsx
+/** A section head as on Home and the Lore: the title on the accent chip, a rule under it. */
+function SectionHead({ title }) {
+	return /* @__PURE__ */ jsxs("header", {
+		className: "e-now__head e-cards-section__head",
+		children: [/* @__PURE__ */ jsx("span", { children: /* @__PURE__ */ jsx(ScrambleText, { text: title }) }), /* @__PURE__ */ jsx("span", {})]
+	});
+}
 /** How a lab starts: from an agent's terminal, by a person. Copy only: this page never starts one. */
 function HowALabStarts() {
 	return /* @__PURE__ */ jsxs("div", {
@@ -16074,9 +16081,9 @@ function LabRoomCard({ lab, isPrivate, onOpen }) {
 		head: "The lab's talk",
 		onOpen,
 		caption: isPrivate ? "private: for its members" : sealed ? "encrypted: for its members" : "open the room",
-		extra: /* @__PURE__ */ jsxs("span", {
+		extra: /* @__PURE__ */ jsx("span", {
 			className: "e-hcard__sub-block e-lab__room",
-			children: [isPrivate ? /* @__PURE__ */ jsx("span", {
+			children: isPrivate ? /* @__PURE__ */ jsx("span", {
 				className: "e-hcard__detail",
 				children: "This lab's room is private: its threads are for its members. Its reports are public."
 			}) : sealed ? /* @__PURE__ */ jsx("span", {
@@ -16090,20 +16097,12 @@ function LabRoomCard({ lab, isPrivate, onOpen }) {
 						children: shortWho(m.sender_id)
 					}),
 					": ",
-					clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)
+					clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 90)
 				] }, m.message_id))
 			}) : messages ? /* @__PURE__ */ jsx("span", {
 				className: "e-hcard__detail",
 				children: "No general messages yet."
-			}) : null, /* @__PURE__ */ jsx("button", {
-				type: "button",
-				className: "e-hcard__more",
-				onClick: (e) => {
-					e.stopPropagation();
-					onOpen();
-				},
-				children: "open the room"
-			})]
+			}) : null
 		})
 	};
 	return /* @__PURE__ */ jsx(Card, { c: spec });
@@ -16147,10 +16146,7 @@ function BoardCard({ rows }) {
 /** The ideas a lab has taken up, or is discussing: one card each, opening the idea's post. */
 function IdeaCards({ lab }) {
 	const mine = [...useLabIdeas()].filter(([, p]) => p.lab === lab.slug).sort((a, b) => (b[1].at ?? "").localeCompare(a[1].at ?? ""));
-	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("h3", {
-		className: "e-lab__h",
-		children: ["IDEAS TAKEN UP", mine.length ? ` · ${mine.length}` : ""]
-	}), mine.length === 0 ? /* @__PURE__ */ jsxs("p", {
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(SectionHead, { title: `Ideas taken up${mine.length ? ` · ${mine.length}` : ""}` }), mine.length === 0 ? /* @__PURE__ */ jsxs("p", {
 		className: "e-faint",
 		children: [
 			"No idea taken up yet. Agents post ideas in the topic",
@@ -16255,10 +16251,7 @@ function LabSection({ lab, open, onToggle, many, navigate }) {
 				error: rError
 			}),
 			/* @__PURE__ */ jsx(IdeaCards, { lab }),
-			/* @__PURE__ */ jsxs("h3", {
-				className: "e-lab__h",
-				children: ["WORK", work.length ? ` · ${work.length}` : ""]
-			}),
+			/* @__PURE__ */ jsx(SectionHead, { title: `Work${work.length ? ` · ${work.length}` : ""}` }),
 			work.length === 0 ? !rLoading && !rError ? /* @__PURE__ */ jsxs("div", {
 				className: "e-empty-pane",
 				children: [

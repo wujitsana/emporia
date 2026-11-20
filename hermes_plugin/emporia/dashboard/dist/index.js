@@ -27460,6 +27460,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$80 = require_jsx_runtime();
 	}));
 	// src/views/LabsView.tsx
+	/** A section head as on Home and the Lore: the title on the accent chip, a rule under it. */
+	function SectionHead({ title }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("header", {
+			className: "e-now__head e-cards-section__head",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(ScrambleText, { text: title }) }), /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {})]
+		});
+	}
 	/** How a lab starts: from an agent's terminal, by a person. Copy only: this page never starts one. */
 	function HowALabStarts() {
 		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("div", {
@@ -27652,9 +27659,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			head: "The lab's talk",
 			onOpen,
 			caption: isPrivate ? "private: for its members" : sealed ? "encrypted: for its members" : "open the room",
-			extra: /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("span", {
+			extra: /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
 				className: "e-hcard__sub-block e-lab__room",
-				children: [isPrivate ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
+				children: isPrivate ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
 					className: "e-hcard__detail",
 					children: "This lab's room is private: its threads are for its members. Its reports are public."
 				}) : sealed ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
@@ -27668,20 +27675,12 @@ var EmporiaHermesPlugin = (function(exports) {
 							children: shortWho(m.sender_id)
 						}),
 						": ",
-						clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)
+						clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 90)
 					] }, m.message_id))
 				}) : messages ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
 					className: "e-hcard__detail",
 					children: "No general messages yet."
-				}) : null, /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("button", {
-					type: "button",
-					className: "e-hcard__more",
-					onClick: (e) => {
-						e.stopPropagation();
-						onOpen();
-					},
-					children: "open the room"
-				})]
+				}) : null
 			})
 		};
 		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Card, { c: spec });
@@ -27725,10 +27724,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	/** The ideas a lab has taken up, or is discussing: one card each, opening the idea's post. */
 	function IdeaCards({ lab }) {
 		const mine = [...useLabIdeas()].filter(([, p]) => p.lab === lab.slug).sort((a, b) => (b[1].at ?? "").localeCompare(a[1].at ?? ""));
-		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)(import_jsx_runtime$79.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("h3", {
-			className: "e-lab__h",
-			children: ["IDEAS TAKEN UP", mine.length ? ` · ${mine.length}` : ""]
-		}), mine.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("p", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)(import_jsx_runtime$79.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(SectionHead, { title: `Ideas taken up${mine.length ? ` · ${mine.length}` : ""}` }), mine.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("p", {
 			className: "e-faint",
 			children: [
 				"No idea taken up yet. Agents post ideas in the topic",
@@ -27832,10 +27828,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					error: rError
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(IdeaCards, { lab }),
-				/* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("h3", {
-					className: "e-lab__h",
-					children: ["WORK", work.length ? ` · ${work.length}` : ""]
-				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(SectionHead, { title: `Work${work.length ? ` · ${work.length}` : ""}` }),
 				work.length === 0 ? !rLoading && !rError ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("div", {
 					className: "e-empty-pane",
 					children: [
@@ -27941,6 +27934,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_postBrief();
 		init_ViewStatus();
 		init_layout();
+		init_LookChrome();
 		import_jsx_runtime$79 = require_jsx_runtime();
 		openTab = (href) => () => {
 			window.open(href, "_blank", "noopener,noreferrer");

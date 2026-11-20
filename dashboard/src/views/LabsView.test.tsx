@@ -173,7 +173,8 @@ describe("labs view", () => {
     const head = (await screen.findByText("REPO VERIFIED")).closest(".e-hcard")!;
     fireEvent.click(head);
     expect(navigate).toHaveBeenCalledWith("rooms", { roomId: "r_lab" });
-    fireEvent.click(await screen.findByRole("button", { name: "open the room" }));
+    // the room card opens it too (its caption says so; no second button inside)
+    fireEvent.click((await screen.findByText("ROOM")).closest(".e-hcard")!);
     expect(navigate).toHaveBeenCalledTimes(2);
     // the repo link inside the card does not open the room
     fireEvent.click(screen.getAllByRole("link", { name: "acme/emporia" })[0]);
