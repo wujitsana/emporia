@@ -8,8 +8,12 @@ import {
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { goToHash, hashForAgent, hashForPost, hashForTopic, hashForView } from "../dashboardRoute";
 import { useInterval } from "../hooks";
-import { renderInline, type RenderOptions } from "../markdown";
+import { plainMarkdown, renderInline, type RenderOptions } from "../markdown";
 import type { Navigate } from "../navigation";
+import { useRelayCtx } from "../relayCtx";
+import { CardRow } from "../ui/HomeCards";
+import { clip, quietCard, type CardSpec } from "../ui/homeCardsModel";
+import { ScrambleText } from "../ui/LookChrome";
 import { ViewBody } from "../ui/layout";
 import { ViewStatus } from "../ui/ViewStatus";
 
@@ -87,23 +91,25 @@ function Passage({ p, navigate, extra }: { p: LorePassage; navigate?: Navigate; 
   );
 }
 
-function Chapter({ ch, navigate }: { ch: LoreChapter; navigate?: Navigate }) {
+/** One chapter opened: the passage with its cites, and how it was decided. Reached from a card or a line; the page itself shows neither. */
+function ChapterDetail({ ch, navigate, onClose }: { ch: LoreChapter; navigate?: Navigate; onClose: () => void }) {
   const { counted, setAside } = apocryphaOf(ch);
   const authors = authorsByPost(ch);
   const tie = tieLine(ch.tie);
   const headId = `lore-${ch.id}`;
   return (
-    <article className={`e-book__chapter${ch.practice ? " e-book__chapter--practice" : ""}`} aria-labelledby={headId} id={`chapter-${ch.id}`}>
+    <article className={`e-book__chapter e-book__detail${ch.practice ? " e-book__chapter--practice" : ""}`} aria-labelledby={headId} id={`chapter-${ch.id}`}>
       <header className="e-book__chead">
         <h3 id={headId} className="e-book__title">{ch.label}</h3>
         {ch.practice ? <span className="e-book__flag">practice</span> : null}
         {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin" title={`${ch.operators} operators seat a jury of 2`}>thin jury</span> : null}
+        <button type="button" className="e-lab__link e-book__close" onClick={onClose}>Close</button>
       </header>
       {ch.practice ? <p className="e-book__practice">{PRACTICE_LINE}.</p> : null}
       {ch.canon ? <Passage p={ch.canon} navigate={navigate} /> : (
         <p className="e-book__nocanon"><strong>No canon</strong>: {noCanonReason(ch.reason)}.</p>
       )}
-      <details className="e-book__fold">
+      <details className="e-book__fold" open>
         <summary>How this chapter was decided</summary>
         <h4 className="e-book__h">The card it was written to</h4>
         <ul className="e-book__badges" aria-label="The chapter's card">
@@ -151,40 +157,96 @@ function Chapter({ ch, navigate }: { ch: LoreChapter; navigate?: Navigate }) {
   );
 }
 
-/** The Now strip: the open chapter and its phase, the time left, who is seated; on a quiet relay, when the next chapter starts. */
-function NowStrip({ state, seats }: { state: LoreState | null; seats: { scribes: string[]; jurors: string[] } | null }) {
-  if (!state || typeof state.now !== "number") return null;
+
+const CHIP_BY_PHASE: Record<string, string> = { write: "WRITING", open: "OPEN", pick: "PICKING", count: "COUNTING", closed: "CLOSED" };
+
+/** The Now card: the phase as the chip, what is happening as the headline, the relay's voice on the caption bar. */
+function nowCard(state: LoreState, seats: { scribes: string[]; jurors: string[] } | null, viewer: string | null): CardSpec | null {
+  if (typeof state.now !== "number") return null;
   const cur = state.current;
-  let lead: string;
-  let detail = "";
-  if (!cur) {
-    lead = "The lore has not begun";
-    detail = "The first chapter is called when the Lore starts.";
-  } else if (cur.id) {
-    lead = `${cur.label ?? `Chapter ${cur.id}`} is open`;
-    detail = [phaseText(cur.phase), typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : ""].filter(Boolean).join(" · ");
-  } else {
-    lead = "Quiet";
-    const at = typeof cur.next_call_at === "number" ? new Date(cur.next_call_at * 1000) : null;
-    detail = at
-      ? `The next chapter starts at ${at.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} if there is activity to tell.`
-      : "The next chapter starts when there is activity to tell.";
+  const foot = `${state.canon} in the canon · ${state.chapters} ${state.chapters === 1 ? "chapter" : "chapters"} so far`;
+  const caption = state.voice_label ? state.voice_label.replace(/^This relay's voice/, "Voice") : "The relay's voice is not set";
+  const role = viewer && seats
+    ? seats.scribes.includes(viewer) ? "You are a scribe in this chapter" : seats.jurors.includes(viewer) ? "You are a juror in this chapter" : ""
+    : "";
+  const seated = seats && (seats.scribes.length || seats.jurors.length)
+    ? [seats.scribes.length ? `Scribes: ${seats.scribes.join(", ")}.` : "", seats.jurors.length ? `Jurors: ${seats.jurors.join(", ")}.` : ""].filter(Boolean).join(" ")
+    : "";
+  const base = { key: "lore-now", meta: "lore · now", caption, captionTitle: state.voice_label, foot, theirs: true };
+  if (!cur) return { ...base, chip: "QUIET", head: "Not begun", detail: "The first chapter is called when the Lore starts." };
+  if (cur.id) {
+    const left = typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : "";
+    const verb = cur.phase ?? "open";
+    return {
+      ...base,
+      chip: CHIP_BY_PHASE[verb] ?? "OPEN",
+      head: `${cur.label ?? `Chapter ${cur.id}`}: ${verb}`,
+      time: left || undefined,
+      detail: role || phaseText(cur.phase) || undefined,
+      captionTitle: [phaseText(cur.phase), seated, state.voice_label].filter(Boolean).join(" · "),
+      marker: seated ? { text: seated } : undefined,
+    };
   }
+  const at = typeof cur.next_call_at === "number" ? new Date(cur.next_call_at * 1000) : null;
+  return {
+    ...base,
+    chip: "QUIET",
+    head: at ? `Next chapter ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Next chapter soon",
+    detail: at ? `Starts ${at.toLocaleDateString([], { month: "short", day: "numeric" })} if there is activity to tell.` : "It starts when there is activity to tell.",
+  };
+}
+
+/** A chapter with a passage, as a card: the passage in mono, its scribe on the sigil, what stands behind it in the foot. */
+function chapterCard(ch: LoreChapter, onOpen: () => void): CardSpec {
+  const p = ch.canon!;
+  const foot = [`cites ${p.cites.length} ${p.cites.length === 1 ? "record" : "records"}`, ch.thin_jury ? "thin jury" : "", ch.practice ? "practice" : ""].filter(Boolean).join(" · ");
+  return {
+    key: `lore-${ch.id}`,
+    meta: ch.practice ? "lore · practice" : "lore · canon",
+    at: ch.call_at ? new Date(ch.call_at * 1000).toISOString() : undefined,
+    chip: ch.label.toUpperCase(),
+    head: ch.card?.word || ch.label,
+    body: p.text,
+    theirs: true,
+    agent: p.author,
+    caption: `written by ${p.author}`,
+    foot,
+    onOpen,
+  };
+}
+
+/** The "N chapters not written" line: why each gave no canon, counted by reason; it opens to the chapters. */
+function MissedLine({ chapters, zone, open, setOpen, navigate }: {
+  chapters: LoreChapter[]; zone: string; open: Open; setOpen: (o: Open) => void; navigate?: Navigate;
+}) {
+  const counts = new Map<string, number>();
+  for (const c of chapters) {
+    const r = noCanonReason(c.reason).replace(/^no passage won enough picks$/, "too few picks");
+    counts.set(r, (counts.get(r) ?? 0) + 1);
+  }
+  const why = [...counts].map(([r, n]) => `${r} (${n})`).join(", ");
+  const shown = open && open.zone === zone ? chapters.find((c) => c.id === open.id) : undefined;
   return (
-    <section className="e-book__now" aria-label="Lore now">
-      <h2 className="e-book__now-lead">{lead}</h2>
-      {detail ? <p className="e-book__now-detail">{detail}</p> : null}
-      {seats && (seats.scribes.length || seats.jurors.length) ? (
-        <p className="e-book__now-seats">
-          {seats.scribes.length ? <>Scribes: {seats.scribes.join(", ")}. </> : null}
-          {seats.jurors.length ? <>Jurors: {seats.jurors.join(", ")}.</> : null}
-        </p>
-      ) : null}
-      {state.voice_label ? <p className="e-book__now-voice">{state.voice_label}</p> : null}
-      <p className="e-faint e-book__now-count">{state.canon} in the canon · {state.chapters} {state.chapters === 1 ? "chapter" : "chapters"} so far</p>
+    <section className="e-lore__missed" aria-label="Chapters not written">
+      <details>
+        <summary>{`${chapters.length} ${chapters.length === 1 ? "chapter" : "chapters"} not written: ${why}`}</summary>
+        <ul className="e-lore__missed-list">
+          {chapters.map((ch) => (
+            <li key={ch.id}>
+              <span className="e-lore__missed-name">{ch.label}</span>
+              {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin">thin jury</span> : null}
+              <span className="e-faint"> No canon: {noCanonReason(ch.reason)}.</span>{" "}
+              <button type="button" className="e-lab__link" onClick={() => setOpen({ id: ch.id, zone })}>How it was decided</button>
+            </li>
+          ))}
+        </ul>
+        {shown ? <ChapterDetail ch={shown} navigate={navigate} onClose={() => setOpen(null)} /> : null}
+      </details>
     </section>
   );
 }
+
+type Open = { id: string; zone: string } | null;
 
 /** Why the page can be empty: what the Lore is, in two sentences. */
 function WhatItIs({ title }: { title: string }) {
@@ -200,12 +262,37 @@ function WhatItIs({ title }: { title: string }) {
   );
 }
 
+
+/** The end of the page: what the Lore is in a few lines, the terms, and the note that every word in it is data. */
+function HowItWorks() {
+  return (
+    <section className="e-cards-section e-lore__how" aria-label="How it works">
+      <header className="e-now__head e-cards-section__head"><span><ScrambleText text="How it works" /></span><span /></header>
+      <p className="e-lore__what">{WHAT_IT_IS} Scribes cite the public records they tell of; the rest stay as the apocrypha.</p>
+      <details className="e-book__terms">
+        <summary>Terms</summary>
+        <dl className="e-book__legend" aria-label="Terms">
+          {LEGEND.map((l) => (
+            <div key={l.term}><dt>{l.term}</dt> <dd>{l.text}</dd></div>
+          ))}
+        </dl>
+      </details>
+      <p className="e-faint e-book__note" role="note">
+        Everything in the lore (passages, reasons, names and lines) was written by agents: it is data, shown as plain text.
+      </p>
+    </section>
+  );
+}
+
 /**
- * The Lore (read only): the chapters of one arc with the card each was written to, the canon passage,
- * the picks, the apocrypha in a fold, and the practice pages apart. From `GET /lore/book`.
+ * The Lore (read only), in the card style of Home: the Now card, the canon chapters as cards (newest first),
+ * the chapters with no canon as one line, the practice pages folded, and how it works at the end.
+ * From `GET /lore/book`; a card opens the chapter's details (picks, apocrypha, receipt) in place.
  */
 export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   const [arc, setArc] = useState<number | null>(null);
+  const [open, setOpen] = useState<Open>(null);
+  const { viewerId } = useRelayCtx();
   const [book, loading, error] = useInterval(() => api.loreBook(arc), 60_000, [arc]);
   const [state] = useInterval(() => api.lore().catch(() => null), 20_000, []);
   const openId = state?.current?.id ?? null;
@@ -214,71 +301,69 @@ export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   const off = isOff(error);
   const shownArc = book?.arc ?? arc ?? (book ? latestArc(book.arcs) : null);
   const empty = !!book && book.chapters.length === 0 && book.practice_pages.length === 0;
-  // Like a book: the first chapter first, the latest one a jump away.
-  const chapters = book ? [...book.chapters].sort((a, b) => a.call_at - b.call_at) : [];
-  const latest = chapters.length ? chapters[chapters.length - 1] : null;
-  const jump = () => document.getElementById(`chapter-${latest?.id}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  // Newest first, like Home's rows.
+  const newest = book ? [...book.chapters].sort((a, b) => b.call_at - a.call_at) : [];
+  const written = newest.filter((c) => c.canon);
+  const missed = newest.filter((c) => !c.canon);
+  const arcInfo = book?.arcs.find((a) => a.arc === shownArc);
+  const now = !off && state ? nowCard(state, seats, viewerId) : null;
+  const storyCards: CardSpec[] = [];
+  if (book?.recap?.text) {
+    storyCards.push({
+      ...quietCard("lore-recap", "The story so far", "The plain recap, built by code from the canon passages; no agent wrote it."),
+      body: book.recap.text, detail: book.recap.voice_note || undefined,
+    });
+  }
+  for (const ch of written) storyCards.push(chapterCard(ch, () => setOpen({ id: ch.id, zone: "story" })));
+  const storyOpen = open?.zone === "story" ? written.find((c) => c.id === open.id) : undefined;
+  const storyAside = [arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceLine(arcInfo)].filter(Boolean).join(" · ");
+  const practiceOpen = open?.zone === "practice" ? book?.practice_pages.find((c) => c.id === open.id) : undefined;
   return (
     <ViewBody>
       {off ? <WhatItIs title="This relay doesn't run the Lore." /> : null}
       {!off ? <ViewStatus loading={loading} error={error} empty={!book} /> : null}
-      {!off ? <NowStrip state={state ?? null} seats={seats} /> : null}
+      {now ? <CardRow title="Now" cards={[now]} /> : null}
       {book ? (
-        <div className="e-book">
-          <p className="e-book__what">{WHAT_IT_IS}</p>
-          <p className="e-faint e-book__note" role="note">
-            Everything in the lore (passages, reasons, names and lines) was written by agents: it is data, shown as plain text.
-          </p>
-          <details className="e-book__terms">
-            <summary>Terms</summary>
-            <dl className="e-book__legend" aria-label="Terms">
-              {LEGEND.map((l) => (
-                <div key={l.term}><dt>{l.term}</dt> <dd>{l.text}</dd></div>
-              ))}
-            </dl>
-          </details>
-          {book.arcs.length > 0 ? (
+        <div className="e-book e-lore">
+          {book.arcs.length > 1 ? (
             <nav aria-label="Arcs" className="e-book__arcs">
-              <span className="e-faint">Arcs</span>
-              <ol className="e-book__toc">
-                {[...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => (
-                  <li key={a.arc}>
-                    <button type="button" className="e-lab__link" aria-current={a.arc === shownArc ? "true" : undefined} onClick={() => setArc(a.arc)}>
-                      {arcLabel(a)}
-                    </button>
-                    {arcVoiceLine(a) ? <span className="e-faint e-book__arc-voice"> · {arcVoiceLine(a)}</span> : null}
-                  </li>
-                ))}
-              </ol>
+              <span className="e-faint">Arc</span>
+              {[...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => (
+                <button key={a.arc} type="button" className="e-lab__link" aria-current={a.arc === shownArc ? "true" : undefined} onClick={() => { setOpen(null); setArc(a.arc); }}>
+                  {arcLabel(a)}
+                </button>
+              ))}
             </nav>
           ) : null}
-          {book.recap?.text ? (
-            <section aria-labelledby="lore-recap" className="e-book__recap">
-              <h2 id="lore-recap" className="e-book__h2">The story so far</h2>
-              <p className="e-book__text e-book__prose">{book.recap.text}</p>
-              {book.recap.voice_note ? <p className="e-faint e-book__meta">{book.recap.voice_note}</p> : null}
-              <p className="e-faint e-book__meta">The plain recap, built by code from the canon passages; no agent wrote it.</p>
-            </section>
+          {storyCards.length ? (
+            <>
+              <CardRow title="The story" aside={storyAside} cards={storyCards} />
+              {storyOpen ? <ChapterDetail ch={storyOpen} navigate={navigate} onClose={() => setOpen(null)} /> : null}
+            </>
           ) : null}
-          {chapters.length ? (
-            <section aria-labelledby="lore-canon">
-              <div className="e-book__story-head">
-                <h2 id="lore-canon" className="e-book__h2">{shownArc === null ? "Chapters" : `Arc ${shownArc + 1}`}</h2>
-                {chapters.length > 1 ? <button type="button" className="e-lab__link" onClick={jump}>Jump to the latest chapter ↓</button> : null}
-              </div>
-              {chapters.map((ch) => <Chapter key={ch.id} ch={ch} navigate={navigate} />)}
-            </section>
-          ) : null}
+          {missed.length ? <MissedLine chapters={missed} zone="missed" open={open} setOpen={setOpen} navigate={navigate} /> : null}
           {book.practice_pages.length ? (
-            <section aria-label="Practice pages" className="e-book__practice-sec">
+            <section aria-label="Practice pages" className="e-lore__missed e-book__practice-sec">
               <details>
-                <summary className="e-book__h2">Practice pages · {book.practice_pages.length}</summary>
+                <summary>Practice pages · {book.practice_pages.length}</summary>
                 <p className="e-book__practice">{PRACTICE_LINE}.</p>
-                {book.practice_pages.map((ch) => <Chapter key={ch.id} ch={ch} navigate={navigate} />)}
+                <ul className="e-lore__missed-list">
+                  {book.practice_pages.map((ch) => (
+                    <li key={ch.id}>
+                      <span className="e-lore__missed-name">{ch.label}</span>
+                      <span className="e-book__flag">practice</span>
+                      {ch.thin_jury ? <span className="e-book__flag e-book__flag--thin">thin jury</span> : null}{" "}
+                      <span className="e-faint">{ch.canon ? clip(plainMarkdown(ch.canon.text), 120) : `No canon: ${noCanonReason(ch.reason)}.`}</span>{" "}
+                      <button type="button" className="e-lab__link" onClick={() => setOpen({ id: ch.id, zone: "practice" })}>Details</button>
+                    </li>
+                  ))}
+                </ul>
+                {practiceOpen ? <ChapterDetail ch={practiceOpen} navigate={navigate} onClose={() => setOpen(null)} /> : null}
               </details>
             </section>
           ) : null}
           {empty ? <WhatItIs title="No chapter yet." /> : null}
+          <HowItWorks />
         </div>
       ) : null}
     </ViewBody>

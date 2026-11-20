@@ -3787,7 +3787,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 }
 
 /* Book (the Lore, read only): chapters of one arc, the card as badges, apocrypha in a fold, practice pages apart. */
-.e-book { min-width: 0; max-width: 72ch; }
+.e-book { min-width: 0; }
 .e-book__note { margin: 0 0 12px; font-size: 0.78rem; }
 .e-book__legend { margin: 0 0 12px; font-size: 0.76rem; line-height: 1.5; opacity: 0.8; }
 .e-book__legend > div { display: inline; }
@@ -3796,8 +3796,6 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-book__legend dd { display: inline; margin: 0 10px 0 0; }
 .e-book__h2 { margin: 18px 0 6px; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }
 .e-book__h { margin: 12px 0 4px; font-family: var(--anim-pixel); font-size: 0.85rem; font-weight: 400; letter-spacing: 0.06em; }
-.e-book__toc { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }
-.e-book__toc [aria-current="true"] { font-weight: 700; }
 .e-book__recap .e-book__text { margin: 0 0 4px; }
 .e-book__chapter { margin: 0 0 22px; padding: 12px 0 0; border-top: 1px solid var(--theme-border-subdued, currentColor); min-width: 0; }
 .e-book__chapter--practice { border-top-style: dashed; }
@@ -3832,20 +3830,12 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 
 /* The Lore, made for reading: a Now strip, the story as prose in a text face (a system serif, no font file),
    cites as numbered footnotes, the decision folded. */
-.e-book__now { margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--theme-border); max-width: 72ch; }
-.e-book__now-lead { margin: 0; font-family: var(--anim-pixel); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.06em; }
-.e-book__now-detail { margin: 4px 0 0; font-size: 0.9rem; line-height: 1.5; }
-.e-book__now-seats { margin: 4px 0 0; font-size: 0.82rem; overflow-wrap: anywhere; }
-.e-book__now-count { margin: 6px 0 0; font-size: 0.74rem; }
-.e-book__what { margin: 0 0 6px; font-size: 0.95rem; line-height: 1.55; }
 .e-book__terms { margin: 0 0 10px; font-size: 0.78rem; }
 .e-book__terms > summary { cursor: pointer; opacity: 0.8; }
 .e-book__arcs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 10px; font-size: 0.78rem; }
-.e-book__arcs .e-book__toc { padding-left: 0; list-style: none; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; font-size: 0.78rem; }
-.e-book__story-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .e-book__prose {
-  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "DejaVu Serif", serif;
-  font-size: 1.05rem; line-height: 1.7; max-width: 66ch; letter-spacing: 0;
+  font-family: inherit;
+  font-size: 0.9rem; line-height: 1.6; max-width: 66ch; letter-spacing: 0;
 }
 .e-book__byline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; font-size: 0.8rem; overflow-wrap: anywhere; }
 .e-book__cites--notes { padding-left: 0; list-style: none; display: block; font-size: 0.74rem; line-height: 1.5; }
@@ -3855,3 +3845,18 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-book__practice-sec > details > summary { cursor: pointer; }
 
 .e-now__row code { font-family: ui-monospace, monospace; }   /* a command in a notice */
+
+/* The Lore in the card style of Home (§ 30): the cards come from HomeCards; these are the page's own lines. */
+.e-lore { display: flex; flex-direction: column; gap: 14px; font-family: inherit; }
+.e-lore .e-cards-section { margin: 0; }
+.e-lore__missed { font-size: 0.82rem; border: 1px dashed var(--anim-line, var(--theme-border)); padding: 8px 12px; opacity: 0.9; }
+.e-lore__missed > details > summary { cursor: pointer; letter-spacing: 0.03em; }
+.e-lore__missed-list { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.e-lore__missed-list li { overflow-wrap: anywhere; line-height: 1.5; }
+.e-lore__missed-name { font-weight: 700; margin-right: 8px; }
+.e-lore__how { max-width: 72ch; }
+.e-lore__what { margin: 8px 0; font-size: 0.82rem; line-height: 1.55; }
+.e-book__detail { border: 1px solid var(--anim-line, var(--theme-border)); padding: 10px 14px; margin: 10px 0 0; }
+.e-book__close { margin-left: auto; }
+.e-book__arcs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 0.78rem; }
+.e-book__arcs [aria-current="true"] { font-weight: 700; }
