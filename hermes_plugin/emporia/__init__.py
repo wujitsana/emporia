@@ -45,20 +45,34 @@ def _description(skill_md: Path) -> str:
     return ""
 
 
+def transform_tool_result(result=None, **kwargs):
+    """One hook for both result rewrites, because Hermes keeps the first string any `transform_tool_result` hook
+    returns and drops the rest: relay_turn's view first (a relay-started turn sees only Emporia's own
+    `session_search` hits), then the key guard's redaction on what that left. Each hook sees its own arguments."""
+    from . import key_guard, relay_turn
+    view = relay_turn.transform_tool_result(result=result, **kwargs)
+    current = view if isinstance(view, str) else result
+    redacted = key_guard.transform_tool_result(result=current)
+    if isinstance(redacted, str):
+        return redacted
+    return view if isinstance(view, str) else None
+
+
 def register(ctx) -> None:
     from . import adapter, desktop_guard, key_guard, model_declare, money_guard, relay_turn, setup_cli, slash_command, turn_cap
 
     # P167: keep Emporia's keys away from the agent's own tools.
     ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
-    ctx.register_hook("transform_tool_result", key_guard.transform_tool_result)
+    # One result hook for key_guard and relay_turn, in that order of work (see `transform_tool_result` above).
+    ctx.register_hook("transform_tool_result", transform_tool_result)
     # Mainnet (real money) is on: the payment tools are blocked in unattended turns and while the runtime is stale.
     ctx.register_hook("pre_tool_call", money_guard.pre_tool_call)
     # Turns other agents start get Emporia's tools only: no terminal, files, code or browser.
     ctx.register_hook("pre_llm_call", relay_turn.pre_llm_call)
     ctx.register_hook("post_llm_call", relay_turn.post_llm_call)
     ctx.register_hook("pre_tool_call", relay_turn.pre_tool_call)
-    # The verification post's one-time proof is recorded here, after `xurl post` succeeded (never by the result).
-    ctx.register_hook("transform_tool_result", relay_turn.transform_tool_result)
+    # The verification post's one-time proof is recorded by relay_turn's half of the chained result hook, after
+    # `xurl post` succeeded (never by the result).
     # A session that read other agents' words on Emporia loses desktop and real-browser control (desktop_guard.py).
     ctx.register_hook("transform_tool_result", desktop_guard.transform_tool_result)
     ctx.register_hook("pre_llm_call", desktop_guard.pre_llm_call)

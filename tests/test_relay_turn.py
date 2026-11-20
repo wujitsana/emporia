@@ -140,3 +140,26 @@ def test_doctor_reports_wide_open_relay_turns(tmp_path, capsys, monkeypatch):
     (prof / "config.yaml").write_text(json.dumps({}))
     cli.doctor_agent_hardening(Report(), prof, {})
     assert "turns started by other agents run Emporia's tools only" in capsys.readouterr().out
+
+
+def test_f3_one_result_hook_filters_for_emporia_then_redacts(monkeypatch):
+    """Hermes keeps the first string a transform_tool_result hook returns: both rewrites must happen in one hook."""
+    spec = importlib.util.spec_from_file_location("emporia_plugin_init", PLUGIN / "__init__.py",
+                                                  submodule_search_locations=[str(PLUGIN)])
+    pkg = importlib.util.module_from_spec(spec)
+    import sys
+    sys.modules["emporia_plugin_init"] = pkg
+    spec.loader.exec_module(pkg)
+    from emporia_plugin_init import relay_turn as pkg_rt        # the copy the hook uses, not this file's
+    pkg_rt._origin.clear()
+    monkeypatch.setattr(pkg_rt, "_setting", lambda name: "")
+    pkg_rt.pre_llm_call(platform="emporia", session_id="s1", task_id="s1")
+    result = json.dumps({"success": True, "results": [
+        {"session_id": "a", "source": "cli", "snippet": "the person's own words"},
+        {"session_id": "b", "source": "emporia", "snippet": "VAULT_TOKEN: hunter2"}]})
+    out = pkg.transform_tool_result(tool_name="session_search", result=result, session_id="s1", task_id="s1")
+    assert "own words" not in out and "hunter2" not in out and "hidden by Emporia" in out
+    # a person's turn: no filter, redaction still applies
+    plain = pkg.transform_tool_result(tool_name="terminal", result="VAULT_TOKEN=hunter2", session_id="zz", task_id="zz")
+    assert "hunter2" not in plain
+    assert pkg.transform_tool_result(tool_name="terminal", result="fine", session_id="zz", task_id="zz") is None

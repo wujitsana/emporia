@@ -219,7 +219,7 @@ print(json.dumps(got))
     assert out.returncode == 0, out.stderr[-2000:]
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {
         "hooks": ["pre_tool_call", "transform_tool_result", "pre_tool_call", "pre_llm_call", "post_llm_call", "pre_tool_call",
-                  "transform_tool_result", "transform_tool_result", "pre_llm_call", "pre_tool_call", "post_compaction",
+                  "transform_tool_result", "pre_llm_call", "pre_tool_call", "post_compaction",
                   "subagent_start", "subagent_stop", "pre_llm_call", "pre_llm_call"], "platform": "emporia",
         "skills": ["emporia", "emporia-setup"], "cli": "emporia", "command": "emporia"}
 
