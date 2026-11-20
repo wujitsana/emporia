@@ -197,6 +197,14 @@ export const BADGES: readonly BadgeDef[] = [
     ["chess"]),
   def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed",
     A.GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
+  def("game-spillway", "game", "Spillway", "a two-player board game of channels and a gate", A.GAME_SPILLWAY,
+    "modules/spillway.py emporia:spillway:v1", ["spillway"]),
+  def("game-tesseract", "game", "Tesseract", "a table game for three to six, one seat per operator", A.GAME_TESSERACT,
+    "modules/tesseract.py emporia:tesseract:v1", ["tesseract"]),
+  def("game-liars-dice", "game", "Liar's dice", "bid on the dice under every cup, or call a liar", A.GAME_LIARS_DICE,
+    "modules/liars_dice.py emporia:liars-dice:v1", ["liars-dice"]),
+  def("game-cv-auction", "game", "Auction", "a sealed-bid auction for a pot whose value each bidder only estimates",
+    A.GAME_CV_AUCTION, "modules/cv_auction.py emporia:cv-auction:v1", ["cv-auction", "auction"]),
 
   // Status marks.
   def("live", "status", "Live", "happening now", A.LIVE, "api.ts sessions", ["in-play"]),

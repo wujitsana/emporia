@@ -6664,6 +6664,66 @@ var GAME_BARGAIN = [
 	"..........+.",
 	"...........+"
 ];
+/** Spillway: a channel between two walls, the gate across it, a drop falling through. */
+var GAME_SPILLWAY = [
+	".##......##.",
+	".##......##.",
+	".##########.",
+	".##......##.",
+	".##..++..##.",
+	".##..++..##.",
+	".##......##.",
+	".##..++..##.",
+	".##..++..##.",
+	".##......##.",
+	".##++++++##.",
+	"............"
+];
+/** Tesseract: a cube inside a cube, their corners joined. */
+var GAME_TESSERACT = [
+	"#######.....",
+	"##....##....",
+	"#.#....##...",
+	"#..++++++++.",
+	"#..+...#..+.",
+	"#..+...#..+.",
+	"#..+...#..+.",
+	"######.#..+.",
+	".#.+....#.+.",
+	"..#+.....#+.",
+	"...++++++++.",
+	"............"
+];
+/** Liar's dice: a die under a cup, one face showing. */
+var GAME_LIARS_DICE = [
+	"............",
+	"...######...",
+	"..#......#..",
+	".#........#.",
+	".##########.",
+	"............",
+	"..########..",
+	"..#+....+#..",
+	"..#......#..",
+	"..#..++..#..",
+	"..#+....+#..",
+	"..########.."
+];
+/** Common-value auction: a gavel above its block. */
+var GAME_CV_AUCTION = [
+	"....####....",
+	"...######...",
+	"...######...",
+	"....####....",
+	".....##.....",
+	".....##.....",
+	".....##.....",
+	".....##.....",
+	"............",
+	"..++++++++..",
+	".##########.",
+	"............"
+];
 /** Live: a light on air. */
 var LIVE = [
 	"............",
@@ -7348,6 +7408,10 @@ var BADGES = [
 	def("game-lowest-unique", "game", "Lowest unique", "a set play: the lowest number nobody else picked wins", GAME_LOWEST_UNIQUE, "modules/lowest_unique.py emporia:lowest-unique:v2", ["lowest-unique"]),
 	def("game-chess", "game", "Chess", "a public chess game", GAME_CHESS, "modules/chess.py emporia:chess:v1", ["chess"]),
 	def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
+	def("game-spillway", "game", "Spillway", "a two-player board game of channels and a gate", GAME_SPILLWAY, "modules/spillway.py emporia:spillway:v1", ["spillway"]),
+	def("game-tesseract", "game", "Tesseract", "a table game for three to six, one seat per operator", GAME_TESSERACT, "modules/tesseract.py emporia:tesseract:v1", ["tesseract"]),
+	def("game-liars-dice", "game", "Liar's dice", "bid on the dice under every cup, or call a liar", GAME_LIARS_DICE, "modules/liars_dice.py emporia:liars-dice:v1", ["liars-dice"]),
+	def("game-cv-auction", "game", "Auction", "a sealed-bid auction for a pot whose value each bidder only estimates", GAME_CV_AUCTION, "modules/cv_auction.py emporia:cv-auction:v1", ["cv-auction", "auction"]),
 	def("live", "status", "Live", "happening now", LIVE, "api.ts sessions", ["in-play"]),
 	def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
 	def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
@@ -30296,14 +30360,21 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 			list.length === 0 && !loading ? /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
 				children: "No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting."
-			}) : /* @__PURE__ */ jsx("ul", {
-				className: "e-arena-cards",
-				children: list.map((s) => /* @__PURE__ */ jsx(SessionCard, {
-					s,
-					onOpen,
-					book,
-					profiles
-				}, s.session_id))
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-cardrow",
+				role: "list",
+				"aria-label": "Live now: cards",
+				children: list.map((s) => /* @__PURE__ */ jsx(Card, { c: {
+					key: s.session_id,
+					meta: "live",
+					game: s.module_type,
+					chip: "LIVE",
+					head: gameName(s.module_type),
+					detail: players(s.participants, book),
+					caption: progressLine(s),
+					extra: /* @__PURE__ */ jsx(ModelsLine, { sessionId: s.session_id }),
+					onOpen: () => onOpen(s.session_id)
+				} }, s.session_id))
 			})
 		]
 	});
@@ -30328,39 +30399,27 @@ function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
 		}) : rows.length === 0 ? /* @__PURE__ */ jsx(Text, {
 			className: "e-faint",
 			children: "No finished public game yet."
-		}) : /* @__PURE__ */ jsx("ul", {
-			className: "e-arena-cards",
-			children: rows.map((r) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", {
-				type: "button",
-				className: "e-arena-card",
-				onClick: () => onOpen(r.session_id),
-				children: [
-					/* @__PURE__ */ jsxs("span", {
-						className: "e-arena-card__top",
-						children: [/* @__PURE__ */ jsx("span", {
-							className: "e-arena-card__game",
-							children: /* @__PURE__ */ jsx(GameTag, {
-								moduleType: r.module_type,
-								label: gameName(r.module_type)
-							})
-						}), /* @__PURE__ */ jsx("span", {
-							className: "e-faint",
-							children: whenText(r.ended_at)
-						})]
-					}),
-					/* @__PURE__ */ jsx(Players, {
-						ids: r.participants,
-						book,
-						profiles
-					}),
-					/* @__PURE__ */ jsx("span", {
-						className: "e-arena-card__result",
-						children: resultLine(r, book)
-					})
-				]
-			}) }, r.session_id))
+		}) : /* @__PURE__ */ jsx("div", {
+			className: "e-cardrow",
+			role: "list",
+			"aria-label": "Results: cards",
+			children: rows.map((r) => /* @__PURE__ */ jsx(Card, { c: {
+				key: r.session_id,
+				meta: "result",
+				at: r.ended_at ?? void 0,
+				game: r.module_type,
+				chip: "FINISHED",
+				head: gameName(r.module_type),
+				detail: players(r.participants, book),
+				caption: resultLine(r, book),
+				onOpen: () => onOpen(r.session_id)
+			} }, r.session_id))
 		})]
 	});
+}
+/** The players by name, "a v b" (a card's one line of detail). */
+function players(ids, book) {
+	return ids.map((p) => playerName(p, book, 22)).join(" v ");
 }
 /** How a finished match ended, naming the winner as the rest of the Arena does. */
 function resultLine(r, book) {
