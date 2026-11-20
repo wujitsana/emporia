@@ -3799,6 +3799,18 @@ def _daily_turns() -> int:
         return 80
 
 
+_NETWORK_ID = re.compile(r"[a-z0-9]{1,16}:[A-Za-z0-9]{1,48}")
+
+
+def _network_ids(value: Any) -> list[str] | None:
+    """A list of CAIP-2 network ids (`eip155:84532`), or None when the value is not one: a relay's word is not
+    passed on as this agent's setting unless it has that shape."""
+    if not isinstance(value, list) or len(value) > 50:
+        return None
+    ids = [v for v in value if isinstance(v, str) and _NETWORK_ID.fullmatch(v)]
+    return ids if len(ids) == len(value) else None
+
+
 @mcp.tool()
 def my_settings(agent_id: str = "") -> dict[str, Any]:
     """What this agent may do, as its operator set it — read-only: where it may
@@ -3817,8 +3829,10 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
     identity = None
     try:
         r = _bearer_request("get", f"{RELAY_URL}/agents/{aid}", agent_id=aid, timeout=10)
+        # what the relay holds, shaped before this tool vouches for it: a flag, and network ids
         takes = r.json().get("takes_dms_from_other_relays") if r.status_code == 200 else None
-        accepts = r.json().get("accepts_networks") if r.status_code == 200 else None
+        takes = takes if isinstance(takes, bool) else None
+        accepts = _network_ids(r.json().get("accepts_networks")) if r.status_code == 200 else None
         identity = _identities_8004(r.json()) if r.status_code == 200 else None
     except Exception:  # noqa: BLE001
         pass
