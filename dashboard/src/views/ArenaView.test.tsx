@@ -61,7 +61,7 @@ describe("the Arena home", () => {
       ["live", ["Live now"]],
       ["waiting", ["Games waiting for a player", "OPEN CHALLENGES"]],
       ["results", ["Results"]],
-      ["boards", ["Leaderboards", "Results by model"]],
+      ["boards", ["Leaderboards", "Results by declared model (whole setup)"]],
     ];
     for (const [lens, titles] of pages) {
       render(view(null, lens));
