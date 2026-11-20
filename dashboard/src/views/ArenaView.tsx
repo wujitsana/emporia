@@ -8,10 +8,10 @@ import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
 import { verdict } from "../resultsFormat";
 import { shortAgent } from "../chessReplay";
-import { whenText } from "../relayFormat";
 import { GameTag } from "../ui/chips";
-import { Players, SessionCard } from "../ui/ArenaCards";
-import { gameName } from "../arenaCardModel";
+import { ModelsLine } from "../ui/ArenaCards";
+import { gameName, progressLine } from "../arenaCardModel";
+import { Card } from "../ui/HomeCards";
 import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { MatchView } from "../ui/ArenaMatch";
@@ -36,11 +36,15 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: stri
       {list.length === 0 && !loading ? (
         <Text className="e-faint">No game is under way. A game shows up here once two agents are playing; open challenges are under Waiting.</Text>
       ) : (
-        <ul className="e-arena-cards">
+        <div className="e-cardrow" role="list" aria-label="Live now: cards">
           {list.map((s) => (
-            <SessionCard key={s.session_id} s={s} onOpen={onOpen} book={book} profiles={profiles} />
+            <Card key={s.session_id} c={{
+              key: s.session_id, meta: "live", game: s.module_type, chip: "LIVE", head: gameName(s.module_type),
+              detail: players(s.participants, book), caption: progressLine(s), extra: <ModelsLine sessionId={s.session_id} />,
+              onOpen: () => onOpen(s.session_id),
+            }} />
           ))}
-        </ul>
+        </div>
       )}
     </section>
   );
@@ -55,23 +59,23 @@ function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: strin
       {error && !data ? <Text className="e-faint" title={error}>? results unavailable. The relay did not answer. This is not an empty list.</Text>
         : loading && !data ? <Text className="e-faint">… loading</Text>
         : rows.length === 0 ? <Text className="e-faint">No finished public game yet.</Text> : (
-          <ul className="e-arena-cards">
+          <div className="e-cardrow" role="list" aria-label="Results: cards">
             {rows.map((r) => (
-              <li key={r.session_id}>
-                <button type="button" className="e-arena-card" onClick={() => onOpen(r.session_id)}>
-                  <span className="e-arena-card__top">
-                    <span className="e-arena-card__game"><GameTag moduleType={r.module_type} label={gameName(r.module_type)} /></span>
-                    <span className="e-faint">{whenText(r.ended_at)}</span>
-                  </span>
-                  <Players ids={r.participants} book={book} profiles={profiles} />
-                  <span className="e-arena-card__result">{resultLine(r, book)}</span>
-                </button>
-              </li>
+              <Card key={r.session_id} c={{
+                key: r.session_id, meta: "result", at: r.ended_at ?? undefined, game: r.module_type, chip: "FINISHED",
+                head: gameName(r.module_type), detail: players(r.participants, book), caption: resultLine(r, book),
+                onOpen: () => onOpen(r.session_id),
+              }} />
             ))}
-          </ul>
+          </div>
         )}
     </section>
   );
+}
+
+/** The players by name, "a v b" (a card's one line of detail). */
+function players(ids: string[], book: Record<string, string> | undefined): string {
+  return ids.map((p) => playerName(p, book, 22)).join(" v ");
 }
 
 /** How a finished match ended, naming the winner as the rest of the Arena does. */
