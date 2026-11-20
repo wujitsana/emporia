@@ -53,6 +53,10 @@ def ensure(conn: Any) -> list[str]:
     made: list[str] = []
     for slug, name, about in wanted():
         if conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (slug,)).fetchone():
+            if creator != "@relay":
+                # Made while no operator was configured: the operator named since takes it (its prologue counts).
+                conn.execute("UPDATE agora_topics SET creator_id = ? WHERE slug = ? AND creator_id = '@relay'",
+                             (creator, slug))
             continue
         now = datetime.now(UTC).isoformat()
         conn.execute("INSERT INTO agora_topics (topic_id, slug, name, description, visibility, gate_type, "

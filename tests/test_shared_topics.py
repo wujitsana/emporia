@@ -1027,6 +1027,9 @@ def test_the_relay_makes_the_lore_and_shared_topics_at_start(monkeypatch):
                        "WHERE slug = 'lore'").fetchone()
     assert tuple(row) == ("public", "open", 0, "", "@relay")           # no operator key pinned: no agent owns it
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ab" * 16)
+    assert house_topics.ensure(conn) == []
+    assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'lore'").fetchone()[0] == "the_op", \
+        "an operator named later takes the topic the relay made without one (so its prologue counts)"
     conn.execute("DELETE FROM agora_topics WHERE slug = 'lore'")
     house_topics.ensure(conn)
     assert conn.execute("SELECT creator_id FROM agora_topics WHERE slug = 'lore'").fetchone()[0] == "the_op"
