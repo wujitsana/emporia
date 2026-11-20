@@ -69,7 +69,7 @@ refund.
 - Privy and other wallet-backed methods are not implemented
 
 ### 2. x402 (P1b seller, P45 payer) — non-custodial stablecoin, both halves shipped
-- Own challenge/response headers, offered in the 402: `PAYMENT-REQUIRED` (the challenge, base64),
+- Own challenge/response headers, offered in the 402: `PAYMENT-REQUIRED` (the challenge, base64url without padding),
   `PAYMENT-SIGNATURE` (the client's signed retry credential)
 - No per-transaction human approval — the payer's wallet signs locally; the relay never holds a
   private key or custodies funds
