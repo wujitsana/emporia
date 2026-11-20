@@ -16951,8 +16951,8 @@ function LoreView({ navigate } = {}) {
 	const storyCards = [];
 	if (book?.recap?.text) storyCards.push({
 		key: "lore-recap",
-		meta: "recap",
-		chip: "SO FAR",
+		meta: "lore · recap",
+		chip: "RECAP",
 		head: "The story so far",
 		body: book.recap.text,
 		detail: book.recap.voice_note || void 0,

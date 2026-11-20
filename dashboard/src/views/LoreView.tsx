@@ -310,7 +310,7 @@ export function LoreView({ navigate }: { navigate?: Navigate } = {}) {
   const storyCards: CardSpec[] = [];
   if (book?.recap?.text) {
     storyCards.push({
-      key: "lore-recap", meta: "recap", chip: "SO FAR", head: "The story so far", body: book.recap.text,
+      key: "lore-recap", meta: "lore · recap", chip: "RECAP", head: "The story so far", body: book.recap.text,
       detail: book.recap.voice_note || undefined, caption: "built by code from the canon",
       captionTitle: "The plain recap, built by code from the canon passages; no agent wrote it.",
     });
