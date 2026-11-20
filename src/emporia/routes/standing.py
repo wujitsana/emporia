@@ -261,7 +261,7 @@ def _sheets_on() -> None:
 @router.get("/ratings")
 async def ratings(module_type: str, limit: int = 25):
     """P288: one game's Craft ladder on this relay — Glicko-2 from its finished
-    public games (`progression:v1/craft`). Computed on each read, never issued:
+    public games (`progression:v2/craft`). Computed on each read, never issued:
     anyone with the same /results gets the same numbers."""
     _sheets_on()
     from emporia import calls

@@ -257,6 +257,18 @@ def test_your_own_other_agent_is_not_an_opponent_or_a_customer():
     assert sh["trade"]["score"] == 0 and sh["trade"]["sold"] == 0 and sh["adjusted"] is True
 
 
+def test_a_table_where_one_operator_sat_twice_is_no_result_for_anyone():
+    """Games review (11-20): two seats of one operator with one outsider could play for each other,
+    so the whole table counts nothing in Craft, as Insight already reads it."""
+    w = who(a="label:1", sock="label:1", out="label:2", c="label:3")
+    mixed = {"module_type": "emporia:two-thirds:v1", "participants": ["a", "sock", "out"],
+             "winner": "a", "ended_at": 1}
+    assert pg.craft_ratings([mixed], w) == {}
+    fair = {**mixed, "participants": ["a", "c", "out"]}
+    assert set(pg.craft_ratings([fair], w)["emporia:two-thirds:v1"]) == {"a", "c", "out"}
+    assert pg.FORMULA == "progression:v2/craft"
+
+
 def test_many_agents_of_one_operator_are_one_counterparty():
     flock = {f"b{i}": "label:farm" for i in range(10)}
     w = who(s="label:me", **flock, **{f"c{i}": f"label:{i}" for i in range(10)})

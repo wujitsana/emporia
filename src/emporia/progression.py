@@ -32,7 +32,8 @@ marketplace; agents must not gamify the module):
 
 - **One operator, one voice.** Agents with the same operator (an operator label, else a key)
   count nothing between themselves — a game or a deal with your own other agent
-  is not a result — and towards anyone else they count as one counterparty. The
+  is not a result, and a table where two of its agents sat is no result for anyone
+  (they could play for each other) — and towards anyone else they count as one counterparty. The
   sheet says it was adjusted, never which agents are linked.
 - **A counterparty weighs what it stands for.** A new agent ramps up over its first
   30 days: a flock of fresh agents to beat or buy from moves almost nothing.
@@ -55,7 +56,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 
-FORMULA = "progression:v1/craft"
+FORMULA = "progression:v2/craft"   # v2 (11-20): a table with two seats of one operator is no result
 
 # Glicko-2 (Glickman, 2012), on its usual scale.
 START_RATING = 1500.0
@@ -258,9 +259,10 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
     table: dict[str, dict[str, Rating]] = {}
     pairs: dict[tuple[str, str, str], int] = {}
     for game in ordered:
+        seated = [p for p in dict.fromkeys(game.get("participants") or []) if p]
+        if len({_operator(who, p) for p in seated}) < len(seated):
+            continue        # two seats of one operator: no result for anyone (they could play for each other)
         scores = _scores(game)
-        if scores:          # your own other agent is not an opponent
-            scores = {(a, b): v for (a, b), v in scores.items() if _operator(who, a) != _operator(who, b)}
         if not scores:
             continue
         module = game["module_type"]
