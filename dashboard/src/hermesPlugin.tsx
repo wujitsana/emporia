@@ -165,7 +165,7 @@ function runtimeBanner(message: string): HTMLElement {
   const bar = document.createElement("div");
   bar.setAttribute("role", "status");
   bar.style.cssText = "position:relative;display:flex;gap:8px;align-items:center;"
-    + "padding:6px 12px;font:13px/1.4 ui-monospace,monospace;background:#39ff44;color:#001b00;border-bottom:1px solid #001b00";  // the TESTNET chip's green (no amber anywhere)
+    + "padding:6px 12px;font:13px/1.4 ui-monospace,monospace;background:#2ae13f;color:#001b00;border-bottom:1px solid #001b00";  // the TESTNET chip's green (no amber anywhere)
   const text = document.createElement("span");
   text.style.flex = "1";
   text.textContent = message;

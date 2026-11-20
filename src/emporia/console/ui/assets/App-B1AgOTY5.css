@@ -361,7 +361,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 */
 
 body.tint-green {
-  --tint: #39ff44;
+  --tint: #2ae13f;
   --tint-light: #72e072;
   --tint-deep: #006c00;
 }
@@ -477,8 +477,8 @@ body.theme-dark.tint-charcoal {
   --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
   --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
-  --theme-focused-foreground: var(--tint-light, #39ff44);
-  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
+  --theme-focused-foreground: var(--tint-light, #2ae13f);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #2ae13f) 50%, transparent);
   --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
   --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);
 }
@@ -495,15 +495,15 @@ body.theme-dark.tint-green {
   --theme-button-text: #001b00;
   --theme-button-foreground: #1d4a1d;
   --theme-button-background: #0b2a0b;
-  --theme-focused-foreground: #39ff44;
-  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --theme-focused-foreground: #2ae13f;
+  --theme-focused-foreground-subdued: rgb(42 225 63 / 0.5);
   --theme-window-background: #0b2a0b;
   --theme-window-shadow: #000f00;
 }
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-orange); white ink on blue and purple; green exact (#39ff44 / #39ff44 flat / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#2ae13f / #2ae13f flat / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 body.theme-vivid.tint-green,
@@ -536,7 +536,7 @@ body.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--tint) 80%,
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }
-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
+body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ae13f; }
 
 #__next {
 }
@@ -571,7 +571,7 @@ body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
 /* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */
 
 body.theme-dark {
-  --theme-focused-foreground: #39ff44;
+  --theme-focused-foreground: #2ae13f;
 }
 
 body.theme-dark,
@@ -3208,7 +3208,7 @@ body.theme-light {
 /* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
 
 .e-look {
-  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */
+  --anim-tint: var(--tint, #2ae13f);                                   /* green when no tint is set */
   --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
   --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
   /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
@@ -3265,8 +3265,8 @@ body.e-look.theme-dark {
   --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
   --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
   --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
-  --theme-focused-foreground: var(--tint-light, #39ff44);
-  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
+  --theme-focused-foreground: var(--tint-light, #2ae13f);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #2ae13f) 50%, transparent);
   --anim-line: oklch(from var(--anim-tint) 0.72 c h);
   --anim-fill: var(--anim-tint);
   --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
@@ -3284,15 +3284,15 @@ body.e-look.theme-dark.tint-green {
   --theme-text: #d8ffd8;
   --theme-button: #d8ffd8;
   --theme-button-text: #001b00;
-  --theme-focused-foreground: #39ff44;
-  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --theme-focused-foreground: #2ae13f;
+  --theme-focused-foreground-subdued: rgb(42 225 63 / 0.5);
   --anim-ink: #001b00;
 }
 
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
    The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
-   text. Green is exact: #39ff44 / #39ff44 / #001b00 (flat: panels are outlined in ink, as on the video's green screens). Mirrored in themePalette.ts. */
+   text. Green is exact: #2ae13f / #2ae13f / #001b00 (flat: panels are outlined in ink, as on the video's green screens). Mirrored in themePalette.ts. */
 body.e-look.theme-vivid {
   --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);
@@ -3319,9 +3319,9 @@ body.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--ani
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
+body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ae13f; }
 /* Green, like the video's green screens: no ink-filled bars; a chip is a soft wash of the ink with the ink on it. */
-body.e-look.theme-vivid.tint-green { --anim-fill: #2ee03a; --anim-ink: #001b00; }
+body.e-look.theme-vivid.tint-green { --anim-fill: #26cd39; --anim-ink: #001b00; }
 
 .e-look .e-dashboard-shell {
   --e-rule: var(--theme-border-subdued);
@@ -4418,7 +4418,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   --p-bg: #ececec; --p-panel: #e0e0e0; --p-line: #b8b8b8;
 }
 .e-badge-panel.theme-dark {
-  --e-badge-accent: var(--tint-light, #39ff44);
+  --e-badge-accent: var(--tint-light, #2ae13f);
 }
 
 /* A row of small badges (Season › Quests: the ones earned). */
@@ -4509,24 +4509,24 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
   color: var(--p-ink);
 }
 .e-badge-panel.theme-light {
-  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);
-  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);
-  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);
-  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);
+  --p-bg: oklch(from var(--tint, #2ae13f) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #2ae13f) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #2ae13f) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #2ae13f) 0.84 calc(c * 0.28) h);
 }
 .e-badge-panel.theme-dark {
-  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
-  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);
-  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);
-  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);
+  --p-bg: oklch(from var(--tint, #2ae13f) 0.192 calc(c * 0.243) h);
+  --p-panel: oklch(from var(--tint, #2ae13f) 0.253 calc(c * 0.243) h);
+  --p-ink: oklch(from var(--tint, #2ae13f) 0.962 calc(c * 0.243) h);
+  --p-line: oklch(from var(--tint, #2ae13f) 0.366 calc(c * 0.328) h);
 }
 .e-badge-panel.theme-dark.tint-green {
-  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;
+  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #2ae13f;
 }
 .e-badge-panel.theme-vivid {
-  --p-bg: var(--tint, #39ff44);
-  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);
-  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
+  --p-bg: var(--tint, #2ae13f);
+  --p-panel: oklch(from var(--tint, #2ae13f) calc(l - 0.082) calc(c * 0.91) h);
+  --p-ink: oklch(from var(--tint, #2ae13f) 0.192 calc(c * 0.243) h);
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
@@ -4535,7 +4535,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
-.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #39ff44; }
+.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ae13f; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }

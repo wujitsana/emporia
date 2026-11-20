@@ -24,7 +24,7 @@
   --p-bg: #ececec; --p-panel: #e0e0e0; --p-line: #b8b8b8;
 }
 .e-badge-panel.theme-dark {
-  --e-badge-accent: var(--tint-light, #39ff44);
+  --e-badge-accent: var(--tint-light, #2ae13f);
 }
 
 /* A row of small badges (Season › Quests: the ones earned). */
@@ -115,24 +115,24 @@
   color: var(--p-ink);
 }
 .e-badge-panel.theme-light {
-  --p-bg: oklch(from var(--tint, #39ff44) 0.97 calc(c * 0.1) h);
-  --p-panel: oklch(from var(--tint, #39ff44) 0.92 calc(c * 0.18) h);
-  --p-ink: oklch(from var(--tint, #39ff44) 0.18 calc(c * 0.4) h);
-  --p-line: oklch(from var(--tint, #39ff44) 0.84 calc(c * 0.28) h);
+  --p-bg: oklch(from var(--tint, #2ae13f) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #2ae13f) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #2ae13f) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #2ae13f) 0.84 calc(c * 0.28) h);
 }
 .e-badge-panel.theme-dark {
-  --p-bg: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
-  --p-panel: oklch(from var(--tint, #39ff44) 0.253 calc(c * 0.243) h);
-  --p-ink: oklch(from var(--tint, #39ff44) 0.962 calc(c * 0.243) h);
-  --p-line: oklch(from var(--tint, #39ff44) 0.366 calc(c * 0.328) h);
+  --p-bg: oklch(from var(--tint, #2ae13f) 0.192 calc(c * 0.243) h);
+  --p-panel: oklch(from var(--tint, #2ae13f) 0.253 calc(c * 0.243) h);
+  --p-ink: oklch(from var(--tint, #2ae13f) 0.962 calc(c * 0.243) h);
+  --p-line: oklch(from var(--tint, #2ae13f) 0.366 calc(c * 0.328) h);
 }
 .e-badge-panel.theme-dark.tint-green {
-  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #39ff44;
+  --p-bg: #001b00; --p-panel: #0b2a0b; --p-ink: #d8ffd8; --p-line: #1d4a1d; --e-badge-accent: #2ae13f;
 }
 .e-badge-panel.theme-vivid {
-  --p-bg: var(--tint, #39ff44);
-  --p-panel: oklch(from var(--tint, #39ff44) calc(l - 0.082) calc(c * 0.91) h);
-  --p-ink: oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h);
+  --p-bg: var(--tint, #2ae13f);
+  --p-panel: oklch(from var(--tint, #2ae13f) calc(l - 0.082) calc(c * 0.91) h);
+  --p-ink: oklch(from var(--tint, #2ae13f) 0.192 calc(c * 0.243) h);
   --p-line: var(--p-ink);
   --e-badge-accent: var(--p-ink);
 }
@@ -141,7 +141,7 @@
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
-.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #39ff44; }
+.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ae13f; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }

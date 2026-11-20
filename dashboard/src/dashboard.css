@@ -29,7 +29,7 @@
 /* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */
 
 body.theme-dark {
-  --theme-focused-foreground: #39ff44;
+  --theme-focused-foreground: #2ae13f;
 }
 
 body.theme-dark,
@@ -2666,7 +2666,7 @@ body.theme-light {
 /* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
 
 .e-look {
-  --anim-tint: var(--tint, #39ff44);                                   /* green when no tint is set */
+  --anim-tint: var(--tint, #2ae13f);                                   /* green when no tint is set */
   --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
   --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
   /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
@@ -2723,8 +2723,8 @@ body.e-look.theme-dark {
   --theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
   --theme-button: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);
   --theme-button-text: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
-  --theme-focused-foreground: var(--tint-light, #39ff44);
-  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
+  --theme-focused-foreground: var(--tint-light, #2ae13f);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #2ae13f) 50%, transparent);
   --anim-line: oklch(from var(--anim-tint) 0.72 c h);
   --anim-fill: var(--anim-tint);
   --anim-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
@@ -2742,15 +2742,15 @@ body.e-look.theme-dark.tint-green {
   --theme-text: #d8ffd8;
   --theme-button: #d8ffd8;
   --theme-button-text: #001b00;
-  --theme-focused-foreground: #39ff44;
-  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --theme-focused-foreground: #2ae13f;
+  --theme-focused-foreground-subdued: rgb(42 225 63 / 0.5);
   --anim-ink: #001b00;
 }
 
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
    The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
-   text. Green is exact: #39ff44 / #39ff44 / #001b00 (flat: panels are outlined in ink, as on the video's green screens). Mirrored in themePalette.ts. */
+   text. Green is exact: #2ae13f / #2ae13f / #001b00 (flat: panels are outlined in ink, as on the video's green screens). Mirrored in themePalette.ts. */
 body.e-look.theme-vivid {
   --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);
@@ -2777,9 +2777,9 @@ body.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--ani
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
+body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ae13f; }
 /* Green, like the video's green screens: no ink-filled bars; a chip is a soft wash of the ink with the ink on it. */
-body.e-look.theme-vivid.tint-green { --anim-fill: #2ee03a; --anim-ink: #001b00; }
+body.e-look.theme-vivid.tint-green { --anim-fill: #26cd39; --anim-ink: #001b00; }
 
 .e-look .e-dashboard-shell {
   --e-rule: var(--theme-border-subdued);

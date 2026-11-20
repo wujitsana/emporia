@@ -12,11 +12,11 @@ Integer math and literal tables only; avatars.ts produces the same bytes (see te
 
 # ---- palette: the dashboard's palette (dashboard/src/palette.ts), with exactly the colors its themes show ---------------------
 # ink = the dark theme's page background, paper = the light theme's page background, deep = the light theme's accent (the
-# tint's deep companion), bright = the dark theme's accent (its light companion; green is pinned to the video's #39ff44).
+# tint's deep companion), bright = the dark theme's accent (its light companion; green is pinned to the video's green as players show it, #2ae13f).
 # avatars.test.ts holds these rows to the theme code, so they cannot drift.
 #        tint       ink        paper      deep       bright    light tint?
 TINT = [
-    ["#39ff44", "#001b00", "#ebfaea", "#006c00", "#39ff44", 1],  # green
+    ["#2ae13f", "#001b00", "#ecfaeb", "#006c00", "#2ae13f", 1],  # green
     ["#0047ff", "#051232", "#ecf6ff", "#005e8b", "#69cdff", 0],  # blue
     ["#b00331", "#250a0c", "#fff0f0", "#7d0022", "#ffbeff", 0],  # crimson
     ["#d57c22", "#201004", "#fdf3ec", "#5f3a22", "#ffad33", 1],  # burnt orange

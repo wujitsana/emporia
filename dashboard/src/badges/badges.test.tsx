@@ -232,10 +232,10 @@ describe("contrast: legible on every canvas", () => {
     expect(css).toContain(`.e-badge-panel.theme-light {\n  --e-badge-accent: ${ACCENT_CSS.light};`);
     expect(css).toContain(`.e-badge-panel.theme-dark {\n  --e-badge-accent: ${ACCENT_CSS.dark};`);
     // Vivid: the accent is the ink, set on the panel with its other tokens (white on blue and purple).
-    expect(css).toMatch(/\.e-badge-panel\.theme-vivid \{[^}]*--p-ink: oklch\(from var\(--tint, #39ff44\) 0\.192 calc\(c \* 0\.243\) h\);[^}]*--e-badge-accent: var\(--p-ink\);/);
+    expect(css).toMatch(/\.e-badge-panel\.theme-vivid \{[^}]*--p-ink: oklch\(from var\(--tint, #2ae13f\) 0\.192 calc\(c \* 0\.243\) h\);[^}]*--e-badge-accent: var\(--p-ink\);/);
     // The look sets that token to the same formula (with --anim-tint, which is --tint or green).
     const look = readFileSync(`${cwd}/src/dashboard.css`, "utf8");
-    const viaLook = (f: string) => f.replace("var(--tint, #39ff44)", "var(--anim-tint)");
+    const viaLook = (f: string) => f.replace("var(--tint, #2ae13f)", "var(--anim-tint)");
     expect(look).toContain(`--theme-focused-foreground: ${viaLook(ACCENT_CSS.light)};`);
     expect(look).toContain(`--theme-focused-foreground: ${viaLook(ACCENT_CSS.dark)};`);
   });

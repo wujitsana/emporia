@@ -5,11 +5,11 @@
  *
  * - vivid: the tint is the background, ink is the tint's deep dark (white on blue and purple),
  *   the panel a step darker (a step lighter for orange, whose ink is darkest against it).
- *   Green is pinned exactly: bg #39ff44, panel #39ff44 (flat, outlined in ink), ink #001b00.
+ *   Green is pinned exactly: bg #2ae13f, panel #2ae13f (flat, outlined in ink), ink #001b00.
  * - deep (the dark theme): the video's all-dark-green screens in OKLCH relative to the tint
  *   (bg L .192 C×.243, panel L .253 C×.243, border L .366 C×.328, text L .962 C×.243), green pinned
- *   to #001b00 / #0b2a0b / #1d4a1d / #d8ffd8 with #39ff44 as the accent. The accent as text is
- *   the tint's light companion (palette.ts); green keeps #39ff44.
+ *   to #001b00 / #0b2a0b / #1d4a1d / #d8ffd8 with #2ae13f as the accent. The accent as text is
+ *   the tint's light companion (palette.ts); green keeps #2ae13f.
  */
 import { type Gamut, type RGB, hexToRgb, mixOver, relativeOklch } from "./badges/color.ts";
 import { TINT_COLORS, type Tint } from "./themeConfig.ts";
@@ -44,12 +44,12 @@ export function vividPalette(tint: Tint, gamut: Gamut = "css"): Palette {
   const bg = hex(t);
   const green = tint === "tint-green";
   const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE : relativeOklch(t, 0.192, (c) => c * 0.243, gamut);
-  const panel = green ? hex("#39ff44")
+  const panel = green ? hex("#2ae13f")
     : LIGHT_PANEL.includes(tint) ? mixOver(WHITE, LIGHT_PANEL_WHITE, bg)
     : relativeOklch(t, (l) => l - 0.082, (c) => c * 0.91, gamut);
   // Chips are ink-filled with the tint written on them: no tint-on-tint text. Green, like the video's green
-  // screens, has no ink-filled bars: its chip is a soft wash (#2ee03a) with the ink on it.
-  if (green) return { bg, panel, border: ink, text: ink, accent: ink, fill: hex("#2ee03a"), fillInk: ink };
+  // screens, has no ink-filled bars: its chip is a soft wash (#26cd39) with the ink on it.
+  if (green) return { bg, panel, border: ink, text: ink, accent: ink, fill: hex("#26cd39"), fillInk: ink };
   return { bg, panel, border: ink, text: ink, accent: ink, fill: ink, fillInk: bg };
 }
 
@@ -57,7 +57,7 @@ export function deepPalette(tint: Tint, gamut: Gamut = "css"): Palette {
   const t = TINT_COLORS[tint];
   if (tint === "tint-green") {
     const bg = hex("#001b00");
-    return { bg, panel: hex("#0b2a0b"), border: hex("#1d4a1d"), text: hex("#d8ffd8"), accent: hex("#39ff44"), fill: hex(t), fillInk: bg };
+    return { bg, panel: hex("#0b2a0b"), border: hex("#1d4a1d"), text: hex("#d8ffd8"), accent: hex("#2ae13f"), fill: hex(t), fillInk: bg };
   }
   const bg = relativeOklch(t, 0.192, (c) => c * 0.243, gamut);
   return {

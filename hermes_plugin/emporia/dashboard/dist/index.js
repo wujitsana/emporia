@@ -11611,7 +11611,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-charcoal": "Charcoal"
 		};
 		TINT_COLORS = {
-			"tint-green": "#39ff44",
+			"tint-green": "#2ae13f",
 			"tint-blue": "#0047ff",
 			"tint-red": "#b00331",
 			"tint-orange": "#d57c22",
@@ -13757,14 +13757,14 @@ var EmporiaHermesPlugin = (function(exports) {
 		const bg = hex(t);
 		const green = tint === "tint-green";
 		const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE$1 : relativeOklch(t, .192, (c) => c * .243, gamut);
-		const panel = green ? hex("#39ff44") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$1, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut);
+		const panel = green ? hex("#2ae13f") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$1, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut);
 		if (green) return {
 			bg,
 			panel,
 			border: ink,
 			text: ink,
 			accent: ink,
-			fill: hex("#2ee03a"),
+			fill: hex("#26cd39"),
 			fillInk: ink
 		};
 		return {
@@ -13786,7 +13786,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				panel: hex("#0b2a0b"),
 				border: hex("#1d4a1d"),
 				text: hex("#d8ffd8"),
-				accent: hex("#39ff44"),
+				accent: hex("#2ae13f"),
 				fill: hex(t),
 				fillInk: bg
 			};
@@ -15693,11 +15693,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_themeConfig();
 		TINT = [
 			[
-				"#39ff44",
+				"#2ae13f",
 				"#001b00",
-				"#ebfaea",
+				"#ecfaeb",
 				"#006c00",
-				"#39ff44",
+				"#2ae13f",
 				1
 			],
 			[
@@ -49435,7 +49435,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	function runtimeBanner(message) {
 		const bar = document.createElement("div");
 		bar.setAttribute("role", "status");
-		bar.style.cssText = "position:relative;display:flex;gap:8px;align-items:center;padding:6px 12px;font:13px/1.4 ui-monospace,monospace;background:#39ff44;color:#001b00;border-bottom:1px solid #001b00";
+		bar.style.cssText = "position:relative;display:flex;gap:8px;align-items:center;padding:6px 12px;font:13px/1.4 ui-monospace,monospace;background:#2ae13f;color:#001b00;border-bottom:1px solid #001b00";
 		const text = document.createElement("span");
 		text.style.flex = "1";
 		text.textContent = message;

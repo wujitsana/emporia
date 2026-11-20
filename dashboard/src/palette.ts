@@ -1,10 +1,10 @@
 /**
  * The one palette: each tint with a light and a deep companion, used by the themes (the dark theme's accent is the light
- * companion, the light theme's accent the deep one; dark green is pinned to the video's #39ff44), the agent pictures (their
+ * companion, the light theme's accent the deep one; dark green is pinned to the video's green as players show it, #2ae13f), the agent pictures (their
  * shades and accents) and the chat sender names. A test holds the CSS, the theme model and the pictures to this table.
  *
  *   tint            light       deep
- *   green  #39ff44  #72e072     #006c00
+ *   green  #2ae13f  #72e072     #006c00
  *   blue   #0047ff  #69cdff     #005e8b
  *   crimson #b00331 #ffbeff     #7d0022
  *   burnt orange #d57c22  #ffad33  #5f3a22

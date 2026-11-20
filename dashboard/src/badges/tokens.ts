@@ -29,8 +29,8 @@ export const DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
 /** The accent, exactly as badges.css writes it. Kept here so the test can hold the CSS to it. */
 export const ACCENT_CSS: Record<ThemeName, string> = {
   light: "var(--tint-deep, #006c00)",
-  vivid: "oklch(from var(--tint, #39ff44) 0.192 calc(c * 0.243) h)",
-  dark: "var(--tint-light, #39ff44)",
+  vivid: "oklch(from var(--tint, #2ae13f) 0.192 calc(c * 0.243) h)",
+  dark: "var(--tint-light, #2ae13f)",
 };
 
 export function accentFor(theme: ThemeName, tint: Tint, gamut: Gamut = "css"): RGB {

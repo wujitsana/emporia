@@ -60,7 +60,7 @@ describe("tints", () => {
   it("are six, green first and the default, with no amber (the orange is burnt, #d57c22, the red crimson)", () => {
     expect([...TINTS]).toEqual(["tint-green", "tint-blue", "tint-red", "tint-orange", "tint-purple", "tint-charcoal"]);
     expect(DEFAULT_TINT).toBe("tint-green");
-    expect(TINT_COLORS["tint-green"]).toBe("#39ff44");
+    expect(TINT_COLORS["tint-green"]).toBe("#2ae13f");
     expect(Object.values(TINT_LABELS)).not.toContain("Amber");
     expect(Object.values(TINT_COLORS)).not.toContain("#f0a832");
   });

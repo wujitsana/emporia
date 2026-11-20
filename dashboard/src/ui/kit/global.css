@@ -361,7 +361,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 */
 
 body.tint-green {
-  --tint: #39ff44;
+  --tint: #2ae13f;
   --tint-light: #72e072;
   --tint-deep: #006c00;
 }
@@ -477,8 +477,8 @@ body.theme-dark.tint-charcoal {
   --theme-button-text: oklch(from var(--tint) 0.192 calc(c * 0.243) h);
   --theme-button-foreground: oklch(from var(--tint) 0.366 calc(c * 0.328) h);
   --theme-button-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
-  --theme-focused-foreground: var(--tint-light, #39ff44);
-  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #39ff44) 50%, transparent);
+  --theme-focused-foreground: var(--tint-light, #2ae13f);
+  --theme-focused-foreground-subdued: color-mix(in srgb, var(--tint-light, #2ae13f) 50%, transparent);
   --theme-window-background: oklch(from var(--tint) 0.253 calc(c * 0.243) h);
   --theme-window-shadow: oklch(from var(--tint) 0.15 calc(c * 0.243) h);
 }
@@ -495,15 +495,15 @@ body.theme-dark.tint-green {
   --theme-button-text: #001b00;
   --theme-button-foreground: #1d4a1d;
   --theme-button-background: #0b2a0b;
-  --theme-focused-foreground: #39ff44;
-  --theme-focused-foreground-subdued: rgb(57 255 68 / 0.5);
+  --theme-focused-foreground: #2ae13f;
+  --theme-focused-foreground-subdued: rgb(42 225 63 / 0.5);
   --theme-window-background: #0b2a0b;
   --theme-window-shadow: #000f00;
 }
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-orange); white ink on blue and purple; green exact (#39ff44 / #39ff44 flat / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#2ae13f / #2ae13f flat / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 body.theme-vivid.tint-green,
@@ -536,7 +536,7 @@ body.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--tint) 80%,
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }
-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
+body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ae13f; }
 
 #__next {
 }

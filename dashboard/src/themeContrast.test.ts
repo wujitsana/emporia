@@ -55,25 +55,25 @@ describe("contrast of every tint in every theme", () => {
 });
 
 describe("the green themes are the video's exact colors", () => {
-  it("vivid green: #39ff44 / #39ff44 (flat) / #001b00", () => {
+  it("vivid green: #2ae13f / #2ae13f (flat) / #001b00", () => {
     const p = vividPalette("tint-green");
-    expect([p.bg, p.panel, p.text, p.border, p.accent].map(rgbHex)).toEqual(["#39ff44", "#39ff44", "#001b00", "#001b00", "#001b00"]);
+    expect([p.bg, p.panel, p.text, p.border, p.accent].map(rgbHex)).toEqual(["#2ae13f", "#2ae13f", "#001b00", "#001b00", "#001b00"]);
   });
-  it("deep green: #001b00 / #0b2a0b / #1d4a1d / #d8ffd8, accent #39ff44", () => {
+  it("deep green: #001b00 / #0b2a0b / #1d4a1d / #d8ffd8, accent #2ae13f", () => {
     const p = deepPalette("tint-green");
-    expect([p.bg, p.panel, p.border, p.text, p.accent].map(rgbHex)).toEqual(["#001b00", "#0b2a0b", "#1d4a1d", "#d8ffd8", "#39ff44"]);
+    expect([p.bg, p.panel, p.border, p.text, p.accent].map(rgbHex)).toEqual(["#001b00", "#0b2a0b", "#1d4a1d", "#d8ffd8", "#2ae13f"]);
   });
 });
 
 describe("the CSS carries the palette", () => {
   it("dashboard.css: deep green is pinned, the generic deep formula and the vivid one are written", () => {
-    expect(DASH).toMatch(/body\.e-look\.theme-dark\.tint-green \{[^}]*--theme-background: #001b00;[^}]*--theme-background-modal: #0b2a0b;[^}]*--theme-border: #1d4a1d;[^}]*--theme-text: #d8ffd8;[^}]*--theme-focused-foreground: #39ff44;/);
+    expect(DASH).toMatch(/body\.e-look\.theme-dark\.tint-green \{[^}]*--theme-background: #001b00;[^}]*--theme-background-modal: #0b2a0b;[^}]*--theme-border: #1d4a1d;[^}]*--theme-text: #d8ffd8;[^}]*--theme-focused-foreground: #2ae13f;/);
     expect(DASH).toContain("--theme-background: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);");
     expect(DASH).toContain("--theme-background-modal: oklch(from var(--anim-tint) 0.253 calc(c * 0.243) h);");
     expect(DASH).toContain("--theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);");
     expect(DASH).toContain("--theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);");
     expect(DASH).toContain("--vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);");
-    expect(DASH).toMatch(/body\.e-look\.theme-vivid\.tint-green \{ --vv-ink: #001b00; --vv-panel: #39ff44; \}/);
+    expect(DASH).toMatch(/body\.e-look\.theme-vivid\.tint-green \{ --vv-ink: #001b00; --vv-panel: #2ae13f; \}/);
   });
 
   it("the vivid rules name the same tints for white ink and the lighter panel as the table", () => {
@@ -92,8 +92,8 @@ describe("the CSS carries the palette", () => {
       expect(KIT).toContain(`body.theme-light.${t}`);
     }
     expect(KIT).toContain("--theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);");
-    expect(KIT).toContain("body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }");
-    expect(KIT).toMatch(/body\.theme-dark\.tint-green \{[^}]*--theme-text: #d8ffd8;[^}]*--theme-focused-foreground: #39ff44;/);
+    expect(KIT).toContain("body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ae13f; }");
+    expect(KIT).toMatch(/body\.theme-dark\.tint-green \{[^}]*--theme-text: #d8ffd8;[^}]*--theme-focused-foreground: #2ae13f;/);
   });
 
   it("no amber is left as a color in the look, the kit, the badges or the theme config", () => {
@@ -135,7 +135,7 @@ describe("the chat sender names", () => {
 
   it("the accent in the dark theme is the light companion (green pinned) and in the light theme the deep one", () => {
     for (const tint of TINTS) {
-      expect(rgbHex(deepPalette(tint).accent), tint).toBe(tint === "tint-green" ? "#39ff44" : COMPANIONS[tint].light);
+      expect(rgbHex(deepPalette(tint).accent), tint).toBe(tint === "tint-green" ? "#2ae13f" : COMPANIONS[tint].light);
       expect(rgbHex(themeColors("animatic", "light", tint).accent), tint).toBe(COMPANIONS[tint].deep);
     }
   });

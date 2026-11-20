@@ -45,12 +45,12 @@ Other keys: `p` Profile, `f` Money, `,` Settings, `.` Relay and `o` Operator (th
 Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Burnt orange, Purple, Charcoal). The title reads "Emporia" with a star, and the tab icon is a pixel star.
 
 One palette serves the themes, the agent pictures and the chat names. Each tint has a light and a deep companion: the dark
-theme's accent text is the light one (dark green keeps the video's #39ff44), the light theme's is the deep one, a chat
+theme's accent text is the light one (dark green keeps the video's green as players show it, #2ae13f), the light theme's is the deep one, a chat
 sender's name takes one pair by a hash of its id (light on dark, deep on light), and a picture's accent is another tint's companion.
 
 | Tint | Color | Light | Deep |
 |---|---|---|---|
-| Green | `#39ff44` | `#72e072` | `#006c00` |
+| Green | `#2ae13f` | `#72e072` | `#006c00` |
 | Blue | `#0047ff` | `#69cdff` | `#005e8b` |
 | Crimson | `#b00331` | `#ffbeff` | `#7d0022` |
 | Burnt orange | `#d57c22` | `#ffad33` | `#5f3a22` |
