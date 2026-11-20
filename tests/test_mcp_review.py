@@ -369,3 +369,37 @@ def test_a_plain_relay_url_is_rebuilt_from_scheme_host_and_port():
     assert mcp_server._plain_relay_url(" https://Relay.Example:8443/ ") == ("https://relay.example:8443", "")
     assert mcp_server._plain_relay_url("http://127.0.0.1:8088") == ("http://127.0.0.1:8088", "")
     assert mcp_server._plain_relay_url("ftp://relay.example")[0] == ""
+
+
+# ── MCP review 9: paying needs the money feature; free joins do not ──
+
+class _Answer:
+    def __init__(self, status, body):
+        self.status_code, self._body, self.content, self.headers = status, body, b"x", {}
+
+    def json(self):
+        return self._body
+
+
+@pytest.mark.parametrize("call", [
+    lambda: mcp_server.join_room("r1", agent_id="mr_agent", pay_with_x402=True),
+    lambda: mcp_server.join_room("r1", agent_id="mr_agent", pay_with_tempo=True),
+    lambda: mcp_server.subscribe_agora_topic("t1", agent_id="mr_agent", pay_with_x402=True),
+])
+def test_a_paid_join_or_subscription_is_refused_with_the_money_feature_off(monkeypatch, call):
+    monkeypatch.setenv("EMPORIA_FEATURES", "archive")
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: _Answer(402, {"x402": {"accepts": []}}))
+    monkeypatch.setattr(mcp_server, "_playbook_refusal", lambda what: None)
+    monkeypatch.setattr(mcp_server, "_room_terms", _no_network)
+    monkeypatch.setattr(mcp_server, "_x402_paid_retry", _no_network)
+    monkeypatch.setattr(mcp_server, "_tempo_paid_retry", _no_network)
+    out = call()
+    assert out["success"] is False and "money feature is off" in out["error"], out
+
+
+def test_a_free_join_works_with_the_money_feature_off_even_when_asked_to_pay(monkeypatch):
+    monkeypatch.setenv("EMPORIA_FEATURES", "archive")
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: _Answer(200, {"room_id": "r1"}))
+    monkeypatch.setattr(mcp_server, "_playbook_refusal", lambda what: None)
+    out = mcp_server.join_room("r1", agent_id="mr_agent", pay_with_x402=True)
+    assert out["success"] is True and out["room_id"] == "r1"

@@ -1950,6 +1950,17 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
     return _bearer_request(method, url, agent_id=aid, headers=headers, **kwargs)
 
 
+def _money_off_refusal() -> dict[str, Any] | None:
+    """A paid join or subscription is spending: with the `money` feature off (the person did not choose it), the
+    paying path refuses, though the wallet's own limits would also hold. Free joins never come here."""
+    from emporia import features
+    if "money" in features.enabled_from_env():
+        return None
+    return {"error": "this entry costs money, and the money feature is off for this agent: tell your person to "
+                     "turn it on (" + localize("emporia features on money") + ")",
+            "success": False, "refused_by": "emporia-features"}
+
+
 @mcp.tool()
 def join_room(
     room_id: str,
@@ -2001,6 +2012,8 @@ def join_room(
         url = f"{_base()}/rooms/{_seg(room_id)}/join"
         r = _bearer_request("post", url, agent_id=agent_id, json=body, timeout=15)
         if r.status_code == 402 and (pay_with_x402 or pay_with_tempo):
+            if refusal := _money_off_refusal():
+                return refusal
             payees, fee = _room_terms(agent_id, room_id)   # P275: only its creator, at most its signed fee
             if pay_with_x402:
                 r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, payees=payees, max_cents=fee,
@@ -3224,6 +3237,8 @@ def subscribe_agora_topic(topic_slug: str, pay_with_x402: bool = False,
         url = f"{_base()}/agoras/topics/{_seg(topic_slug)}/subscribe"
         r = _bearer_request("post", url, agent_id=agent_id, json=body, timeout=10)
         if r.status_code == 402 and (pay_with_x402 or pay_with_tempo):
+            if refusal := _money_off_refusal():
+                return refusal
             payees, fee = _topic_terms(agent_id, topic_slug)   # P278: only its creator, at most its signed fee
             if pay_with_x402:
                 r = _x402_paid_retry(r, agent_id, "post", url, network=pay_network, payees=payees, max_cents=fee,
