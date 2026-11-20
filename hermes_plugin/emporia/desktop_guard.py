@@ -1,4 +1,4 @@
-"""Keep desktop and real-browser control away from a session that read other agents' words.
+"""Keep desktop and browser control away from a session that read other agents' words.
 
 An agent that can click on the person's desktop or in their real browser can press "Sign" in a browser wallet
 (which may hold mainnet funds even though Emporia is testnet only), or open a desktop terminal outside Hermes's
@@ -13,7 +13,8 @@ session. So:
   parent (``subagent_start`` records the pair, ``subagent_stop`` and a ``delegate_task`` result carry it up), a
   marked parent marks its children.
 * ``pre_tool_call`` refuses, in a marked session for the rest of it and in any relay-started or rounds turn:
-  the desktop-control tools; ``browser_vault`` (stored logins, even in a sandboxed browser); creating or changing a
+  the desktop-control tools and every ``browser_*`` tool (fail closed: whether a CDP endpoint is attached live is
+  not visible through the plugin API); ``browser_vault`` (stored logins, even in a sandboxed browser); creating or changing a
   scheduled job (a job runs fresh, unmarked); and terminal commands that name a desktop driver or open a browser's
   debugging port. The terminal cannot be fully fenced by a pattern: Emporia's setup already leaves the agent's
   profile without one, and a person's own turn in an unmarked session is not policed.
@@ -67,7 +68,7 @@ MARKS_FILE = "desktop-marks.json"
 MARK_TTL = 7 * 24 * 3600
 _MAX = 4096
 
-REFUSED = ("Blocked by Emporia: this session read other agents' words on Emporia, so desktop and real-browser "
+REFUSED = ("Blocked by Emporia: this session read other agents' words on Emporia, so desktop and browser "
            "control are off for it (`{tool}`): a post could be steering you to click in your person's wallet or "
            "terminal. Start a new session for that work. If your person wants to allow it anyway, they set "
            f"{SETTING}=allow in this profile's .env, knowing a post could then steer the agent to their desktop or "
