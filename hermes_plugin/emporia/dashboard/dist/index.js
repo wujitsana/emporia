@@ -11585,9 +11585,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		b.classList.add("font-use-CommitMono");
 		b.classList.add("e-look");
 		b.classList.add(tint);
-		b.classList.toggle("e-ink-pure", !!opts.ink);
-		if (opts.ink) b.style.setProperty("--e-pure-ink", opts.ink);
-		else b.style.removeProperty("--e-pure-ink");
 	}
 	var THEMES, TINTS, DEFAULT_TINT, TINT_LABELS, TINT_COLORS, themeRoot, fadeTimers;
 	var init_themeConfig = __esmMin((() => {
@@ -13707,14 +13704,14 @@ var EmporiaHermesPlugin = (function(exports) {
 	function mixOver(a, p, under) {
 		return a.map((x, i) => x * p + under[i] * (1 - p));
 	}
-	function luminance$1(rgb) {
+	function luminance(rgb) {
 		const [r, g, b] = rgb.map(toLinear);
 		return .2126 * r + .7152 * g + .0722 * b;
 	}
 	/** The WCAG contrast ratio, 1–21. */
 	function contrast(a, b) {
-		const la = luminance$1(a);
-		const lb = luminance$1(b);
+		const la = luminance(a);
+		const lb = luminance(b);
 		return (Math.max(la, lb) + .05) / (Math.min(la, lb) + .05);
 	}
 	var toLinear, toGamma, clip$1, inGamut;
@@ -13759,8 +13756,8 @@ var EmporiaHermesPlugin = (function(exports) {
 		const t = TINT_COLORS[tint];
 		const bg = hex(t);
 		const green = tint === "tint-green";
-		const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE$2 : relativeOklch(t, .192, (c) => c * .243, gamut);
-		const panel = green ? hex("#39ff44") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$2, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut);
+		const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE$1 : relativeOklch(t, .192, (c) => c * .243, gamut);
+		const panel = green ? hex("#39ff44") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$1, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut);
 		if (green) return {
 			bg,
 			panel,
@@ -13802,15 +13799,15 @@ var EmporiaHermesPlugin = (function(exports) {
 			text: relativeOklch(t, .962, (c) => c * .243, gamut),
 			accent: hex(COMPANIONS[tint].light),
 			fill: hex(t),
-			fillInk: WHITE_INK.includes(tint) ? WHITE$2 : bg
+			fillInk: WHITE_INK.includes(tint) ? WHITE$1 : bg
 		};
 	}
-	var WHITE$2, hex, WHITE_INK, LIGHT_PANEL, LIGHT_NEUTRAL, LIGHT_PANEL_WHITE, toHex, rgbHex;
+	var WHITE$1, hex, WHITE_INK, LIGHT_PANEL, LIGHT_NEUTRAL, LIGHT_PANEL_WHITE, toHex, rgbHex;
 	var init_themePalette = __esmMin((() => {
 		init_color();
 		init_themeConfig();
 		init_palette();
-		WHITE$2 = [
+		WHITE$1 = [
 			1,
 			1,
 			1
@@ -13831,7 +13828,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		rgbHex = toHex;
 	}));
 	// src/ThemeControls.tsx
-	function ThemePanelBody({ theme, base, tint, onTheme, onTint, ink }) {
+	function ThemePanelBody({ theme, base, tint, onTheme, onTint }) {
 		const last = base ?? (theme === "theme-dark" ? "theme-dark" : "theme-light");
 		const vivid = theme === "theme-vivid";
 		const mode = vivid ? last : theme;
@@ -13876,25 +13873,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					onClick: () => onTint(nextTint(tint)),
 					title: `accent: ${TINT_LABELS[tint]} (click for the next)`,
 					"aria-label": `Accent color: ${TINT_LABELS[tint]}, click to cycle`
-				}),
-				ink && /* @__PURE__ */ (0, import_jsx_runtime$122.jsxs)(import_jsx_runtime$122.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
-					className: "e-theme-duo__rule",
-					"aria-hidden": true
-				}), /* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("button", {
-					type: "button",
-					role: "switch",
-					"aria-checked": ink.on,
-					"aria-label": "Flip the text: black or white",
-					disabled: !!ink.disabledWhy,
-					className: "e-switch e-theme-duo__btn",
-					"data-on": ink.on ? "true" : "false",
-					title: ink.disabledWhy || (ink.on ? "text: flipped (a style choice: small text is harder to read; click for the theme's own)" : "text: the theme's own (click to flip it between black and white; small text gets harder to read)"),
-					onClick: ink.onToggle,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
-						className: "e-switch__knob",
-						"aria-hidden": true
-					})
-				})] })
+				})
 			]
 		});
 	}
@@ -14586,7 +14565,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	/** The phone's menu: the agent chat, the places, help and the relay desk, then who you view as and the theme. */
-	function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, base, tint, onTheme, onTint, ink, badges, lead }) {
+	function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, base, tint, onTheme, onTint, badges, lead }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$118.jsxs)("div", {
 			className: "e-mobile-drawer",
 			children: [
@@ -14625,8 +14604,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						base,
 						tint,
 						onTheme,
-						onTint,
-						ink
+						onTint
 					})]
 				})
 			]
@@ -25576,142 +25554,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_relayCtx();
 		import_jsx_runtime$91 = require_jsx_runtime();
 	}));
-	// src/badges/tokens.ts
-	function accentFor(theme, tint, gamut = "css") {
-		if (theme === "vivid") return vividPalette(tint, gamut).accent;
-		if (theme === "dark") return deepPalette(tint, gamut).accent;
-		return hexToRgb(COMPANIONS[tint].deep);
-	}
-	function themeColors(style, theme, tint, gamut = "css") {
-		const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
-		const base = {
-			style,
-			theme,
-			tint,
-			label: TINT_LABELS[tint],
-			tintHex: hex
-		};
-		if (theme === "light") {
-			const rel = (L, C) => relativeOklch(hex, L, C, gamut);
-			const fill = rel((l) => Math.max(l, .86), (c) => c);
-			const neutral = LIGHT_NEUTRAL[tint];
-			const bg = neutral ? relativeOklch(neutral.bg, (l) => l, (c) => c, gamut) : rel(.97, (c) => c * .1);
-			return {
-				...base,
-				accent: accentFor(theme, tint, gamut),
-				ink: rel(.18, (c) => c * .4),
-				fill: {
-					bg: fill,
-					ink: rel(.18, (c) => c * .4)
-				},
-				surfaces: [
-					{
-						name: "canvas",
-						rgb: bg
-					},
-					{
-						name: "panel",
-						rgb: neutral ? relativeOklch(neutral.panel, (l) => l, (c) => c, gamut) : rel(.92, (c) => c * .18)
-					},
-					{
-						name: "wash",
-						rgb: mixOver(fill, WASH.light, bg)
-					}
-				]
-			};
-		}
-		const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
-		return {
-			...base,
-			accent: p.accent,
-			ink: p.text,
-			fill: {
-				bg: p.fill,
-				ink: p.fillInk
-			},
-			surfaces: [
-				{
-					name: "canvas",
-					rgb: p.bg
-				},
-				{
-					name: "panel",
-					rgb: p.panel
-				},
-				{
-					name: "wash",
-					rgb: p.panel
-				}
-			]
-		};
-	}
-	var DEFAULT_TINT_HEX, WASH;
-	var init_tokens = __esmMin((() => {
-		init_themeConfig();
-		init_color();
-		init_palette();
-		init_themePalette();
-		DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
-		WASH = { light: .45 };
-	}));
-	// src/inkSwitch.ts
-	/** A saved value → on or off. The earlier Auto / White / Black choice maps to off / on / on. */
-	function normalizeInk(v) {
-		return v === "on" || v === "white" || v === "black";
-	}
-	function pureInk(theme, tint) {
-		if (theme !== "theme-vivid") return {
-			color: "#000000",
-			shown: false,
-			ok: false,
-			why: "",
-			worst: 0
-		};
-		let worst = Infinity;
-		let flipWhite = false;
-		for (const gamut of ["css", "clip"]) {
-			const t = themeColors("animatic", "vivid", tint, gamut);
-			flipWhite = luminance(t.ink) < .5;
-			const canvas = t.surfaces.find((x) => x.name === "canvas") ?? t.surfaces[0];
-			worst = Math.min(worst, contrast(flipWhite ? WHITE$1 : BLACK$1, canvas.rgb));
-		}
-		const color = flipWhite ? "#ffffff" : "#000000";
-		const word = flipWhite ? "White" : "Black";
-		if (worst < 2.5) return {
-			color,
-			shown: true,
-			ok: false,
-			worst,
-			why: `${word} text would be unreadable on this vivid tint (${worst.toFixed(1)}:1)`
-		};
-		return {
-			color,
-			shown: true,
-			ok: true,
-			why: "",
-			worst
-		};
-	}
-	var LS_INK, BLACK$1, WHITE$1, luminance;
-	var init_inkSwitch = __esmMin((() => {
-		init_color();
-		init_tokens();
-		LS_INK = "emporia_ink";
-		BLACK$1 = [
-			0,
-			0,
-			0
-		];
-		WHITE$1 = [
-			1,
-			1,
-			1
-		];
-		luminance = (c) => {
-			const lin = (v) => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
-			return .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
-		};
-	}));
 	var init_shadowScope = __esmMin((() => {}));
 	// src/ui/GatedNote.tsx
 	/**
@@ -27287,12 +27129,13 @@ var EmporiaHermesPlugin = (function(exports) {
 					className: "e-now__head",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$82.jsx)("span", { children: "Notices" }), /* @__PURE__ */ (0, import_jsx_runtime$82.jsx)("span", { children: notices.length })]
 				}), notices.map((n) => /* @__PURE__ */ (0, import_jsx_runtime$82.jsxs)("p", {
-					className: "e-now__row e-now__row--static",
+					className: "e-now__row e-now__row--static e-now__row--bullet",
 					"data-notice": n.id,
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$82.jsx)("span", {
-							className: "e-now__label",
-							children: "notice"
+							className: "e-now__bullet",
+							"aria-hidden": true,
+							children: "•"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$82.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime$82.jsx)(Pieces, { text: n.text }) }),
 						/* @__PURE__ */ (0, import_jsx_runtime$82.jsx)("span", {})
@@ -48456,6 +48299,84 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_useChat();
 		import_jsx_runtime$3 = require_jsx_runtime();
 	}));
+	// src/badges/tokens.ts
+	function accentFor(theme, tint, gamut = "css") {
+		if (theme === "vivid") return vividPalette(tint, gamut).accent;
+		if (theme === "dark") return deepPalette(tint, gamut).accent;
+		return hexToRgb(COMPANIONS[tint].deep);
+	}
+	function themeColors(style, theme, tint, gamut = "css") {
+		const hex = TINT_COLORS[tint] || DEFAULT_TINT_HEX;
+		const base = {
+			style,
+			theme,
+			tint,
+			label: TINT_LABELS[tint],
+			tintHex: hex
+		};
+		if (theme === "light") {
+			const rel = (L, C) => relativeOklch(hex, L, C, gamut);
+			const fill = rel((l) => Math.max(l, .86), (c) => c);
+			const neutral = LIGHT_NEUTRAL[tint];
+			const bg = neutral ? relativeOklch(neutral.bg, (l) => l, (c) => c, gamut) : rel(.97, (c) => c * .1);
+			return {
+				...base,
+				accent: accentFor(theme, tint, gamut),
+				ink: rel(.18, (c) => c * .4),
+				fill: {
+					bg: fill,
+					ink: rel(.18, (c) => c * .4)
+				},
+				surfaces: [
+					{
+						name: "canvas",
+						rgb: bg
+					},
+					{
+						name: "panel",
+						rgb: neutral ? relativeOklch(neutral.panel, (l) => l, (c) => c, gamut) : rel(.92, (c) => c * .18)
+					},
+					{
+						name: "wash",
+						rgb: mixOver(fill, WASH.light, bg)
+					}
+				]
+			};
+		}
+		const p = theme === "vivid" ? vividPalette(tint, gamut) : deepPalette(tint, gamut);
+		return {
+			...base,
+			accent: p.accent,
+			ink: p.text,
+			fill: {
+				bg: p.fill,
+				ink: p.fillInk
+			},
+			surfaces: [
+				{
+					name: "canvas",
+					rgb: p.bg
+				},
+				{
+					name: "panel",
+					rgb: p.panel
+				},
+				{
+					name: "wash",
+					rgb: p.panel
+				}
+			]
+		};
+	}
+	var DEFAULT_TINT_HEX, WASH;
+	var init_tokens = __esmMin((() => {
+		init_themeConfig();
+		init_color();
+		init_palette();
+		init_themePalette();
+		DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
+		WASH = { light: .45 };
+	}));
 	// src/badges/BadgeGallery.tsx
 	/** The lowest ink and accent contrast a badge meets in this theme and tint (animatic surfaces). */
 	function lowest(theme, tint) {
@@ -48712,18 +48633,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [theme, setTheme] = (0, import_react.useState)(readTheme);
 		const [tint, setTint] = (0, import_react.useState)(readTint);
 		const [base, setBase] = (0, import_react.useState)(() => readBase(theme));
-		const [inkPref, setInkPref] = (0, import_react.useState)(() => new URLSearchParams(window.location.search).get("ink") === "on" || !CAPTURE && normalizeInk(readPref("emporia_ink")));
-		const pure = pureInk(theme, tint);
-		const inkOn = inkPref && pure.ok;
-		const ink = pure.shown ? {
-			on: inkOn,
-			disabledWhy: pure.ok ? "" : pure.why,
-			onToggle: () => {
-				const next = !inkPref;
-				setInkPref(next);
-				if (!CAPTURE) writePref(LS_INK, next ? "on" : "off");
-			}
-		} : void 0;
 		const baseRef = (0, import_react.useRef)(base);
 		(0, import_react.useEffect)(() => {
 			baseRef.current = base;
@@ -48798,16 +48707,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		(0, import_react.useEffect)(() => {
 			applyTheme(theme, tint, {
 				fade: !CAPTURE && !instantNext.current,
-				capture: CAPTURE,
-				ink: inkOn ? pure.color : null
+				capture: CAPTURE
 			});
 			instantNext.current = false;
-		}, [
-			theme,
-			tint,
-			inkOn,
-			pure.color
-		]);
+		}, [theme, tint]);
 		const setThemeAndApply = (t) => {
 			setTheme(t);
 			if (!CAPTURE) writePref(LS_THEME, t);
@@ -49086,7 +48989,6 @@ var EmporiaHermesPlugin = (function(exports) {
 									tint,
 									onTheme: setThemeAndApply,
 									onTint: setTintAndApply,
-									ink,
 									badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
 									lead: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ChatMenuItem, { onOpen: () => setNavOpen(false) })
 								})
@@ -49135,8 +49037,7 @@ var EmporiaHermesPlugin = (function(exports) {
 																base,
 																tint,
 																onTheme: setThemeAndApply,
-																onTint: setTintAndApply,
-																ink
+																onTint: setTintAndApply
 															}),
 															/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(ViewerSwitcher, {}),
 															/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(HeaderLinks, {
@@ -49334,7 +49235,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_NotOnRelayNote();
 		init_transport();
 		init_prefs();
-		init_inkSwitch();
 		init_shadowScope();
 		init_healthCtx();
 		init_themeConfig();

@@ -79,7 +79,7 @@ describe("the look's graphics line (P10)", () => {
 const GRAPHICS_OR_INACTIVE = new Set([
   '.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Divider_line"]',
   ".e-relay-axis", ".e-numline__axis", ".e-numline__tick", ".e-numline__mark",
-  ".e-seat.is-out", ".e-lowest__cell.is-empty", ".e-switch:disabled",   // a disabled switch is inactive; its title says why
+  ".e-seat.is-out", ".e-lowest__cell.is-empty",
   // the base step: each state a step can be in has its own rule in the look
   ".e-phase-strip__step",
   // the look sets every key hint to 80 % ink (.e-look .e-section-tab__key)

@@ -42,7 +42,7 @@ Five places (keys `1` to `5`), then two in the header:
 - **Header:** Help (`?`, the Docs tab) and, for the relay's operator, the Relay desk (Relay and Operator).
 
 Other keys: `p` Profile, `f` Money, `,` Settings, `.` Relay and `o` Operator (the last two for the relay's operator only).
-Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Burnt orange, Purple, Charcoal), and, in vivid only, a text switch that flips the text between black and white (a style choice: small text gets harder to read; off on green, where white would be unreadable). The title reads "Emporia" with a star, and the tab icon is a pixel star.
+Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Burnt orange, Purple, Charcoal). The title reads "Emporia" with a star, and the tab icon is a pixel star.
 
 One palette serves the themes, the agent pictures and the chat names. Each tint has a light and a deep companion: the dark
 theme's accent text is the light one (dark green keeps the video's #39ff44), the light theme's is the deep one, a chat

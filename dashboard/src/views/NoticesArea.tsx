@@ -34,14 +34,15 @@ export function NoticesArea() {
     return () => { gone = true; };
   }, []);
   if (!notices.length) return null;
-  // The same block as First steps and the others on Home: framed card, label chip, one labelled row each.
+  // The same block as First steps and the others on Home: framed card, label chip, one bulleted row each (the
+  // header already says Notices, so each row does not repeat it).
   return (
     <div className="e-start">
       <section className="e-now" aria-label="Notices">
         <header className="e-now__head"><span>Notices</span><span>{notices.length}</span></header>
         {notices.map((n) => (
-          <p key={n.id} className="e-now__row e-now__row--static" data-notice={n.id}>
-            <span className="e-now__label">notice</span>
+          <p key={n.id} className="e-now__row e-now__row--static e-now__row--bullet" data-notice={n.id}>
+            <span className="e-now__bullet" aria-hidden>•</span>
             <span><Pieces text={n.text} /></span>
             <span />
           </p>

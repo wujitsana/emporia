@@ -86,7 +86,7 @@ const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
  * (a run through the tints) keep the class on until the last one settles.
  * `fade: false` (the capture hotkeys, capture mode) switches instantly.
  */
-export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boolean; capture?: boolean; ink?: string | null } = {}) {
+export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boolean; capture?: boolean } = {}) {
   const tint = normalizeTint(tintIn);
   // On the Desktop page the body is the app's: the theme goes on our own root or nowhere.
   const b = themeRoot ?? (import.meta.env.VITE_EMPORIA_MODE === "desktop" ? null : document.body);
@@ -109,8 +109,4 @@ export function applyTheme(theme: Theme, tintIn: Tint | "", opts: { fade?: boole
   b.classList.add("font-use-CommitMono");
   b.classList.add("e-look");   // the one look (dashboard.css § 30)
   b.classList.add(tint);
-  // The text switch (inkSwitch.ts): pure black / white text at the token level, whole page.
-  b.classList.toggle("e-ink-pure", !!opts.ink);
-  if (opts.ink) b.style.setProperty("--e-pure-ink", opts.ink);
-  else b.style.removeProperty("--e-pure-ink");
 }

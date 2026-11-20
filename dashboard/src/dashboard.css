@@ -1051,21 +1051,6 @@ body.theme-light {
 /* The vivid circle: the tint with a ring of its ink (color set inline); the ring fills in when vivid is on. */
 .e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
 .e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
-/* The text switch: a real toggle (track and knob), not a circle. */
-.e-switch {
-  position: relative; width: 28px; height: 16px; padding: 0; flex-shrink: 0; cursor: pointer;
-  border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit;
-}
-.e-switch__knob {
-  position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%;
-  background: currentColor; transition: transform 0.12s ease;
-}
-.e-switch[data-on="true"] { background: color-mix(in srgb, currentColor 22%, transparent); }
-.e-switch[data-on="true"] .e-switch__knob { transform: translateX(12px); }
-.e-switch:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: 2px; }
-.e-switch:disabled { opacity: 0.4; cursor: not-allowed; }
-.e-capture .e-switch__knob { transition: none; }
-@media (prefers-reduced-motion: reduce) { .e-switch__knob { transition: none; } }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -2565,6 +2550,8 @@ body.theme-light {
 .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }
 .e-now__row--static { cursor: default; }
 .e-now__row--static:hover { background: transparent; }
+.e-now__row--bullet { grid-template-columns: 2ch minmax(0, 1fr) auto; }
+.e-now__bullet { opacity: 0.7; }
 .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
 .e-now__go { color: var(--theme-focused-foreground); }
 .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
@@ -2793,20 +2780,6 @@ body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
 body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
 /* Green, like the video's green screens: no ink-filled bars; a chip is a soft wash of the ink with the ink on it. */
 body.e-look.theme-vivid.tint-green { --anim-fill: #2ee03a; --anim-ink: #001b00; }
-
-/* TEXT SWITCH (inkSwitch.ts): pure black or white text over the whole page, set at the token level so every
-   component that reads a token follows (text, headings, nav, cards, tables, inputs, links, the wordmark).
-   --e-pure-ink is set on this root by themeConfig.applyTheme, only where it reaches 4.5:1. The doubled
-   class outranks the per-tint rules above (the green one is pinned exactly). Vivid's ink is also its
-   border, rule and chip fill, so it takes the pure ink at --vv-ink; light and dark take it at the text,
-   button and accent-as-text tokens. Graphics (--anim-line, the fills) keep the tint. */
-body.e-look.e-ink-pure.e-ink-pure.e-ink-pure {
-  --theme-text: var(--e-pure-ink);
-  --theme-button: var(--e-pure-ink);
-  --theme-focused-foreground: var(--e-pure-ink);
-  --theme-focused-foreground-subdued: color-mix(in srgb, var(--e-pure-ink) 50%, transparent);
-}
-body.e-look.theme-vivid.e-ink-pure.e-ink-pure.e-ink-pure { --vv-ink: var(--e-pure-ink); }
 
 .e-look .e-dashboard-shell {
   --e-rule: var(--theme-border-subdued);
