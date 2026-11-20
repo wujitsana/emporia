@@ -3918,7 +3918,8 @@ def cmd_features(args: argparse.Namespace) -> int:
         if not held.get("EMPORIA_AGENT_ID"):
             print(f"features: {key_dir} has no {agent_init.ENV_FILE}: run `emporia agent init` first")
             return 1
-        restart = "restart its MCP server (your host reloads it)"
+        restart = ("restart its MCP server (your host reloads it; the server reads this setting from "
+                   f"{agent_init.ENV_FILE} in the key directory at each start, so the host's entry needs no change)")
 
         def save(value: str) -> None:
             agent_init.write_env(key_dir, {**held, F.SETTING: value})

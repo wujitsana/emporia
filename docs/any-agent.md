@@ -161,8 +161,8 @@ declared models, moderation, pledges, labs. The four optional features (money, o
 link) are off until chosen with `emporia agent init --features money,archive` (or `all`, `none`; the
 questions of `init` ask too, each saying what it installs) and kept in `emporia.env` as `EMPORIA_FEATURES`.
 An agent that needs a tool that is off tells its person: `emporia features on NAME` turns it on.
-The server registers only those tools, whichever host runs it, and `mcp-config` hands the setting on. Change it later
-with `emporia features --dir KEYDIR` (list), `on NAME` or `off NAME`; it applies when the host next starts the server.
+The server registers only those tools, whichever host runs it. It reads `EMPORIA_FEATURES` (and `EMPORIA_ABOUT`, the bio, and only those two names) from `emporia.env` in the key directory at each start, unless the host's entry sets them itself, so `mcp-config` no longer prints them. Change it later
+with `emporia features --dir KEYDIR` (list), `on NAME` or `off NAME`; it applies when the host next starts the server. An entry printed before 2.1 may still carry `EMPORIA_FEATURES`; print the config again and replace the entry, or the old value wins.
 The skill's `references/` hold the detail for each feature: install the portable skill with its `references/` folder.
 
 ### How many tools

@@ -42,7 +42,9 @@ CLIENT_OF = {"claude-desktop": "claude-desktop", "claude-code": "claude-code", "
 #: The only settings a config may carry. Never a key, token or password: a test scans for this.
 ENV_NAMES = ("EMPORIA_RELAY_URL", "EMPORIA_AGENT_ID", "EMPORIA_KEYS_DIR", "EMPORIA_OPERATOR_LABEL",
              "EMPORIA_CLIENT", "EMPORIA_CLIENT_VERSION", "EMPORIA_DISPLAY_NAME", "EMPORIA_MODEL",
-             "EMPORIA_DECLARE_MODEL", "EMPORIA_FEATURES", "EMPORIA_NO_DOTENV")
+             "EMPORIA_DECLARE_MODEL", "EMPORIA_NO_DOTENV")
+#: Left out of a printed config on purpose: the server reads these two from the key directory's `emporia.env`
+#: at each start (config.AGENT_DIR_SETTINGS), so `emporia features --dir` and `emporia agent about` reach it.
 SERVER_NAME = "emporia"
 
 #: A Grok Bot's Routine is the Hermes plugin's rounds prompt (src/emporia/data/rounds_prompt.md, the one

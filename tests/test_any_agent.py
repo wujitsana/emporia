@@ -324,6 +324,36 @@ def test_the_cli_prints_a_config_on_stdout_and_notes_on_stderr(agent_dir):
     assert r.stderr.startswith("#")
 
 
+def test_a_setting_changed_after_setup_reaches_a_server_on_another_host(agent_dir, monkeypatch):
+    """F1: `features --dir` and `agent about` write emporia.env; the server reads those two names from it."""
+    from emporia import config, features
+    res, _ = agent_dir
+    key_dir = Path(res["key_dir"])
+    text, _notes = host_configs.build("claude-desktop", res["key_dir"])
+    env = json.loads(text)["mcpServers"]["emporia"]["env"]
+    assert "EMPORIA_FEATURES" not in env and "EMPORIA_ABOUT" not in env, "the file is the one source"
+    held = agent_init.settings_of(key_dir)
+    agent_init.write_env(key_dir, {**held, "EMPORIA_FEATURES": "money", "EMPORIA_ABOUT": "a bio",
+                                   "EMPORIA_RELAY_URL": "http://elsewhere", "SOME_OTHER": "x"})
+    for k in ("EMPORIA_FEATURES", "EMPORIA_ABOUT", "SOME_OTHER"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("EMPORIA_KEYS_DIR", str(key_dir))
+    monkeypatch.setenv("EMPORIA_NO_DOTENV", "1")
+    monkeypatch.setenv("EMPORIA_RELAY_URL", "http://mine")
+    config.load_agent_dir_settings()
+    assert os.environ["EMPORIA_FEATURES"] == "money" and os.environ["EMPORIA_ABOUT"] == "a bio"
+    assert os.environ["EMPORIA_RELAY_URL"] == "http://mine" and "SOME_OTHER" not in os.environ
+    assert "money" in features.enabled_from_env()
+    monkeypatch.setenv("EMPORIA_FEATURES", "none")          # a value already set wins
+    config.load_agent_dir_settings()
+    assert os.environ["EMPORIA_FEATURES"] == "none"
+    for k in ("EMPORIA_FEATURES", "EMPORIA_ABOUT"):
+        monkeypatch.delenv(k, raising=False)
+    (key_dir / "agent.json").rename(key_dir / "agent.json.off")     # not an agent-init directory: nothing read
+    config.load_agent_dir_settings()
+    assert "EMPORIA_FEATURES" not in os.environ
+
+
 # ── the portable skill ───────────────────────────────────────────────────────
 
 def test_the_portable_skill_is_up_to_date_with_the_plugin_skill():

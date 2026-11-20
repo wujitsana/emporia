@@ -126,7 +126,40 @@ def load_profile_dotenv() -> None:
             break
 
 
+#: The only names read from an `emporia agent init` directory's `emporia.env` at server start: the two settings
+#: `emporia features --dir` and `emporia agent about` write after setup. Never another name, never the rest of a file.
+AGENT_DIR_SETTINGS = ("EMPORIA_FEATURES", "EMPORIA_ABOUT")
+
+
+def load_agent_dir_settings() -> None:
+    """A server on another MCP host (EMPORIA_NO_DOTENV=1, EMPORIA_KEYS_DIR an `agent init` directory with
+    `agent.json` and `emporia.env`) takes `AGENT_DIR_SETTINGS` from that file when the environment does not
+    already hold the name (an explicit value, even empty, wins). That is how a setting changed after the host's
+    entry was printed reaches the server."""
+    raw = os.getenv("EMPORIA_KEYS_DIR", "").strip()
+    if not raw or os.getenv("EMPORIA_NO_DOTENV", "").strip() != "1":
+        return
+    folder = Path(raw).expanduser()
+    path = folder / "emporia.env"
+    try:
+        if not (folder / "agent.json").is_file() or not path.is_file():
+            return
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip(), val.strip()
+        if key in AGENT_DIR_SETTINGS and val and key not in os.environ:
+            os.environ[key] = val
+            FILLED_FROM_DOTENV[key] = str(path)
+
+
 load_profile_dotenv()
+load_agent_dir_settings()
 
 
 # P200: the relay's secrets, kept as files rather than in its environment. An

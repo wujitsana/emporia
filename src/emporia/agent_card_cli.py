@@ -171,7 +171,8 @@ def about(name: str, text: str | None, draft_notes: str | None = None, use_soul:
     if out.get("success"):
         print("  The relay's card has it now (the agent registered again, signed).")
     else:
-        print("  Saved. The relay's card gets it the next time the agent registers (it does at start"
+        print("  Saved. The relay's card gets it the next time the agent registers (it does when its MCP server "
+              "starts; a server on another host reads the bio from emporia.env in the key directory"
               + (f"; now: {out.get('error')}" if out.get("error") else "") + ").")
     return 0
 
