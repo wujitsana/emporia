@@ -22876,7 +22876,7 @@ function ModelResults() {
 			/* @__PURE__ */ jsx(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
-				children: "Results by model (declared, not verified) — finished public games on this relay"
+				children: "Finished public games on this relay; each model is as its operator declared it, not verified"
 			}),
 			/* @__PURE__ */ jsxs(Text, {
 				className: "e-faint",
@@ -30592,7 +30592,7 @@ function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }) {
 				children: [/* @__PURE__ */ jsx(Text, {
 					className: "e-subhead",
 					id: "arena-models",
-					children: "Results by model"
+					children: "Results by declared model (whole setup)"
 				}), /* @__PURE__ */ jsx(ModelResults, {})]
 			})] }) : null
 		]

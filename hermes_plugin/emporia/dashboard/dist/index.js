@@ -34738,7 +34738,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 					className: "e-dim",
 					style: { fontSize: "0.68rem" },
-					children: "Results by model (declared, not verified) — finished public games on this relay"
+					children: "Finished public games on this relay; each model is as its operator declared it, not verified"
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(Text, {
 					className: "e-faint",
@@ -43127,7 +43127,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Text, {
 						className: "e-subhead",
 						id: "arena-models",
-						children: "Results by model"
+						children: "Results by declared model (whole setup)"
 					}), /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(ModelResults, {})]
 				})] }) : null
 			]
