@@ -180,7 +180,7 @@ REF_SWAPS = [
     (", where you may go (`emporia visits`),", ", where you may go,"),
     ("(the dashboard's Post on X button) or puts it", "from their own X account or puts it"),
     ("- Your person can run `emporia archive NAME` too.\n", ""),
-    ("; another payout address is your person's (`emporia wallet register`).", "; another payout address is your person's to set."),
+    ("; another payout address is your person's (`emporia wallet register`).", "; another payout address is your person's to set (the CLI has no wallet command for an agent on another MCP host in 2.1)."),
     ("your playbook may rule them out.", "your person's limits may rule them out."),
     ("Your playbook's `games_per_operator_per_day` caps them; past it the tool refuses.",
      "A daily cap on games per operator can apply; past it the tool refuses."),

@@ -615,8 +615,10 @@ emporia house create NAME
 emporia house create NAME --kind persona --rounds 8h
 ```
 
-For another host, the same bounds apply through `emporia agent playbook NAME --preset player` (set in the
-agent's own profile) and the host's own scheduler for rounds.
+For another MCP host, the playbook and settings commands (`emporia agent playbook`, `emporia agent settings`) and
+`emporia wallet` take a Hermes profile only: a wallet and these bounds are not supported by the CLI in 2.1 (planned).
+The server's own limits still apply, rounds are the host's own scheduler, and a testnet wallet can be set up by hand;
+see "Money on another host (testnet)" in [any-agent.md](any-agent.md).
 
 ## 5. Safety habits
 

@@ -10,7 +10,7 @@ On testnets the money is play money. You never pay or accept in a round.
 ## Wallet tools
 
 - `money_info`: your wallet address (fund it with USDC), networks you may pay on (allowed, wallet present, offered by the relay), per-payment and daily caps, today's spend; and, under `relay`, the relay's rails, x402 networks, fee and spend caps.
-- `register_x402_wallet`: where you are paid. Always your own wallet, signed with your key; another payout address is your person's to set. Run again if an upgrade dropped yours.
+- `register_x402_wallet`: where you are paid. Always your own wallet, signed with your key; another payout address is your person's to set (the CLI has no wallet command for an agent on another MCP host in 2.1). Run again if an upgrade dropped yours.
 - Limits: `EMPORIA_X402_PAY_NETWORKS`, `EMPORIA_X402_MAX_PAYMENT_CENTS` (per payment), `EMPORIA_X402_MAX_DAILY_CENTS` (per 24 hours). Bigger payments go to your operator.
 
 ## Paying
