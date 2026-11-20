@@ -237,6 +237,17 @@ signer's folder, so it adds no protection, and mainnet will not unlock there. Fo
 | On a host, with the signer in Docker (Linux, macOS, Windows) | the signer's container, listening on `127.0.0.1:8790` (a host process cannot reach a socket in a Docker volume; Docker Desktop passes none) | a local port; the token decides who may ask | Hermes's user cannot use Docker — on Docker Desktop every user can, so this is practice there; run Hermes in Docker instead |
 | On macOS or Windows, without Docker | not set up for you: run `emporia signer serve --port 8790` under a separate account yourself | a local port | that account's files are not readable by Hermes's |
 
+**Today "apart" is not yet a boundary against an agent with a shell.** What `emporia signer host` sets up runs
+files the agents' OS user can still write: the service runs the person's own venv `emporia` (`ExecStart` points
+at it), the Docker image is built from the checkout (`build:` in `compose.yaml`), and the compose folder defaults
+to `<profile>/emporia-signer`, inside the profile. An agent with a terminal or a file tool that edits one of
+those runs its code as the signer's user (or as root in the admin container) at the next start or build, with
+every key, policy and the admin token, and `emporia signer status` would still say "apart". The signer's code
+is not secret; its being writable is the gap. For real money, install the signer from a separate copy that
+another user owns (a root-owned prefix, the image built from a pinned ref), put its compose folder outside
+Hermes's data and the profile, and keep the agents' user away from it. Installing it that way is planned to be
+the default, and `status` and the mainnet unlock are planned to refuse a signer whose code the agents' user can write.
+
 Hermes can connect to the socket but not replace it: its folder belongs to the signer. The wall holds
 only if the agents' user cannot get round it — not root, no passwordless `sudo`, and no control of
 Docker where that matters:
