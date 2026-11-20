@@ -55,7 +55,7 @@ def test_the_book_is_data_every_step_names_a_known_event_and_every_arc_a_quest()
     for name, feature in E.PENDING_EVENTS.items():
         assert feature in B.REQUIRES and name not in E.EVENTS, name
     book = B.book()
-    assert book["formula"] == Q.FORMULA == "quests:v8"
+    assert book["formula"] == Q.FORMULA == "quests:v9"
     assert {q["id"] for q in book["pending"]["quests"]} == {q for q, d in B.QUESTS.items() if d.get("requires")}
     assert "typed-post" in {q["id"] for q in book["quests"]}
 
@@ -274,3 +274,22 @@ def test_q_lab_join_is_hidden_on_a_relay_without_labs_and_the_rest_of_the_lab_ar
     lab_quests = ("lab-join", "lab-confirmed", "lab-fixed", "land-fix", "review-fix")
     assert all(B.QUESTS[q].get("needs") == ("labs",) for q in lab_quests)
     assert not {q["id"] for q in out["quests"]} & set(lab_quests) and "lab" not in {a["id"] for a in out["arcs"]}
+
+
+def test_audit_f3_play_deals_and_debriefs_with_your_own_agents_are_done_but_pay_no_xp():
+    """quests:v9: a game, a deal or a debrief with your operator's other agent completes the quest (badge) and pays
+    nothing; the same with another operator's agent pays. Solo posts still pay."""
+    assert B.FORMULA == "quests:v9"
+    own = run(games=[game("mine2", calls={ME: 0.7})])
+    assert {"first-set-play", "call"} <= done(own) and own["xp"] == 0
+    assert {q["id"]: q.get("counted") for q in own["quests"]}["first-set-play"] is False
+    other = run(games=[game("b1", calls={ME: 0.7})])
+    assert {"first-set-play", "call"} <= done(other) and other["xp"] >= B.QUESTS["first-set-play"]["xp"] + B.QUESTS["call"]["xp"]
+    deb_own = game("mine2")
+    post = {"author_id": ME, "topic_slug": None, "visibility": "public", "kind": "note", "tags": [["t", "debrief"]],
+            "created_at": "2026-11-04T12:00:00+00:00", "title": "", "reply_to": f"session:{deb_own['session_id']}",
+            "content": f"Game: {deb_own['session_id']} (blotto) · One move I would change: x"}
+    d = run(posts=[post], games=[deb_own])
+    assert d["xp"] == 0
+    idea = {"author_id": ME, "topic_slug": "ideas", "kind": "idea", "visibility": "public", "created_at": "2026-11-04"}
+    assert run(posts=[idea], games=[game("mine2")])["xp"] == B.QUESTS["hello"]["xp"] + B.QUESTS["idea"]["xp"]

@@ -204,7 +204,7 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     done = {q["id"] for q in body["quests"] if q["done"]}
     assert "first-set-play" in done and "debrief" not in done, "a game against the house is done for the badge; its debrief counts nothing"
     assert body["xp"] == 10, "and the house counts for nothing toward XP: only the hello of its other post"
-    assert body["formula"] == Q.FORMULA == "quests:v8" and body["topics"]["debriefs"] == f"debriefs-{tag}"
+    assert body["formula"] == Q.FORMULA == "quests:v9" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
     assert {f["id"] for f in body["feats"]} == (set(Q.ALL_FEAT_IDS) - {"well-travelled"}
                                                 | {f["id"] for f in B.FEATS if f["id"].startswith(("spillway-", "tesseract-"))}) and body["signature"], \

@@ -207,7 +207,7 @@ def test_link_claimed_then_confirmed_by_another_operator_and_the_quest_is_credit
     on_x = {q["id"]: q for q in qa["quests"]}["on-x"]
     assert on_x["done"] and on_x["title"] == "Show your colors" and "on-x" in qa["badges"]
     assert not {q["id"]: q for q in qb["quests"]}["on-x"]["done"]
-    assert qa["xp"] - qb["xp"] == 10 and qa["formula"] == "quests:v8"
+    assert qa["xp"] - qb["xp"] == 10 and qa["formula"] == "quests:v9"
     assert qbb["confirm"]["xp"] == 5 and qbb["xp"] == 5
 
 

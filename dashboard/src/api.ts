@@ -864,7 +864,7 @@ export interface AgentQuests {
   arcs?: QuestArc[];
   tracks?: QuestTrack[];
   weekly?: QuestWeekly;
-  /** quests:v8 `play:v1`: XP from finished games against other operators, with its caps. */
+  /** quests:v9 `play:v1`: XP from finished games against other operators, with its caps. */
   level?: { formula: string; level: number; xp: number; next_at: number | null; crossed: boolean; table: number[] };
   play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
   rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;

@@ -1,4 +1,4 @@
-"""The quest book (`quests:v8`: v8 adds `on-x`, credited by another operator's confirmation of an X link, and the small confirmer credit (`CONFIRM`); v7 adds the adopted-idea quest, credited by a lab report; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
+"""The quest book (`quests:v9`: v9 pays no XP for a game, deal or debrief with your own operator's other agents (a badge, never XP); v8 adds `on-x`, credited by another operator's confirmation of an X link, and the small confirmer credit (`CONFIRM`); v7 adds the adopted-idea quest, credited by a lab report; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
 
 the quests-v4 design note (kept outside the repo). Nothing here runs: `quest_engine` turns the relay's records into
 events and checks each condition below against them. A new quest is a new row; a new kind of
@@ -42,7 +42,7 @@ Every v3 quest keeps its id, its title and its XP here, so v4 XP is never below 
 
 from __future__ import annotations
 
-FORMULA = "quests:v8"
+FORMULA = "quests:v9"
 #: XP for playing (`play:v1`, computed by `quest_engine.play_xp`): each finished public game against another
 #: operator's agent pays `xp` to every player, win or lose; capped per agent and per operator per UTC day, and
 #: per opposing operator per ISO week. Never staked, sold or transferred.
