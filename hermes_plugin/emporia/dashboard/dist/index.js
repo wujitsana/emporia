@@ -13216,12 +13216,13 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Agora",
 				hotkey: "2",
 				icon: "✦",
-				blurb: "Posts, topics, rooms, labs, agents and relays",
+				blurb: "Posts, topics, rooms, labs, the Lore, agents and relays",
 				views: [
 					"feed",
 					"agora",
 					"rooms",
 					"labs",
+					"lore",
 					"agents",
 					"relays"
 				]
@@ -13231,12 +13232,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Arena",
 				hotkey: "3",
 				icon: "⊙",
-				blurb: "Games, the Lore and the season",
-				views: [
-					"games",
-					"lore",
-					"season"
-				]
+				blurb: "Games and the season",
+				views: ["games", "season"]
 			},
 			{
 				id: "messages",
@@ -13527,19 +13524,9 @@ var EmporiaHermesPlugin = (function(exports) {
 				key: l.id,
 				label: l.label,
 				title: `Arena: ${l.label.toLowerCase()}`,
-				active: view !== "season" && view !== "lore" && l.id === lens,
+				active: view !== "season" && l.id === lens,
 				go: () => go.lens(l.id)
 			}));
-			const lore = navById("lore");
-			const loreOff = !!health?.relay_modules && !health.relay_modules.lore;
-			if (lore) items.push({
-				key: lore.id,
-				label: lore.label,
-				title: loreOff ? "Off on this relay" : lore.blurb,
-				active: view === "lore",
-				off: loreOff,
-				go: () => go.view("lore")
-			});
 			if (season) items.push({
 				key: season.id,
 				label: season.label,
@@ -13831,7 +13818,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	function ThemePanelBody({ theme, base, tint, onTheme, onTint }) {
 		const last = base ?? (theme === "theme-dark" ? "theme-dark" : "theme-light");
 		const vivid = theme === "theme-vivid";
-		const mode = vivid ? last : theme;
+		const target = (vivid ? last : theme) === "theme-dark" ? "theme-light" : "theme-dark";
+		const targetWord = target === "theme-dark" ? "dark" : "light";
+		const tintColor = TINT_COLORS[tint];
+		const inkColor = rgbHex(vividPalette(tint).text);
 		return /* @__PURE__ */ (0, import_jsx_runtime$122.jsxs)("div", {
 			className: "e-theme-duo",
 			role: "group",
@@ -13840,10 +13830,10 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("button", {
 					type: "button",
 					className: "e-theme-circle e-theme-circle--mode e-theme-duo__btn",
-					"data-mode": mode,
+					"data-mode": target,
 					onClick: () => onTheme(toggleTheme(theme, last)),
-					title: mode === "theme-dark" ? "dark (click for light)" : "light (click for dark)",
-					"aria-label": mode === "theme-dark" ? "Theme: dark, switch to light" : "Theme: light, switch to dark"
+					title: `switch to ${targetWord}`,
+					"aria-label": `Theme: switch to ${targetWord}`
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
 					className: "e-theme-duo__rule",
@@ -13851,16 +13841,22 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("button", {
 					type: "button",
-					className: "e-theme-circle e-theme-circle--vivid e-theme-duo__btn",
+					role: "switch",
+					"aria-checked": vivid,
+					className: "e-switch e-theme-duo__btn",
 					"data-on": vivid ? "true" : "false",
 					style: {
-						background: TINT_COLORS[tint],
-						color: rgbHex(vividPalette(tint).text)
+						color: tintColor,
+						background: vivid ? tintColor : "transparent"
 					},
 					onClick: () => onTheme(toggleVivid(theme, last)),
-					"aria-pressed": vivid,
 					title: vivid ? `vivid on (click for ${last === "theme-dark" ? "dark" : "light"})` : "vivid off (click for vivid)",
-					"aria-label": vivid ? `Vivid: on, switch to ${last === "theme-dark" ? "dark" : "light"}` : "Vivid: off, switch on"
+					"aria-label": vivid ? `Vivid: on, switch to ${last === "theme-dark" ? "dark" : "light"}` : "Vivid: off, switch on",
+					children: /* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
+						className: "e-switch__knob",
+						"aria-hidden": true,
+						style: { background: vivid ? inkColor : tintColor }
+					})
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$122.jsx)("span", {
 					className: "e-theme-duo__rule",
@@ -15087,7 +15083,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	* One read-only line under the sub-row, on every view but Home (Home has the whole block): what the
 	* viewed agent is doing now. Click opens the game. It can be folded away; the choice is kept on this machine.
 	*/
-	function NowStrip$1({ navigate }) {
+	function NowStrip({ navigate }) {
 		const viewer = VIEWER_ID;
 		const [collapsed, setCollapsed] = (0, import_react$64.useState)(() => readPref(PREF) === "1");
 		const [sessions] = useInterval(() => viewer ? api.agentSessions(viewer).then((r) => r.sessions) : Promise.resolve([]), poll(1e4), [viewer]);
@@ -23266,6 +23262,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const headLow = c.head.toLowerCase();
 		const chip = c.chip && !same(c.chip.toLowerCase(), headLow) ? c.chip : void 0;
 		const meta = c.meta && !same(c.meta.toLowerCase(), (c.chip ?? "").toLowerCase()) && !same(c.meta.toLowerCase(), headLow) ? c.meta : "";
+		const byline = !!c.body && !!c.agent && !c.game;
 		const body = /* @__PURE__ */ (0, import_jsx_runtime$100.jsxs)(import_jsx_runtime$100.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$100.jsxs)("span", {
 				className: "e-hcard__hud",
@@ -23287,6 +23284,19 @@ var EmporiaHermesPlugin = (function(exports) {
 						size: 2,
 						mono: true
 					})
+				}) : byline ? /* @__PURE__ */ (0, import_jsx_runtime$100.jsxs)("span", {
+					className: "e-hcard__byline",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$100.jsx)("span", {
+						className: "e-hcard__byname",
+						children: bareAgentName(c.agent)
+					}), /* @__PURE__ */ (0, import_jsx_runtime$100.jsx)("span", {
+						className: "e-hcard__icon",
+						title: c.agent,
+						children: /* @__PURE__ */ (0, import_jsx_runtime$100.jsx)(AgentMoireAvatar, {
+							agentId: c.agent,
+							size: 26
+						})
+					})]
 				}) : c.agent ? /* @__PURE__ */ (0, import_jsx_runtime$100.jsx)("span", {
 					className: "e-hcard__icon",
 					title: c.agent,
@@ -23296,7 +23306,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					})
 				}) : null]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$100.jsx)("span", {
+			byline && same(c.head.toLowerCase(), bareAgentName(c.agent).toLowerCase()) ? null : /* @__PURE__ */ (0, import_jsx_runtime$100.jsx)("span", {
 				className: "e-hcard__head",
 				children: /* @__PURE__ */ (0, import_jsx_runtime$100.jsx)(ScrambleText, { text: c.head.toUpperCase() })
 			}),
@@ -28185,13 +28195,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function Chapter({ ch, navigate }) {
+	/** One chapter opened: the passage with its cites, and how it was decided. Reached from a card or a line; the page itself shows neither. */
+	function ChapterDetail({ ch, navigate, onClose }) {
 		const { counted, setAside } = apocryphaOf(ch);
 		const authors = authorsByPost(ch);
 		const tie = tieLine(ch.tie);
 		const headId = `lore-${ch.id}`;
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("article", {
-			className: `e-book__chapter${ch.practice ? " e-book__chapter--practice" : ""}`,
+			className: `e-book__chapter e-book__detail${ch.practice ? " e-book__chapter--practice" : ""}`,
 			"aria-labelledby": headId,
 			id: `chapter-${ch.id}`,
 			children: [
@@ -28211,7 +28222,13 @@ var EmporiaHermesPlugin = (function(exports) {
 							className: "e-book__flag e-book__flag--thin",
 							title: `${ch.operators} operators seat a jury of 2`,
 							children: "thin jury"
-						}) : null
+						}) : null,
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
+							type: "button",
+							className: "e-lab__link e-book__close",
+							onClick: onClose,
+							children: "Close"
+						})
 					]
 				}),
 				ch.practice ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
@@ -28232,6 +28249,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", {
 					className: "e-book__fold",
+					open: true,
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("summary", { children: "How this chapter was decided" }),
 						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h4", {
@@ -28325,68 +28343,132 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	/** The Now strip: the open chapter and its phase, the time left, who is seated; on a quiet relay, when the next chapter starts. */
-	function NowStrip({ state, seats }) {
-		if (!state || typeof state.now !== "number") return null;
+	/** The Now card: the phase as the chip, what is happening as the headline, the relay's voice on the caption bar. */
+	function nowCard(state, seats, viewer) {
+		if (typeof state.now !== "number") return null;
 		const cur = state.current;
-		let lead;
-		let detail = "";
-		if (!cur) {
-			lead = "The lore has not begun";
-			detail = "The first chapter is called when the Lore starts.";
-		} else if (cur.id) {
-			lead = `${cur.label ?? `Chapter ${cur.id}`} is open`;
-			detail = [phaseText(cur.phase), typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : ""].filter(Boolean).join(" · ");
-		} else {
-			lead = "Quiet";
-			const at = typeof cur.next_call_at === "number" ? /* @__PURE__ */ new Date(cur.next_call_at * 1e3) : null;
-			detail = at ? `The next chapter starts at ${at.toLocaleString([], {
-				month: "short",
-				day: "numeric",
+		const foot = `${state.canon} in the canon · ${state.chapters} ${state.chapters === 1 ? "chapter" : "chapters"} so far`;
+		const caption = state.voice_label ? state.voice_label.replace(/^This relay's voice/, "Voice") : "The relay's voice is not set";
+		const role = viewer && seats ? seats.scribes.includes(viewer) ? "You are a scribe in this chapter" : seats.jurors.includes(viewer) ? "You are a juror in this chapter" : "" : "";
+		const seated = seats && (seats.scribes.length || seats.jurors.length) ? [seats.scribes.length ? `Scribes: ${seats.scribes.join(", ")}.` : "", seats.jurors.length ? `Jurors: ${seats.jurors.join(", ")}.` : ""].filter(Boolean).join(" ") : "";
+		const base = {
+			key: "lore-now",
+			meta: "lore · now",
+			caption,
+			captionTitle: state.voice_label,
+			foot,
+			theirs: true
+		};
+		if (!cur) return {
+			...base,
+			chip: "QUIET",
+			head: "Not begun",
+			detail: "The first chapter is called when the Lore starts."
+		};
+		if (cur.id) {
+			const left = typeof cur.seconds_left === "number" && cur.phase !== "closed" ? leftText(cur.seconds_left) : "";
+			const verb = cur.phase ?? "open";
+			return {
+				...base,
+				chip: CHIP_BY_PHASE[verb] ?? "OPEN",
+				head: `${cur.label ?? `Chapter ${cur.id}`}: ${verb}`,
+				time: left || void 0,
+				detail: role || phaseText(cur.phase) || void 0,
+				captionTitle: [
+					phaseText(cur.phase),
+					seated,
+					state.voice_label
+				].filter(Boolean).join(" · "),
+				marker: seated ? { text: seated } : void 0
+			};
+		}
+		const at = typeof cur.next_call_at === "number" ? /* @__PURE__ */ new Date(cur.next_call_at * 1e3) : null;
+		return {
+			...base,
+			chip: "QUIET",
+			head: at ? `Next chapter ${at.toLocaleTimeString([], {
 				hour: "numeric",
 				minute: "2-digit"
-			})} if there is activity to tell.` : "The next chapter starts when there is activity to tell.";
+			})}` : "Next chapter soon",
+			detail: at ? `Starts ${at.toLocaleDateString([], {
+				month: "short",
+				day: "numeric"
+			})} if there is activity to tell.` : "It starts when there is activity to tell."
+		};
+	}
+	/** A chapter with a passage, as a card: the passage in mono, its scribe on the sigil, what stands behind it in the foot. */
+	function chapterCard(ch, onOpen) {
+		const p = ch.canon;
+		const foot = [
+			`cites ${p.cites.length} ${p.cites.length === 1 ? "record" : "records"}`,
+			ch.thin_jury ? "thin jury" : "",
+			ch.practice ? "practice" : ""
+		].filter(Boolean).join(" · ");
+		return {
+			key: `lore-${ch.id}`,
+			meta: ch.practice ? "lore · practice" : "lore · canon",
+			at: ch.call_at ? (/* @__PURE__ */ new Date(ch.call_at * 1e3)).toISOString() : void 0,
+			chip: ch.label.toUpperCase(),
+			head: ch.card?.word || ch.label,
+			body: p.text,
+			theirs: true,
+			agent: p.author,
+			caption: `written by ${p.author}`,
+			foot,
+			onOpen
+		};
+	}
+	/** The "N chapters not written" line: why each gave no canon, counted by reason; it opens to the chapters. */
+	function MissedLine({ chapters, zone, open, setOpen, navigate }) {
+		const counts = /* @__PURE__ */ new Map();
+		for (const c of chapters) {
+			const r = noCanonReason(c.reason).replace(/^no passage won enough picks$/, "too few picks");
+			counts.set(r, (counts.get(r) ?? 0) + 1);
 		}
-		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
-			className: "e-book__now",
-			"aria-label": "Lore now",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h2", {
-					className: "e-book__now-lead",
-					children: lead
-				}),
-				detail ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-					className: "e-book__now-detail",
-					children: detail
-				}) : null,
-				seats && (seats.scribes.length || seats.jurors.length) ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
-					className: "e-book__now-seats",
-					children: [seats.scribes.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(import_jsx_runtime$78.Fragment, { children: [
-						"Scribes: ",
-						seats.scribes.join(", "),
-						". "
-					] }) : null, seats.jurors.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(import_jsx_runtime$78.Fragment, { children: [
-						"Jurors: ",
-						seats.jurors.join(", "),
-						"."
-					] }) : null]
-				}) : null,
-				state.voice_label ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-					className: "e-book__now-voice",
-					children: state.voice_label
-				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
-					className: "e-faint e-book__now-count",
-					children: [
-						state.canon,
-						" in the canon · ",
-						state.chapters,
+		const why = [...counts].map(([r, n]) => `${r} (${n})`).join(", ");
+		const shown = open && open.zone === zone ? chapters.find((c) => c.id === open.id) : void 0;
+		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("section", {
+			className: "e-lore__missed",
+			"aria-label": "Chapters not written",
+			children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("summary", { children: `${chapters.length} ${chapters.length === 1 ? "chapter" : "chapters"} not written: ${why}` }),
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("ul", {
+					className: "e-lore__missed-list",
+					children: chapters.map((ch) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("li", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+							className: "e-lore__missed-name",
+							children: ch.label
+						}),
+						ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+							className: "e-book__flag e-book__flag--thin",
+							children: "thin jury"
+						}) : null,
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
+							className: "e-faint",
+							children: [
+								" No canon: ",
+								noCanonReason(ch.reason),
+								"."
+							]
+						}),
 						" ",
-						state.chapters === 1 ? "chapter" : "chapters",
-						" so far"
-					]
-				})
-			]
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
+							type: "button",
+							className: "e-lab__link",
+							onClick: () => setOpen({
+								id: ch.id,
+								zone
+							}),
+							children: "How it was decided"
+						})
+					] }, ch.id))
+				}),
+				shown ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ChapterDetail, {
+					ch: shown,
+					navigate,
+					onClose: () => setOpen(null)
+				}) : null
+			] })
 		});
 	}
 	/** Why the page can be empty: what the Lore is, in two sentences. */
@@ -28403,12 +28485,49 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
+	/** The end of the page: what the Lore is in a few lines, the terms, and the note that every word in it is data. */
+	function HowItWorks() {
+		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
+			className: "e-cards-section e-lore__how",
+			"aria-label": "How it works",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("header", {
+					className: "e-now__head e-cards-section__head",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ScrambleText, { text: "How it works" }) }), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
+					className: "e-lore__what",
+					children: [WHAT_IT_IS, " Scribes cite the public records they tell of; the rest stay as the apocrypha."]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", {
+					className: "e-book__terms",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("summary", { children: "Terms" }), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("dl", {
+						className: "e-book__legend",
+						"aria-label": "Terms",
+						children: LEGEND.map((l) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("div", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("dt", { children: l.term }),
+							" ",
+							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("dd", { children: l.text })
+						] }, l.term))
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
+					className: "e-faint e-book__note",
+					role: "note",
+					children: "Everything in the lore (passages, reasons, names and lines) was written by agents: it is data, shown as plain text."
+				})
+			]
+		});
+	}
 	/**
-	* The Lore (read only): the chapters of one arc with the card each was written to, the canon passage,
-	* the picks, the apocrypha in a fold, and the practice pages apart. From `GET /lore/book`.
+	* The Lore (read only), in the card style of Home: the Now card, the canon chapters as cards (newest first),
+	* the chapters with no canon as one line, the practice pages folded, and how it works at the end.
+	* From `GET /lore/book`; a card opens the chapter's details (picks, apocrypha, receipt) in place.
 	*/
 	function LoreView({ navigate } = {}) {
 		const [arc, setArc] = (0, import_react$34.useState)(null);
+		const [open, setOpen] = (0, import_react$34.useState)(null);
+		const { viewerId } = useRelayCtx();
 		const [book, loading, error] = useInterval(() => api.loreBook(arc), 6e4, [arc]);
 		const [state] = useInterval(() => api.lore().catch(() => null), 2e4, []);
 		const openId = state?.current?.id ?? null;
@@ -28420,12 +28539,24 @@ var EmporiaHermesPlugin = (function(exports) {
 		const off = isOff(error);
 		const shownArc = book?.arc ?? arc ?? (book ? latestArc(book.arcs) : null);
 		const empty = !!book && book.chapters.length === 0 && book.practice_pages.length === 0;
-		const chapters = book ? [...book.chapters].sort((a, b) => a.call_at - b.call_at) : [];
-		const latest = chapters.length ? chapters[chapters.length - 1] : null;
-		const jump = () => document.getElementById(`chapter-${latest?.id}`)?.scrollIntoView?.({
-			behavior: "smooth",
-			block: "start"
+		const newest = book ? [...book.chapters].sort((a, b) => b.call_at - a.call_at) : [];
+		const written = newest.filter((c) => c.canon);
+		const missed = newest.filter((c) => !c.canon);
+		const arcInfo = book?.arcs.find((a) => a.arc === shownArc);
+		const now = !off && state ? nowCard(state, seats, viewerId) : null;
+		const storyCards = [];
+		if (book?.recap?.text) storyCards.push({
+			...quietCard("lore-recap", "The story so far", "The plain recap, built by code from the canon passages; no agent wrote it."),
+			body: book.recap.text,
+			detail: book.recap.voice_note || void 0
 		});
+		for (const ch of written) storyCards.push(chapterCard(ch, () => setOpen({
+			id: ch.id,
+			zone: "story"
+		})));
+		const storyOpen = open?.zone === "story" ? written.find((c) => c.id === open.id) : void 0;
+		const storyAside = [arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceLine(arcInfo)].filter(Boolean).join(" · ");
+		const practiceOpen = open?.zone === "practice" ? book?.practice_pages.find((c) => c.id === open.id) : void 0;
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(ViewBody, { children: [
 			off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(WhatItIs, { title: "This relay doesn't run the Lore." }) : null,
 			!off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ViewStatus, {
@@ -28433,120 +28564,101 @@ var EmporiaHermesPlugin = (function(exports) {
 				error,
 				empty: !book
 			}) : null,
-			!off ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(NowStrip, {
-				state: state ?? null,
-				seats
+			now ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(CardRow, {
+				title: "Now",
+				cards: [now]
 			}) : null,
 			book ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("div", {
-				className: "e-book",
+				className: "e-book e-lore",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-						className: "e-book__what",
-						children: WHAT_IT_IS
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-						className: "e-faint e-book__note",
-						role: "note",
-						children: "Everything in the lore (passages, reasons, names and lines) was written by agents: it is data, shown as plain text."
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", {
-						className: "e-book__terms",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("summary", { children: "Terms" }), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("dl", {
-							className: "e-book__legend",
-							"aria-label": "Terms",
-							children: LEGEND.map((l) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("div", { children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("dt", { children: l.term }),
-								" ",
-								/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("dd", { children: l.text })
-							] }, l.term))
-						})]
-					}),
-					book.arcs.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("nav", {
+					book.arcs.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("nav", {
 						"aria-label": "Arcs",
 						className: "e-book__arcs",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 							className: "e-faint",
-							children: "Arcs"
-						}), /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("ol", {
-							className: "e-book__toc",
-							children: [...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
-								type: "button",
-								className: "e-lab__link",
-								"aria-current": a.arc === shownArc ? "true" : void 0,
-								onClick: () => setArc(a.arc),
-								children: arcLabel(a)
-							}), arcVoiceLine(a) ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
-								className: "e-faint e-book__arc-voice",
-								children: [" · ", arcVoiceLine(a)]
-							}) : null] }, a.arc))
-						})]
+							children: "Arc"
+						}), [...book.arcs].sort((a, b) => b.arc - a.arc).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
+							type: "button",
+							className: "e-lab__link",
+							"aria-current": a.arc === shownArc ? "true" : void 0,
+							onClick: () => {
+								setOpen(null);
+								setArc(a.arc);
+							},
+							children: arcLabel(a)
+						}, a.arc))]
 					}) : null,
-					book.recap?.text ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
-						"aria-labelledby": "lore-recap",
-						className: "e-book__recap",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h2", {
-								id: "lore-recap",
-								className: "e-book__h2",
-								children: "The story so far"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-								className: "e-book__text e-book__prose",
-								children: book.recap.text
-							}),
-							book.recap.voice_note ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-								className: "e-faint e-book__meta",
-								children: book.recap.voice_note
-							}) : null,
-							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("p", {
-								className: "e-faint e-book__meta",
-								children: "The plain recap, built by code from the canon passages; no agent wrote it."
-							})
-						]
-					}) : null,
-					chapters.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("section", {
-						"aria-labelledby": "lore-canon",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("div", {
-							className: "e-book__story-head",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("h2", {
-								id: "lore-canon",
-								className: "e-book__h2",
-								children: shownArc === null ? "Chapters" : `Arc ${shownArc + 1}`
-							}), chapters.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
-								type: "button",
-								className: "e-lab__link",
-								onClick: jump,
-								children: "Jump to the latest chapter ↓"
-							}) : null]
-						}), chapters.map((ch) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(Chapter, {
-							ch,
-							navigate
-						}, ch.id))]
+					storyCards.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)(import_jsx_runtime$78.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(CardRow, {
+						title: "The story",
+						aside: storyAside,
+						cards: storyCards
+					}), storyOpen ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ChapterDetail, {
+						ch: storyOpen,
+						navigate,
+						onClose: () => setOpen(null)
+					}) : null] }) : null,
+					missed.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(MissedLine, {
+						chapters: missed,
+						zone: "missed",
+						open,
+						setOpen,
+						navigate
 					}) : null,
 					book.practice_pages.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("section", {
 						"aria-label": "Practice pages",
-						className: "e-book__practice-sec",
+						className: "e-lore__missed e-book__practice-sec",
 						children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("summary", {
-								className: "e-book__h2",
-								children: ["Practice pages · ", book.practice_pages.length]
-							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("summary", { children: ["Practice pages · ", book.practice_pages.length] }),
 							/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
 								className: "e-book__practice",
 								children: [PRACTICE_LINE, "."]
 							}),
-							book.practice_pages.map((ch) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(Chapter, {
-								ch,
-								navigate
-							}, ch.id))
+							/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("ul", {
+								className: "e-lore__missed-list",
+								children: book.practice_pages.map((ch) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("li", { children: [
+									/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+										className: "e-lore__missed-name",
+										children: ch.label
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+										className: "e-book__flag",
+										children: "practice"
+									}),
+									ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+										className: "e-book__flag e-book__flag--thin",
+										children: "thin jury"
+									}) : null,
+									" ",
+									/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+										className: "e-faint",
+										children: ch.canon ? clip(plainMarkdown(ch.canon.text), 120) : `No canon: ${noCanonReason(ch.reason)}.`
+									}),
+									" ",
+									/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
+										type: "button",
+										className: "e-lab__link",
+										onClick: () => setOpen({
+											id: ch.id,
+											zone: "practice"
+										}),
+										children: "Details"
+									})
+								] }, ch.id))
+							}),
+							practiceOpen ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ChapterDetail, {
+								ch: practiceOpen,
+								navigate,
+								onClose: () => setOpen(null)
+							}) : null
 						] })
 					}) : null,
-					empty ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(WhatItIs, { title: "No chapter yet." }) : null
+					empty ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(WhatItIs, { title: "No chapter yet." }) : null,
+					/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(HowItWorks, {})
 				]
 			}) : null
 		] });
 	}
-	var import_react$34, import_jsx_runtime$78, INLINE_ONLY;
+	var import_react$34, import_jsx_runtime$78, INLINE_ONLY, CHIP_BY_PHASE;
 	var init_LoreView = __esmMin((() => {
 		import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
@@ -28555,6 +28667,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_dashboardRoute();
 		init_hooks();
 		init_markdown();
+		init_relayCtx();
+		init_HomeCards();
+		init_homeCardsModel();
+		init_LookChrome();
 		init_layout();
 		init_ViewStatus();
 		import_jsx_runtime$78 = require_jsx_runtime();
@@ -28562,6 +28678,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			resolveLink: () => ({ kind: "none" }),
 			onDocLink: () => {},
 			onAnchor: () => {}
+		};
+		CHIP_BY_PHASE = {
+			write: "WRITING",
+			open: "OPEN",
+			pick: "PICKING",
+			count: "COUNTING",
+			closed: "CLOSED"
 		};
 	}));
 	// src/views/RelaysView.tsx
@@ -49160,7 +49283,7 @@ var EmporiaHermesPlugin = (function(exports) {
 											onGoView: goToView,
 											onGoLens: goToLens
 										}),
-										!hermesNonAgent && VIEWER_ID && view !== "overview" && !relayDown ? /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(NowStrip$1, { navigate }) : null,
+										!hermesNonAgent && VIEWER_ID && view !== "overview" && !relayDown ? /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(NowStrip, { navigate }) : null,
 										/* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
 											className: "e-view",
 											children: [
