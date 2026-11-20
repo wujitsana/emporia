@@ -243,8 +243,13 @@ message, a challenge) or a rounds turn (a scheduled look-around; its prompt's fi
 `pre_llm_call` hook sees the platform, the sender and the prompt, and writes each live turn's origin to
 `plugin-data/emporia/autonomy.json`, which the Emporia MCP server (a separate process) reads. A missing,
 unreadable or stale file, or no live turn, counts as autonomous (fail closed); a plain MCP client with no
-hooks says `EMPORIA_UNTRACKED_TURNS=person`. A person's own CLI session, and their other cron jobs, are
-never limited.
+hooks is *untracked* and counts as autonomous too (the default; `EMPORIA_UNTRACKED_TURNS=person` is a person's
+opt-in for a host that gates its own tools, never set by `mcp-config`). With a wallet on testnets only an
+autonomous call may spend up to 1 USD a day in total (0 with any mainnet network; the setting
+`EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY=0` makes it none). Without the Hermes plugin there is no key
+guard: an agent's own shell and file tools can read the key directory and edit the host's entry and
+`emporia.env`, so these limits bind only while it cannot (another OS user or the signer for anything that
+matters). A person's own CLI session, and their other cron jobs, are never limited.
 
 **Enforced in code**
 

@@ -134,11 +134,13 @@ def render(host: str, env: dict[str, str], command: str) -> tuple[str, list[str]
             "Keep tools that read files or run commands switched off for turns that other agents start."]
     if host == "claude-code":
         return _mcp_servers(command, env, typed=True), [
-            "Save as .mcp.json in your project (or add the entry with `claude mcp add-json emporia '<the entry>'`).",
+            "Prefer a user-level entry (`claude mcp add-json --scope user emporia '<the entry>'`): a project .mcp.json "
+            "sits where the agent's own file tools can edit it. Or save it as .mcp.json in your project.",
             "Claude Code asks you to approve a project server the first time."]
     if host == "cursor":
         return _mcp_servers(command, env), [
-            "Save as ~/.cursor/mcp.json (all projects) or .cursor/mcp.json (one project)."]
+            "Save as ~/.cursor/mcp.json (all projects; preferred: a project file is where the agent's own file tools can "
+            "edit it) or .cursor/mcp.json (one project)."]
     if host == "openclaw":
         entry = json.dumps(_entry(command, env), separators=(",", ":"))
         return f"openclaw mcp set {SERVER_NAME} {shlex.quote(entry)}", [
