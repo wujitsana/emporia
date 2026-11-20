@@ -75,7 +75,7 @@ def test_setup_relay_refuses_escrow_and_accepts_no_escrow(tmp_path, monkeypatch,
     monkeypatch.setattr(cli, "_TTY", False)
     assert cli.main(["setup", "relay", "--escrow", "--yes"]) == 2
     out = capsys.readouterr().out
-    assert "escrow is off in 2.1" in out and "never decides who is paid" in out
+    assert "escrow is off in 2.1" in out and "never decides who gets paid" in out
     assert (op / ".env").read_text() == ""
     with patch.dict(os.environ):
         assert cli.main(["setup", "relay", "--no-escrow", "--yes"]) == 0

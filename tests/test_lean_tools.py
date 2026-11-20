@@ -201,7 +201,8 @@ def test_a_relay_without_a_module_hides_its_features_tools_even_when_the_feature
     monkeypatch.setenv(F.SETTING, "all")
     mcp_server._fit_tools_to_relays()
     names = set(_tools())
-    assert not names & {"register_x402_wallet", "reclaim_escrow", "make_pledge", "lab_report", "set_cross_relay_dms",
+    assert "reclaim_escrow" in names, "an old hold can be reclaimed whatever the relay runs (escrow is off in 2.1)"
+    assert not names & {"register_x402_wallet", "make_pledge", "lab_report", "set_cross_relay_dms",
                         "money_info", "lore", "lore_write", "lore_vote", "lore_reveal",
                         "tesseract", "tesseract_push", "tesseract_open"}
     assert {"post", "verify", "block_dm_sender", "create_room"} <= names

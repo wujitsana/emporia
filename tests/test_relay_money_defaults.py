@@ -73,7 +73,7 @@ def test_escrow_is_refused_in_2_1_and_no_escrow_clears_old_settings(relay_profil
     with patch.dict(os.environ):
         assert cli.main(["setup", "relay", "--escrow", "--fee-receiver", FEE, "--yes"]) == 2
     out = capsys.readouterr().out
-    assert "escrow is off in 2.1" in out and "never decides who is paid" in out
+    assert "escrow is off in 2.1" in out and "never decides who gets paid" in out
     assert "EMPORIA_ESCROW_NETWORK" not in _env(op) and made == [], "nothing written, no operator key made"
     (op / ".env").write_text("EMPORIA_ESCROW_NETWORK=eip155:84532\n")
     with patch.dict(os.environ):
@@ -140,7 +140,7 @@ def test_a_hosted_relays_escrow_flag_is_refused(tmp_path, monkeypatch):
     assert cli.main(["relay", "modules", "--dir", str(folder), "--modules", "money", "--escrow", "--yes"]) == 2
     assert "EMPORIA_ESCROW_NETWORK" not in _env(folder)
     assert cli.main(["relay", "modules", "--dir", str(folder), "--modules", "money", "--no-escrow", "--yes"]) == 0
-    assert _env(folder)["EMPORIA_ESCROW_NETWORK"] == ""
+    assert _env(folder).get("EMPORIA_ESCROW_NETWORK", "") == ""
 
 
 # -- relay host: no operator-key step in 2.1 (escrow is off) -------------------
