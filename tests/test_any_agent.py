@@ -34,6 +34,15 @@ def transport(monkeypatch):
     return httpx.ASGITransport(app=rs.app)
 
 
+@pytest.fixture(autouse=True)
+def _no_machine_operator(tmp_path_factory, monkeypatch):
+    """`agent init` reuses an operator label this machine already has: keep a developer's own agents out of it."""
+    root = tmp_path_factory.mktemp("agents-root")
+    monkeypatch.setattr(agent_init, "default_root", lambda: root)
+    from emporia import cli
+    monkeypatch.setattr(cli, "profiles_root", lambda: root / "no-hermes" / "profiles")
+
+
 def nm(tag: str = "ag") -> str:
     return f"{tag}-{uuid.uuid4().hex[:8]}"
 
@@ -87,6 +96,19 @@ def test_same_as_shares_another_agents_operator(tmp_path, transport):
     explicit = agent_init.init_agent(name=nm(), key_dir=tmp_path / "x", operator_label=first["operator_label"],
                                      register=False)
     assert explicit["operator_label"] == first["operator_label"]
+
+
+def test_the_default_reuses_this_machines_operator_label_and_new_is_explicit(tmp_path, transport):
+    """F8: one person's agents share one operator label unless a separate one is asked for."""
+    first = agent_init.init_agent(name=nm(), key_dir=agent_init.default_root() / "scout", relay=RELAY,
+                                  transport=transport)
+    assert first["operator_how"] == "minted" and not first["operator_from"]
+    second = agent_init.init_agent(name=nm(), key_dir=tmp_path / "two", relay=RELAY, transport=transport)
+    assert second["operator_label"] == first["operator_label"] and second["operator_how"] == "adopted"
+    assert second["operator_from"] == "scout"
+    apart = agent_init.init_agent(name=nm(), key_dir=tmp_path / "three", relay=RELAY, transport=transport,
+                                  operator_label="new")
+    assert apart["operator_label"] != first["operator_label"] and apart["operator_how"] == "minted"
 
 
 def test_init_refuses_a_key_directory_that_belongs_to_another_agent(tmp_path, transport):

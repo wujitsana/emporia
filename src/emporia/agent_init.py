@@ -167,9 +167,37 @@ def _keys_in(key_dir: Path):
             os.environ["EMPORIA_KEYS_DIR"] = held_env
 
 
+NEW_LABEL = "new"        # `--operator-label new`: a separate operator, on purpose
+
+
+def existing_label(skip: Path | None = None) -> tuple[str, str]:
+    """(label, where it came from) for an operator label this machine already has: another agent made by `init`
+    (in the default place), else an Emporia agent profile of a Hermes install here (what Hermes setup reuses).
+    ("", "") when none: the first agent of a person mints one."""
+    try:
+        for d in sorted(default_root().iterdir()):
+            if skip is not None and d.resolve() == Path(skip).resolve():
+                continue
+            label = settings_of(d).get("EMPORIA_OPERATOR_LABEL", "")
+            if operators.valid_label(label):
+                return label, d.name
+    except OSError:
+        pass
+    try:
+        from emporia import cli, identity_card
+        for profile, _entry in cli._agent_profiles(cli.profiles_root()):
+            if label := identity_card.label_of_profile(profile):
+                return label, f"the Hermes profile {profile.name}"
+    except Exception:  # noqa: BLE001 - no Hermes here (or one we cannot read) is no label to reuse
+        pass
+    return "", ""
+
+
 def resolve_label(label: str, same_as: str) -> tuple[str, str]:
     """(operator label, how): `given`, `adopted` (from `--same-as`: a label, or another agent's directory) or
     `minted`."""
+    if label.strip().lower() == NEW_LABEL:
+        return operators.new_label(), "minted"
     if label:
         if not operators.valid_label(label.strip().lower()):
             raise InitError(f"an operator label is {operators.LABEL_EXAMPLE}")
@@ -238,9 +266,18 @@ def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "cust
     os.chmod(key_dir, 0o700)
     prior = settings_of(key_dir)
     feats = F.render(chosen) if chosen is not None else (prior.get(F.SETTING) or F.render(F.DEFAULTS))
-    label, how = resolve_label(operator_label, same_as) if (operator_label or same_as) else (
-        (prior["EMPORIA_OPERATOR_LABEL"], "kept") if operators.valid_label(prior.get("EMPORIA_OPERATOR_LABEL", ""))
-        else (operators.new_label(), "minted"))
+    reused_from, found = "", ("", "")
+    if not (operator_label or same_as) and not operators.valid_label(prior.get("EMPORIA_OPERATOR_LABEL", "")):
+        found = existing_label(key_dir)
+    if operator_label or same_as:
+        label, how = resolve_label(operator_label, same_as)
+    elif operators.valid_label(prior.get("EMPORIA_OPERATOR_LABEL", "")):
+        label, how = prior["EMPORIA_OPERATOR_LABEL"], "kept"
+    elif found[0]:
+        # one person's agents share one operator label (standing counts a person once): the default reuses it
+        label, how, reused_from = found[0], "adopted", found[1]
+    else:
+        label, how = operators.new_label(), "minted"
     (key_dir / MARKER).write_text(json.dumps({"agent_id": name}) + "\n")
     with _keys_in(key_dir):
         from emporia.identity import get_encryption_public_key_hex, get_public_key_hex
@@ -257,7 +294,7 @@ def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "cust
     }
     env_path = write_env(key_dir, settings)
     out: dict[str, Any] = {"agent_id": name, "key_dir": str(key_dir), "env_file": str(env_path), "relay": relay,
-                           "operator_label": label, "operator_how": how, "client": client,
+                           "operator_label": label, "operator_how": how, "operator_from": reused_from, "client": client,
                            "model": model_clean if declare_model else "", "public_key": pub, "registered": False,
                            "features": feats, "tools": F.summary(F.parse(feats))}
     if register:
@@ -329,7 +366,9 @@ _OPTIONS: list[tuple[str, dict[str, Any], dict[str, str]]] = [
         "init": "the optional features it has, comma-separated, or default|all|none (`emporia features` lists them; "
                 "default: the recommended set)"}),
     ("--no-declare-model", {"action": "store_true"}, {"init": "declare no model, even with --model"}),
-    ("--operator-label", {"default": ""}, {"init": "use this operator label (op_...)"}),
+    ("--operator-label", {"default": ""}, {
+        "init": "use this operator label (op_...), or `new` for a separate operator (default: the label this machine "
+                "already has, else a new one)"}),
     ("--same-as", {"default": ""}, {
         "init": "share the operator of another of your agents: its label, or its key directory"}),
     ("--display-name", {"default": ""}, {"init": "the name shown on the relay (default: the agent name)"}),
@@ -467,10 +506,11 @@ def ask_missing(args: argparse.Namespace) -> argparse.Namespace:
             print(sc.dim("  A directory of its own, outside any Hermes profile; one directory per agent."))
             args.path = cli.prompt("Where are its keys kept?", str(default_dir(args.name)))
         if not (args.operator_label or args.same_as):
+            others = _others(default_root())
             options = [("new", sc.CHOICES["init_operator"].labels()[0][1])]
             options += [(f"same:{lab}", f"The same operator as {n}\nYour agents share a label; games between them "
-                         "count for nothing, as they are one operator.") for n, lab in _others(default_root())]
-            pick = cli.choose_setting("init_operator", options, 0)
+                         "count for nothing, as they are one operator.") for n, lab in others]
+            pick = cli.choose_setting("init_operator", options, 1 if others else 0)
             if pick.startswith("same:"):
                 args.operator_label = pick[5:]
         if not args.model and not args.no_declare_model:
@@ -534,6 +574,9 @@ def _report(res: dict[str, Any], args: argparse.Namespace) -> None:
     print(f"Agent {res['agent_id']}")
     print(f"  keys and settings: {res['key_dir']}  (the *.priv files never leave it)")
     print(f"  operator label:    {res['operator_label']} ({res['operator_how']})")
+    if res.get("operator_from"):
+        print(f"                     the same as {res['operator_from']}: your agents are one operator. "
+              "Pass `--operator-label new` for a separate one.")
     print(f"  declared client:   {res['client']}  (a claim, never verified)")
     print(f"  declared model:    {res['model'] or 'none'}" + ("  (a claim, never verified)" if res["model"] else ""))
     if args.no_register:

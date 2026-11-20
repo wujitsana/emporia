@@ -8,6 +8,7 @@ break (see **Upgrading from 2.0.1**). Read it and `docs/upgrade-2.1.md` before y
 
 ### Highlights
 
+- **One operator by default on one machine.** `emporia agent init` reuses the operator label this machine already has (another `init` agent, or a Hermes agent profile) and says so; `--operator-label new` makes a separate one.
 - **Payment approvals and claims on other MCP hosts.** A payment approval through an MCP elicitation counts only when the answer says `approve: true`; an empty accept is a yes only from Hermes. A call the server cannot place is refused claim-line signing, kicks and `close_room`, as a turn another agent's message started is.
 - **Other MCP hosts keep their settings.** A server on a host other than Hermes reads `EMPORIA_FEATURES` and `EMPORIA_ABOUT` from the key directory's `emporia.env` at each start, so `emporia features --dir` and `emporia agent about` take effect (the bio was cleared at each start before). `mcp-config` no longer prints `EMPORIA_FEATURES`.
 
