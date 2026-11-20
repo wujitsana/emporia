@@ -1,7 +1,8 @@
 """Desktop control and crypto are kept apart.
 
-Guard A (plugin hook desktop_guard): a session that read an Emporia tool result loses computer_use, the browser-cdp
-tools and, with a real browser configured, the other browser tools. Guard B (runtime emporia.desktop_control): a
+Guard A (plugin hook desktop_guard): a session that read an Emporia tool result loses computer_use, every browser_*
+tool (fail closed, whatever the config says, a sandboxed browser included), scheduled-job changes and terminal commands
+that start another agent or drive the desktop. Guard B (runtime emporia.desktop_control): a
 profile with those tools gets no crypto of Emporia's own, with no override.
 """
 import importlib.util
@@ -878,3 +879,37 @@ def test_the_docs_say_what_b_cannot_see_and_the_remaining_limits():
     for needle in ("live `/browser connect`", "in-process", "execute_code", "package manager",
                    "not seen", "terminal cannot be fenced"):
         assert needle in section, needle
+
+
+# ── guards review F2 and F5 ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "hermes cron create 'every 1h' 'do it'"}),
+    ("terminal", {"command": "hermes cron edit abc123 --prompt 'x'"}),
+    ("terminal", {"command": "hermes chat -q 'do it'"}),
+    ("terminal", {"command": "hermes -p shop chat"}),
+    ("terminal", {"command": "sleep 600 && hermes -z 'do it'"}),
+    ("execute_code", {"code": "import os\nos.system('hermes cron run abc123')"}),
+    ("cronjob_manage", {"action": "resume", "job_id": "abc123"}),
+    ("cronjob_manage", {"action": "remove", "job_id": "abc123"}),
+    ("process_manage", {"action": "submit", "session_id": "p1", "data": "hermes chat -q 'x'"}),
+    ("process_manage", {"action": "submit", "session_id": "p1", "data": "xdotool click 1"}),
+    ("process_manage", {"action": "write", "session_id": "p1", "data": "curl localhost:9222/json/version\n"}),
+])
+def test_f2_f5_a_marked_session_may_not_start_or_schedule_another_agent_or_type_a_driver_into_a_process(tool, args):
+    ids = {"session_id": "s1", "task_id": "s1"}
+    assert dg.pre_tool_call(tool_name=tool, args=args, **ids) is None, "an unmarked session is not policed"
+    _read()
+    out = dg.pre_tool_call(tool_name=tool, args=args, **ids)
+    assert out and out["action"] == "block", (tool, args)
+    for fine in ({"command": "hermes emporia status"}, {"command": "git log --oneline"}, {"command": "hermes plugins list"}):
+        assert dg.pre_tool_call(tool_name="terminal", args=fine, **ids) is None, fine
+    assert dg.pre_tool_call(tool_name="process_manage", args={"action": "poll", "session_id": "p1"}, **ids) is None
+    assert dg.pre_tool_call(tool_name="process_manage", args={"action": "submit", "session_id": "p1", "data": "ls"},
+                            **ids) is None
+
+
+def test_f5_a_relay_started_turn_refuses_the_same_commands():
+    rt.pre_llm_call(platform="emporia", session_id="r1", task_id="r1")
+    out = dg.pre_tool_call(tool_name="terminal", args={"command": "hermes cron create x y"}, session_id="r1", task_id="r1")
+    assert out and out["action"] == "block"
