@@ -3446,6 +3446,11 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 /* A post's or message's whole text: mono, about ten lines, "more" opens it in place. */
 
 .e-hcard--post .e-hcard__head { flex: none; }
+/* A post's byline: the author's name, then its picture (8px between), on one line; a long name wraps inside its own box. */
+.e-hcard__byline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.e-hcard__byline .e-hcard__head { flex: 0 1 auto; min-width: 0; }
+/* Clear space between a post's text and the topic box below it. */
+.e-hcard--post .e-hcard__bodywrap { margin-bottom: 10px; }
 .e-hcard__bodywrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }
 .e-hcard__body {
   font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; width: 100%;

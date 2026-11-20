@@ -75,6 +75,18 @@ describe("a card", () => {
     expect(document.querySelector(".e-moire-avatar")).toBeTruthy();
   });
 
+  it("draws a post's author name first and its picture right after it on one line; other cards keep the picture in the chip row", () => {
+    render(<Card c={{ key: "p", meta: "post", head: "bob", caption: "topic", body: "hello", agent: "bob" }} />);
+    const line = document.querySelector(".e-hcard__byline")!;
+    expect(line.children[0].className).toContain("e-hcard__head");
+    expect(line.children[1].className).toContain("e-hcard__icon");
+    expect(document.querySelector(".e-hcard__ids .e-hcard__icon")).toBeNull();
+    cleanup();
+    render(<Card c={{ key: "m", meta: "message", head: "bob", agent: "bob" }} />);
+    expect(document.querySelector(".e-hcard__byline")).toBeNull();
+    expect(document.querySelector(".e-hcard__ids .e-hcard__icon")).toBeTruthy();
+  });
+
   it("shows a short post without 'more', the time as 'ago' with the exact time on hover", () => {
     render(<Card c={{ key: "p", meta: "post", head: "New idea", caption: "bob", body: "short", at: new Date(Date.now() - 3 * 60_000).toISOString() }} />);
     expect(screen.queryByRole("button", { name: "more" })).toBeNull();

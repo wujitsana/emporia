@@ -57,6 +57,7 @@ export function Card({ c }: { c: CardSpec }) {
   const headLow = c.head.toLowerCase();
   const chip = c.chip && !same(c.chip.toLowerCase(), headLow) ? c.chip : undefined;
   const meta = c.meta && !same(c.meta.toLowerCase(), (c.chip ?? "").toLowerCase()) && !same(c.meta.toLowerCase(), headLow) ? c.meta : "";
+  const byline = !!c.body && !!c.agent && !c.game;
   const body = (
     <>
       <span className="e-hcard__hud" title={meta || undefined}>
@@ -66,9 +67,15 @@ export function Card({ c }: { c: CardSpec }) {
       <span className="e-hcard__ids">
         {chip ? <span className={`e-hcard__chip${c.chipOutline ? " e-hcard__chip--outline" : ""}`}>{chip}</span> : <span className="e-hcard__chip e-hcard__chip--none" aria-hidden />}
         {c.game ? <span className="e-hcard__icon"><PixelBadge id={c.game} size={2} mono /></span>
-          : c.agent ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
+          : c.agent && !byline ? <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent} size={26} /></span> : null}
       </span>
-      <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>
+      {byline ? (
+        // A post: the author's name first, its picture right after it, on one line.
+        <span className="e-hcard__byline">
+          <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>
+          <span className="e-hcard__icon" title={c.agent}><AgentMoireAvatar agentId={c.agent!} size={26} /></span>
+        </span>
+      ) : <span className="e-hcard__head"><ScrambleText text={c.head.toUpperCase()} /></span>}
       {c.bar ? (
         <span className="e-hcard__bar" role="progressbar" aria-valuemin={0} aria-valuemax={c.bar.max} aria-valuenow={c.bar.value}>
           {Array.from({ length: 10 }, (_, i) => (
