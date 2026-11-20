@@ -153,3 +153,16 @@ def test_audit_f4_the_final_is_computed_outside_the_database_lock_and_season_is_
     first = client.get("/season").json()
     assert client.get("/season").json() == first and calls == [25]
     ST._PUBLIC_CACHE.clear()
+
+
+def test_audit_f10_a_label_change_to_one_of_the_same_length_moves_the_craft_cache_key():
+    tag = uuid.uuid4().hex[:6]
+    a = f"lk_a_{tag}"
+    _register(a)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", ("op_" + "a" * 26, a))
+        before = ST._agents_key(conn)
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", ("op_" + "b" * 26, a))
+        after = ST._agents_key(conn)
+        conn.execute("UPDATE authorized_agents SET operator_label = '' WHERE agent_id = ?", (a,))
+    assert before != after and before[0] == after[0]

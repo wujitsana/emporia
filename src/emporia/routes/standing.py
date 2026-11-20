@@ -9,6 +9,7 @@ on the neighbouring agent list.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -228,14 +229,21 @@ def _who() -> dict[str, progression.Who]:
 _TABLE_CACHE: dict = {"key": None, "value": None, "calls": None}
 
 
+def _agents_key(conn) -> tuple:
+    """A change to who is registered, or to any agent's operator label, changes this key (a hash of the labels:
+    every label has the same length, so moving an agent to another label must not leave it unchanged)."""
+    n, joined = conn.execute("SELECT COUNT(*), COALESCE(group_concat(agent_id || char(31) || operator_label, char(30)), '') "
+                             "FROM (SELECT agent_id, operator_label FROM authorized_agents ORDER BY agent_id)").fetchone()
+    return (n, hashlib.sha256(joined.encode()).hexdigest())
+
+
 def _craft_table() -> tuple[dict, list[dict], dict]:
     """(ratings, games, who), recomputed only when sessions or agents changed —
     so reading sheets cannot be used to make the relay redo the whole history.
     The same pass keeps every counted call (Insight), read by `_calls()`."""
     with rs.DB_LOCK, rs.get_db() as conn:
         key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
-               tuple(conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
-                                  "COALESCE(SUM(LENGTH(agent_id)), 0) FROM authorized_agents").fetchone()))
+               _agents_key(conn))
     if _TABLE_CACHE["key"] != key:
         games, who = _craft_games(), _who()
         views: dict[str, dict] = {}
