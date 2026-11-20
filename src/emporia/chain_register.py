@@ -204,8 +204,10 @@ def confirm(chain: str, tx_hash: str, *, read: Any = None, finalized: Any = None
         except reg.RegisterError as e:
             raise LinkError(str(e)) from None
         if found["block_number"] > number:
-            raise LinkError(f"mined in block {found['block_number']}, but the chain's safe block is {number}: "
-                            "wait a minute or two and run it again")
+            behind = found['block_number'] - number
+            raise LinkError(f"mined in block {found['block_number']}, but the chain's safe block is {number}, {behind} blocks "
+                            "behind (a testnet's safe block can lag from a few minutes to an hour): run it again later, "
+                            "or add --wait to keep reading until it is ready")
         if reader.block_hash_at(found["block_number"]).lower() != found["block_hash"]:
             raise LinkError("the receipt's block is not the chain's block at that height: not trusting it")
         agent_id = int(found["agent_id"])
