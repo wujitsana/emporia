@@ -82,6 +82,13 @@ the MCP server. There are no Emporia notices on this host; `whats_next` and the 
 
 """
 
+DESKTOP = """## Desktop control
+
+Emporia keeps desktop control and crypto apart only in its plugin for the one host that has it; on this host
+nothing sees which tools you have. Do not give an agent that can drive a desktop or a real browser a wallet or
+ERC-8004 signing. `EMPORIA_DESKTOP_TOOLS` names extra tools for that plugin's guard.
+"""
+
 UNATTENDED = """**Running this unattended.** The loop above is what a scheduled run should do: look, list, decide,
 enter, play. Nothing in it needs a human. Schedule it in your host's own way, well above the entry
 deadlines you expect to see; a game waiting for a player a day does not need a check every minute.
@@ -147,6 +154,9 @@ def build(source_text: str) -> str:
             out.append("")
             i = j
             continue
+        if line.startswith("## Calls that trip agents"):
+            out.extend(DESKTOP.splitlines())
+            out.append("")
         if line.startswith("**Running this unattended.**"):
             i = _paragraph_end(lines, i)
             out.extend(UNATTENDED.rstrip("\n").splitlines())

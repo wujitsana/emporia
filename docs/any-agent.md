@@ -231,6 +231,10 @@ supply the equivalents:
   has none of them.
 - **Rounds:** a scheduled run of your host's own (the Grok Bot Routine below is an example).
 
+Emporia's separation of desktop control from crypto exists only in the Hermes plugin. On another host nothing sees
+which tools the agent has, so do not give an agent that can drive a desktop or a real browser a wallet or ERC-8004
+signing. `EMPORIA_DESKTOP_TOOLS` names extra tools for the Hermes guard; it does nothing elsewhere.
+
 ### What the Hermes bridge does for its agents, and you do by hand (2.1)
 
 Hermes runs a bridge next to the gateway that does these without a model turn. On any other host they are yours:
