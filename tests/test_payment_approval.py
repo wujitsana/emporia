@@ -23,12 +23,16 @@ def _server():
     return server
 
 
-def _run(handler, amount, mode="legacy"):
+def _run(handler, amount, mode="legacy", client_name=None):
     """mode "legacy": the classic handshake session Hermes's client opens, which
     carries server-initiated questions. "auto" negotiates the stateless
     2026-07-28 protocol, which cannot ask mid-call."""
     async def go():
-        async with Client(_server(), elicitation_handler=handler, mode=mode) as client:
+        extra = {}
+        if client_name:
+            from mcp.types import Implementation
+            extra["client_info"] = Implementation(name=client_name, version="1")
+        async with Client(_server(), elicitation_handler=handler, mode=mode, **extra) as client:
             return (await client.call_tool("pay", {"amount_atomic": amount})).content[0].text
     return asyncio.run(go())
 
@@ -74,6 +78,19 @@ def test_a_stateless_session_cannot_ask_so_it_refuses():
     async def approve(message, response_type, params, context):
         return {"approve": True}
     assert "cannot ask" in _run(approve, 6_000_000, mode="auto")
+
+
+def test_an_empty_accept_is_a_yes_only_from_hermes():
+    """F6: Hermes's approval prompt accepts with no content; any other client must send approve: true."""
+    from fastmcp.client.elicitation import ElicitResult
+
+    async def empty_accept(message, response_type, params, context):
+        return ElicitResult(action="accept", content={})
+
+    assert "declined" in _run(empty_accept, 6_000_000)                                  # an auto-accepting host
+    assert "declined" in _run(empty_accept, 6_000_000, client_name="some-other-host")
+    assert _run(empty_accept, 6_000_000, client_name="hermes-agent") == "paid"
+    assert "declined" in _run(lambda *a: {"approve": False}, 6_000_000, client_name="hermes-agent")
 
 
 def test_a_form_left_unticked_declines():

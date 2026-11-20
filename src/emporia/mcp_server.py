@@ -211,11 +211,22 @@ def _ask_operator(message: str, title: str = "Approve this payment") -> bool | N
         return None
     if result.action != "accept":
         return False
-    # P173: a client that shows the form must have the box ticked. A consent-only
-    # client (Hermes's approval prompt) answers "accept" with no content — that
-    # accept IS the operator's yes. Anything else declines.
+    # P173: a client that shows the form must have the box ticked: `approve` must be explicitly true for every
+    # client. Only Hermes's approval prompt answers "accept" with no content (its accept IS the operator's yes);
+    # an empty accept counts as yes only from a client that identifies itself as Hermes (its clientInfo name), so a
+    # host or loop that auto-accepts approves nothing by default.
     content = result.content or {}
-    return content.get("approve") is True if content else True
+    if content:
+        return content.get("approve") is True
+    return _client_is_hermes(ctx)
+
+
+def _client_is_hermes(ctx: Any) -> bool:
+    try:
+        info = ctx.session.client_params.clientInfo
+        return str(getattr(info, "name", "") or "").strip().lower() == "hermes-agent"
+    except Exception:  # noqa: BLE001 - a client that cannot be identified is not Hermes
+        return False
 
 from emporia import agent_wallet as _agent_wallet
 _agent_wallet.APPROVER = _ask_operator
