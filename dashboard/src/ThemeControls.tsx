@@ -18,29 +18,36 @@ export function ThemePanelBody({
 }) {
   const last: BaseTheme = base ?? (theme === "theme-dark" ? "theme-dark" : "theme-light");
   const vivid = theme === "theme-vivid";
-  // The mode circle shows the mode a click goes to leave: light or dark (from vivid, the last of the two).
+  // The mode circle shows where a click goes: the opposite of the current mode (from vivid, of the last light / dark).
   const mode: BaseTheme = vivid ? last : (theme as BaseTheme);
+  const target: BaseTheme = mode === "theme-dark" ? "theme-light" : "theme-dark";
+  const targetWord = target === "theme-dark" ? "dark" : "light";
+  const tintColor = TINT_COLORS[tint];
+  const inkColor = rgbHex(vividPalette(tint).text);
   return (
     <div className="e-theme-duo" role="group" aria-label="Theme">
       <button
         type="button"
         className="e-theme-circle e-theme-circle--mode e-theme-duo__btn"
-        data-mode={mode}
+        data-mode={target}
         onClick={() => onTheme(toggleTheme(theme, last))}
-        title={mode === "theme-dark" ? "dark (click for light)" : "light (click for dark)"}
-        aria-label={mode === "theme-dark" ? "Theme: dark, switch to light" : "Theme: light, switch to dark"}
+        title={`switch to ${targetWord}`}
+        aria-label={`Theme: switch to ${targetWord}`}
       />
       <span className="e-theme-duo__rule" aria-hidden />
       <button
         type="button"
-        className="e-theme-circle e-theme-circle--vivid e-theme-duo__btn"
+        role="switch"
+        aria-checked={vivid}
+        className="e-switch e-theme-duo__btn"
         data-on={vivid ? "true" : "false"}
-        style={{ background: TINT_COLORS[tint], color: rgbHex(vividPalette(tint).text) }}
+        style={{ color: tintColor, background: vivid ? tintColor : "transparent" }}
         onClick={() => onTheme(toggleVivid(theme, last))}
-        aria-pressed={vivid}
         title={vivid ? `vivid on (click for ${last === "theme-dark" ? "dark" : "light"})` : "vivid off (click for vivid)"}
         aria-label={vivid ? `Vivid: on, switch to ${last === "theme-dark" ? "dark" : "light"}` : "Vivid: off, switch on"}
-      />
+      >
+        <span className="e-switch__knob" aria-hidden style={{ background: vivid ? inkColor : tintColor }} />
+      </button>
       <span className="e-theme-duo__rule" aria-hidden />
       <button
         type="button"

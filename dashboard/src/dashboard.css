@@ -1043,14 +1043,27 @@ body.theme-light {
   outline: none;
   opacity: 0.92;
 }
+/* The mode circle shows where a click goes (data-mode is the target): light page -> dark circle, dark page -> light one.
+   A currentColor ring keeps it visible on either page. */
+.e-theme-circle--mode { box-shadow: inset 0 0 0 1px currentColor; }
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 /* On vivid the page is the tint itself, so the accent circle would vanish into it: ring it in the text color. */
 .theme-vivid .e-theme-circle--accent { box-shadow: inset 0 0 0 2px var(--theme-text); }
-/* The vivid circle: the tint with a ring of its ink (color set inline); the ring fills in when vivid is on. */
-.e-theme-circle--vivid { box-shadow: inset 0 0 0 3px currentColor; }
-.e-theme-circle--vivid[data-on="true"] { box-shadow: inset 0 0 0 5px currentColor; }
+/* The vivid switch: track filled with the tint when on, outlined in it when off (colors set inline); the knob slides. */
+.e-switch {
+  position: relative; width: 28px; height: 16px; padding: 0; flex-shrink: 0; cursor: pointer;
+  border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit;
+}
+.e-switch__knob {
+  position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%;
+  background: currentColor; transition: transform 0.12s ease;
+}
+.e-switch[data-on="true"] .e-switch__knob { transform: translateX(12px); }
+.e-switch:focus-visible { outline: 2px solid var(--theme-focused-foreground); outline-offset: 2px; }
+.e-capture .e-switch__knob { transition: none; }
+@media (prefers-reduced-motion: reduce) { .e-switch__knob { transition: none; } }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
