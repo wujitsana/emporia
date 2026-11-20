@@ -305,17 +305,6 @@ def _load(path: Path) -> Any:
         return None
 
 
-def _live_override() -> bool:
-    """Whether Hermes says a CDP endpoint is configured (a live `/browser connect`, BROWSER_CDP_URL, browser.cdp_url).
-    Asked of the module Hermes already loaded (no import of a private module); an answer that is not a clear
-    yes is no."""
-    try:
-        mod = sys.modules.get("tools.browser_session_cdp")
-        return bool(mod and str(mod.get_cdp_override_raw() or "").strip())
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def _environment() -> dict:
     return {name: relay_turn._setting(name) for name in ("BROWSER_CDP_URL", "BU_CDP_WS", "BU_CDP_URL")} | {
         "EMPORIA_DESKTOP_TOOLS": relay_turn._setting("EMPORIA_DESKTOP_TOOLS"),
@@ -337,18 +326,6 @@ def profile_detection() -> dict:
     with _lock:
         _cache[str(path)] = (stamp, got)
     return got
-
-
-def _real_browser() -> bool:
-    for name in ("BU_CDP_WS", "BU_CDP_URL", "BROWSER_CDP_URL"):
-        if relay_turn._setting(name) or os.environ.get(name):
-            return True
-    if _live_override():
-        return True
-    try:
-        return bool(profile_detection()["real_browser"])
-    except Exception:  # noqa: BLE001
-        return False
 
 
 def _mcp_server(name: str) -> str:
@@ -384,7 +361,9 @@ def is_desktop_tool(tool_name: str) -> bool:
         return True
     if any(name == e or name.startswith(e) for e in _extra()):
         return True
-    return name.startswith("browser_") and _real_browser()
+    # Every browser tool, not only one proven to drive a real browser: a CDP endpoint attached live (`/browser connect`)
+    # is visible only through a Hermes module outside the public plugin API (catalog rule 9), so the guard fails closed.
+    return name.startswith("browser_")
 
 
 # ── the session mark ────────────────────────────────────────────────────────────────────

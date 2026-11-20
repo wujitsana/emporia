@@ -43,7 +43,6 @@ def fresh(tmp_path, monkeypatch):
     dg._children.clear()
     dg._cache.clear()
     dg._loaded_stamp = None
-    monkeypatch.setattr(dg, "_live_override", lambda: False)
     for name in ("BU_CDP_WS", "BU_CDP_URL", "BROWSER_CDP_URL", "EMPORIA_DESKTOP_TOOLS"):
         monkeypatch.delenv(name, raising=False)
     rt._origin.clear()
@@ -112,22 +111,19 @@ def test_other_tools_of_a_marked_session_are_not_touched(tmp_path):
         assert dg.pre_tool_call(tool_name=tool, session_id="s1", task_id="s1") is None
 
 
-def test_the_plain_browser_is_not_desktop_control_but_a_real_one_is(tmp_path, monkeypatch):
+def test_any_browser_is_desktop_control_in_a_marked_session_and_free_in_an_unmarked_one(tmp_path, monkeypatch):
     _read()
-    _use_profile(tmp_path, monkeypatch, CONFIGS["none"])
-    assert dg.pre_tool_call(tool_name="browser_exec", session_id="s1", task_id="s1") is None
-    _use_profile(tmp_path, monkeypatch, CONFIGS["real_profile"])
-    for tool in ("browser_exec", "browser_vault", "browser_navigate"):
-        assert dg.pre_tool_call(tool_name=tool, session_id="s1", task_id="s1")["action"] == "block", tool
-    _use_profile(tmp_path, monkeypatch, CONFIGS["cdp_url"])
-    assert dg.pre_tool_call(tool_name="browser_exec", session_id="s1", task_id="s1")["action"] == "block"
-    assert dg.pre_tool_call(tool_name="browser_exec", session_id="unmarked", task_id="unmarked") is None
+    for config in ("none", "real_profile", "cdp_url"):
+        _use_profile(tmp_path, monkeypatch, CONFIGS[config])
+        for tool in ("browser_exec", "browser_vault", "browser_navigate"):
+            assert dg.pre_tool_call(tool_name=tool, session_id="s1", task_id="s1")["action"] == "block", (config, tool)
+        assert dg.pre_tool_call(tool_name="browser_exec", session_id="unmarked", task_id="unmarked") is None
 
 
-def test_an_unreadable_config_does_not_block_the_generic_browser_tools(tmp_path, monkeypatch):
+def test_an_unreadable_config_still_blocks_browser_and_computer_tools(tmp_path, monkeypatch):
     _read()
     monkeypatch.setattr(rt, "_home", lambda: tmp_path / "nowhere")
-    assert dg.pre_tool_call(tool_name="browser_exec", session_id="s1", task_id="s1") is None
+    assert dg.pre_tool_call(tool_name="browser_exec", session_id="s1", task_id="s1")["action"] == "block"
     assert dg.pre_tool_call(tool_name="computer_use", session_id="s1", task_id="s1")["action"] == "block"
 
 
@@ -647,37 +643,15 @@ def test_the_vault_scheduled_jobs_and_driver_commands_are_refused_in_a_marked_se
         assert dg.pre_tool_call(tool_name=tool, args=args, **ids) is None, f"{tool} {args}"
 
 
-def test_live_connect_and_bu_environment_make_the_browser_real(tmp_path, monkeypatch):
+def test_every_browser_tool_is_blocked_in_a_marked_session_and_nothing_asks_hermes_internals(tmp_path, monkeypatch):
+    """Principles review: the live-connect check called a Hermes module outside the plugin API (catalog rule 9). Now
+    the guard fails closed: in a marked session every browser_* tool is desktop control, real browser or not."""
     _read()
     _use_profile(tmp_path, monkeypatch, CONFIGS["none"])
-    assert dg.pre_tool_call(tool_name="browser_exec", session_id="s1", task_id="s1") is None
-    monkeypatch.setattr(dg, "_live_override", lambda: True)
-    assert dg.pre_tool_call(tool_name="browser_exec", session_id="s1", task_id="s1")["action"] == "block"
-    monkeypatch.setattr(dg, "_live_override", lambda: False)
-    monkeypatch.setenv("BU_CDP_WS", "ws://127.0.0.1:9222")
-    assert dg.pre_tool_call(tool_name="browser_navigate", session_id="s1", task_id="s1")["action"] == "block"
-    monkeypatch.delenv("BU_CDP_WS")
-    monkeypatch.setattr(rt, "_setting", lambda name: "http://x" if name == "BROWSER_CDP_URL" else "")
-    assert dg.pre_tool_call(tool_name="browser_navigate", session_id="s1", task_id="s1")["action"] == "block"
-
-
-def test_the_live_override_is_asked_of_the_module_hermes_loaded_never_imported(monkeypatch):
-    import sys
-    import types
-    real_live = importlib.util.module_from_spec(importlib.util.spec_from_file_location(
-        "emporia_dg_live", PLUGIN / "desktop_guard.py"))
-    real_live.__spec__.loader.exec_module(real_live)          # a copy without the fixture's stub
-    mod = types.ModuleType("tools.browser_session_cdp")
-    mod.get_cdp_override_raw = lambda: "ws://live"
-    monkeypatch.setitem(sys.modules, "tools.browser_session_cdp", mod)
-    assert real_live._live_override() is True
-    mod.get_cdp_override_raw = lambda: ""
-    assert real_live._live_override() is False
-    mod.get_cdp_override_raw = lambda: (_ for _ in ()).throw(RuntimeError("x"))
-    assert real_live._live_override() is False
-    monkeypatch.delitem(sys.modules, "tools.browser_session_cdp")
-    assert real_live._live_override() is False
+    for tool in ("browser_exec", "browser_navigate", "browser_snapshot", "browser_click"):
+        assert dg.pre_tool_call(tool_name=tool, session_id="s1", task_id="s1")["action"] == "block", tool
     src = (PLUGIN / "desktop_guard.py").read_text()
+    assert "sys.modules" not in src and "browser_session_cdp" not in src
     assert "import tools" not in src and "from tools" not in src
 
 
