@@ -141,7 +141,7 @@
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
-.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }
+.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #39ff44; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }

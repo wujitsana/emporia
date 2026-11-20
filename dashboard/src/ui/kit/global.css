@@ -503,7 +503,7 @@ body.theme-dark.tint-green {
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-orange); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#39ff44 / #39ff44 flat / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 body.theme-vivid.tint-green,
@@ -536,7 +536,7 @@ body.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--tint) 80%,
 body.theme-vivid.tint-blue,
 body.theme-vivid.tint-red,
 body.theme-vivid.tint-purple { --vv-ink: #fff; }
-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
+body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
 
 #__next {
 }

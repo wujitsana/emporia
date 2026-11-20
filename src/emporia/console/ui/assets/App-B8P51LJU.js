@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-guOtiMPh.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DiR0yx52.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -2243,7 +2243,7 @@ var COMPANIONS = {
 *
 * - vivid: the tint is the background, ink is the tint's deep dark (white on blue and purple),
 *   the panel a step darker (a step lighter for orange, whose ink is darkest against it).
-*   Green is pinned exactly: bg #39ff44, panel #2ee03a, ink #001b00.
+*   Green is pinned exactly: bg #39ff44, panel #39ff44 (flat, outlined in ink), ink #001b00.
 * - deep (the dark theme): the video's all-dark-green screens in OKLCH relative to the tint
 *   (bg L .192 C×.243, panel L .253 C×.243, border L .366 C×.328, text L .962 C×.243), green pinned
 *   to #001b00 / #0b2a0b / #1d4a1d / #d8ffd8 with #39ff44 as the accent. The accent as text is
@@ -2274,9 +2274,19 @@ function vividPalette(tint, gamut = "css") {
 	const bg = hex(t);
 	const green = tint === "tint-green";
 	const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE$2 : relativeOklch(t, .192, (c) => c * .243, gamut);
+	const panel = green ? hex("#39ff44") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$2, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut);
+	if (green) return {
+		bg,
+		panel,
+		border: ink,
+		text: ink,
+		accent: ink,
+		fill: hex("#2ee03a"),
+		fillInk: ink
+	};
 	return {
 		bg,
-		panel: green ? hex("#2ee03a") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$2, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut),
+		panel,
 		border: ink,
 		text: ink,
 		accent: ink,

@@ -13760,9 +13760,19 @@ var EmporiaHermesPlugin = (function(exports) {
 		const bg = hex(t);
 		const green = tint === "tint-green";
 		const ink = green ? hex("#001b00") : WHITE_INK.includes(tint) ? WHITE$2 : relativeOklch(t, .192, (c) => c * .243, gamut);
+		const panel = green ? hex("#39ff44") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$2, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut);
+		if (green) return {
+			bg,
+			panel,
+			border: ink,
+			text: ink,
+			accent: ink,
+			fill: hex("#2ee03a"),
+			fillInk: ink
+		};
 		return {
 			bg,
-			panel: green ? hex("#2ee03a") : LIGHT_PANEL.includes(tint) ? mixOver(WHITE$2, LIGHT_PANEL_WHITE, bg) : relativeOklch(t, (l) => l - .082, (c) => c * .91, gamut),
+			panel,
 			border: ink,
 			text: ink,
 			accent: ink,

@@ -503,7 +503,7 @@ BEFORE (the previous dark ramp, for comparing; `git revert` of the deep commit r
 
 /*
 VIVID: the tint is the background, ink is the tint's deep dark; the panel a step darker (lighter for
-orange); white ink on blue and purple; green exact (#39ff44 / #2ee03a / #001b00). Web-only, like
+orange); white ink on blue and purple; green exact (#39ff44 / #39ff44 flat / #001b00). Web-only, like
 the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and themePalette.ts.
 */
 .e-host-body.theme-vivid.tint-green,
@@ -536,7 +536,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 .e-host-body.theme-vivid.tint-blue,
 .e-host-body.theme-vivid.tint-red,
 .e-host-body.theme-vivid.tint-purple { --vv-ink: #fff; }
-.e-host-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
+.e-host-body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
 
 #__next {
 }
@@ -3305,7 +3305,7 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
    The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
-   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
+   text. Green is exact: #39ff44 / #39ff44 / #001b00 (flat: panels are outlined in ink, as on the video's green screens). Mirrored in themePalette.ts. */
 .e-host-body.e-look.theme-vivid {
   --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);
@@ -3332,7 +3332,9 @@ the other tint themes. Mirrored in dashboard.css (body.e-look.theme-vivid) and t
 .e-host-body.e-look.theme-vivid.tint-blue,
 .e-host-body.e-look.theme-vivid.tint-red,
 .e-host-body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
-.e-host-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
+.e-host-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
+/* Green, like the video's green screens: no ink-filled bars; a chip is a soft wash of the ink with the ink on it. */
+.e-host-body.e-look.theme-vivid.tint-green { --anim-fill: #2ee03a; --anim-ink: #001b00; }
 
 /* TEXT SWITCH (inkSwitch.ts): pure black or white text over the whole page, set at the token level so every
    component that reads a token follows (text, headings, nav, cards, tables, inputs, links, the wordmark).
@@ -4559,7 +4561,7 @@ button.e-hcard__marker { cursor: pointer; text-decoration: underline; color: var
 .e-badge-panel.theme-vivid.tint-blue,
 .e-badge-panel.theme-vivid.tint-red,
 .e-badge-panel.theme-vivid.tint-purple { --p-ink: #fff; }
-.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #2ee03a; }
+.e-badge-panel.theme-vivid.tint-green { --p-ink: #001b00; --p-panel: #39ff44; }
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }

@@ -55,9 +55,9 @@ describe("contrast of every tint in every theme", () => {
 });
 
 describe("the green themes are the video's exact colors", () => {
-  it("vivid green: #39ff44 / #2ee03a / #001b00", () => {
+  it("vivid green: #39ff44 / #39ff44 (flat) / #001b00", () => {
     const p = vividPalette("tint-green");
-    expect([p.bg, p.panel, p.text, p.border, p.accent].map(rgbHex)).toEqual(["#39ff44", "#2ee03a", "#001b00", "#001b00", "#001b00"]);
+    expect([p.bg, p.panel, p.text, p.border, p.accent].map(rgbHex)).toEqual(["#39ff44", "#39ff44", "#001b00", "#001b00", "#001b00"]);
   });
   it("deep green: #001b00 / #0b2a0b / #1d4a1d / #d8ffd8, accent #39ff44", () => {
     const p = deepPalette("tint-green");
@@ -73,7 +73,7 @@ describe("the CSS carries the palette", () => {
     expect(DASH).toContain("--theme-border: oklch(from var(--anim-tint) 0.366 calc(c * 0.328) h);");
     expect(DASH).toContain("--theme-text: oklch(from var(--anim-tint) 0.962 calc(c * 0.243) h);");
     expect(DASH).toContain("--vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);");
-    expect(DASH).toMatch(/body\.e-look\.theme-vivid\.tint-green \{ --vv-ink: #001b00; --vv-panel: #2ee03a; \}/);
+    expect(DASH).toMatch(/body\.e-look\.theme-vivid\.tint-green \{ --vv-ink: #001b00; --vv-panel: #39ff44; \}/);
   });
 
   it("the vivid rules name the same tints for white ink and the lighter panel as the table", () => {
@@ -92,7 +92,7 @@ describe("the CSS carries the palette", () => {
       expect(KIT).toContain(`body.theme-light.${t}`);
     }
     expect(KIT).toContain("--theme-background: oklch(from var(--tint) 0.192 calc(c * 0.243) h);");
-    expect(KIT).toContain("body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }");
+    expect(KIT).toContain("body.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }");
     expect(KIT).toMatch(/body\.theme-dark\.tint-green \{[^}]*--theme-text: #d8ffd8;[^}]*--theme-focused-foreground: #39ff44;/);
   });
 

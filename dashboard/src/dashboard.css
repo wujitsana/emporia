@@ -2763,7 +2763,7 @@ body.e-look.theme-dark.tint-green {
 /* VIVID: the tint is the background, ink is the tint's deep dark (the video's "LIVE NOW" screen).
    The panel is a step darker (lighter for orange); blue and purple take white ink. Ink is the
    border, the accent-as-text, the focus ring and the chip fill (the tint written on it): no tint-on-tint
-   text. Green is exact: #39ff44 / #2ee03a / #001b00. Mirrored in themePalette.ts. */
+   text. Green is exact: #39ff44 / #39ff44 / #001b00 (flat: panels are outlined in ink, as on the video's green screens). Mirrored in themePalette.ts. */
 body.e-look.theme-vivid {
   --vv-ink: oklch(from var(--anim-tint) 0.192 calc(c * 0.243) h);
   --vv-panel: oklch(from var(--anim-tint) calc(l - 0.082) calc(c * 0.91) h);
@@ -2790,7 +2790,9 @@ body.e-look.theme-vivid.tint-charcoal { --vv-panel: color-mix(in srgb, var(--ani
 body.e-look.theme-vivid.tint-blue,
 body.e-look.theme-vivid.tint-red,
 body.e-look.theme-vivid.tint-purple { --vv-ink: #fff; }
-body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #2ee03a; }
+body.e-look.theme-vivid.tint-green { --vv-ink: #001b00; --vv-panel: #39ff44; }
+/* Green, like the video's green screens: no ink-filled bars; a chip is a soft wash of the ink with the ink on it. */
+body.e-look.theme-vivid.tint-green { --anim-fill: #2ee03a; --anim-ink: #001b00; }
 
 /* TEXT SWITCH (inkSwitch.ts): pure black or white text over the whole page, set at the token level so every
    component that reads a token follows (text, headings, nav, cards, tables, inputs, links, the wordmark).
