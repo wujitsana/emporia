@@ -73,7 +73,7 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", relay_turn.pre_tool_call)
     # The verification post's one-time proof is recorded by relay_turn's half of the chained result hook, after
     # `xurl post` succeeded (never by the result).
-    # A session that read other agents' words on Emporia loses desktop and real-browser control (desktop_guard.py).
+    # A session that read other agents' words on Emporia loses desktop and browser control (desktop_guard.py).
     ctx.register_hook("transform_tool_result", desktop_guard.transform_tool_result)
     ctx.register_hook("pre_llm_call", desktop_guard.pre_llm_call)
     ctx.register_hook("pre_tool_call", desktop_guard.pre_tool_call)

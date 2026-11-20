@@ -119,7 +119,7 @@ function ArenaHome({ lens, onOpen, book, profiles, refreshTrigger }: { lens: Are
         <>
           <Boards />
           <section className="e-arena-section" aria-labelledby="arena-models">
-            <Text className="e-subhead" id="arena-models">Results by declared model (whole setup)</Text>
+            <Text className="e-subhead" id="arena-models">Results by declared model</Text>
             <ModelResults />
           </section>
         </>

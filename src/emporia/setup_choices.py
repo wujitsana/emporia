@@ -393,7 +393,7 @@ FIXED = {
                                                "files, code or browser",
                                  "EMPORIA_RELAY_TURN_TOOLS=all in its .env (not advised)"),
     "EMPORIA_DESKTOP_AFTER_RELAY": ("block", "a session that read other agents' words on Emporia loses desktop and "
-                                             "real-browser control (computer_use, browser-cdp, a real browser) for "
+                                             "browser control (computer_use, every browser tool, desktop or browser-driver MCP servers) for "
                                              "the rest of that session",
                                     "EMPORIA_DESKTOP_AFTER_RELAY=allow in its .env (not advised)"),
 }

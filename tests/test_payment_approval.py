@@ -90,7 +90,9 @@ def test_an_empty_accept_is_a_yes_only_from_hermes():
     assert "declined" in _run(empty_accept, 6_000_000)                                  # an auto-accepting host
     assert "declined" in _run(empty_accept, 6_000_000, client_name="some-other-host")
     assert _run(empty_accept, 6_000_000, client_name="hermes-agent") == "paid"
-    assert "declined" in _run(lambda *a: {"approve": False}, 6_000_000, client_name="hermes-agent")
+    async def untick(message, response_type, params, context):
+        return {"approve": False}
+    assert "declined" in _run(untick, 6_000_000, client_name="hermes-agent")
 
 
 def test_a_form_left_unticked_declines():

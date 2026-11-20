@@ -223,7 +223,8 @@ def _ask_operator(message: str, title: str = "Approve this payment") -> bool | N
 
 def _client_is_hermes(ctx: Any) -> bool:
     try:
-        info = ctx.session.client_params.clientInfo
+        params = ctx.session.client_params
+        info = getattr(params, "client_info", None) or getattr(params, "clientInfo", None)   # MCP SDK v2 renamed it
         return str(getattr(info, "name", "") or "").strip().lower() == "hermes-agent"
     except Exception:  # noqa: BLE001 - a client that cannot be identified is not Hermes
         return False
@@ -4961,6 +4962,16 @@ def list_pledges(which: str = "mine", status: str = "", agent_id: str = "") -> d
         return {"success": True, **_relay_ok(d), "untrusted": _UNTRUSTED}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
+
+
+def _relay_line(text: Any) -> str:
+    """One of the relay's `tries` lines as data: one line, cut at 160 characters, and nothing when it names a money
+    or X-claim tool (the relay's words never steer an agent toward paying or claiming)."""
+    from emporia import features
+    line = " ".join(str(text or "").split())
+    if not line or {"money", "x_link"} & set(features.off_features_named_in(line, ())):
+        return ""
+    return cut_at_word(line, 160)
 
 
 @mcp.tool()

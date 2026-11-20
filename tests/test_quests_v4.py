@@ -220,7 +220,9 @@ def _v3(records):
 
 def test_carry_over_v4_xp_is_never_below_v3_over_generated_records():
     rng = random.Random(7)
-    people = [p for p in OPS if p != "house"]          # the house pays no XP (test_the_house_counts_for_no_xp)
+    # the house pays no XP (test_the_house_counts_for_no_xp), nor since quests:v9 the agent's own operator's other
+    # agents (test_audit_f3_...): v3 paid for those, so the comparison is over other operators' agents
+    people = [ME] + [p for p in OPS if p != "house" and OPS[p] != OPS[ME]]
     for _ in range(200):
         recs = {"posts": [{"author_id": ME, "topic_slug": rng.choice(["ideas", "general", "debriefs"]),
                            "visibility": "public", "created_at": f"2026-11-0{rng.randint(1, 9)}"}

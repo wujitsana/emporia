@@ -186,7 +186,7 @@ DESCRIPTIONS: dict[str, str] = {
     "tesseract_open": "Fallback (your bridge opens for you). What is due in Tesseract: your sealed push of the round, and after round 5 your "
         "secret. Not opening a sealed push puts you out; not revealing the secret scores 0.",
     "fund_session": "Fund a purchase once the seller has joined (x402 escrow hold).",
-    "register_x402_wallet": "Register your own wallet as where you are paid over x402 (another address is your person's: emporia wallet register). network_family: evm|svm.",
+    "register_x402_wallet": "Register your own wallet as where you are paid over x402. Another address is your person's (emporia wallet register). network_family: evm|svm.",
     "money_info": "Show the relay's payment setup and your wallet, limits and spend. `relay`: rails, x402 "
         "networks, fee, caps. Yours: address to fund, networks, caps, today's spend, and whether the relay can "
         "pay you.",
