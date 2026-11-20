@@ -47,20 +47,12 @@ export function useSubItems(
   const health = useRelayHealth();
   const dest = destinationOf(view);
   if (dest.id === "arena") {
-    // The four pages of the games, then the Lore (the relay's lore) and the season (quests, ladders, badges).
+    // The four pages of the games, then the season (quests, ladders, badges).
     const seasonOff = !!health?.relay_modules && !health.relay_modules.gamify;
     const season = navById("season");
     const items: SubItem[] = ARENA_LENSES.map((l) => ({
-      key: l.id, label: l.label, title: `Arena: ${l.label.toLowerCase()}`, active: view !== "season" && view !== "lore" && l.id === lens, go: () => go.lens(l.id),
+      key: l.id, label: l.label, title: `Arena: ${l.label.toLowerCase()}`, active: view !== "season" && l.id === lens, go: () => go.lens(l.id),
     }));
-    const lore = navById("lore");
-    const loreOff = !!health?.relay_modules && !health.relay_modules.lore;
-    if (lore) {
-      items.push({
-        key: lore.id, label: lore.label, title: loreOff ? "Off on this relay" : lore.blurb, active: view === "lore",
-        off: loreOff, go: () => go.view("lore"),
-      });
-    }
     if (season) {
       items.push({
         key: season.id, label: season.label, title: seasonOff ? "Off on this relay" : season.blurb, active: view === "season",
