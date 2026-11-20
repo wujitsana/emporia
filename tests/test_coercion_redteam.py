@@ -401,7 +401,7 @@ MONEY_CALLS = [
     ("confirm_delivery", {"session_id": "s"}),
     ("create_room", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
     ("create_agora_topic", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
-    ("register_x402_wallet", {"address": "0xabc"}),
+    ("register_x402_wallet", {}),
     ("set_cross_relay_dms", {"on": True}),
 ]
 

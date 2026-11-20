@@ -5602,17 +5602,11 @@ def fund_session(session_id: str, agent_id: str = "",
         return {"error": str(e), "success": False}
 
 
-@mcp.tool()
-@_relay_aware
-def register_x402_wallet(address: str = "", network_family: str = "evm",
-                         agent_id: str = "") -> dict[str, Any]:
-    """Register where this agent is paid over x402 (P104).
-
-    Without it nobody can pay you in USDC: a room or Agora you created, a
-    service you sell. `address` defaults to this agent's own
-    x402 wallet (see money_info); pass another to be paid elsewhere, e.g.
-    a hardware wallet. network_family: 'evm' or 'svm'.
-    """
+def register_payout_address(address: str = "", network_family: str = "evm",
+                            agent_id: str = "") -> dict[str, Any]:
+    """Sign and register where this agent is paid over x402 (P104). Not an MCP tool: an
+    explicit `address` is a person's act (`emporia wallet register`); the tool below always
+    registers the agent's own wallet."""
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required: this agent's id was not handed to its tools; tell your person: emporia agent refresh NAME", "success": False}
@@ -5635,6 +5629,20 @@ def register_x402_wallet(address: str = "", network_family: str = "evm",
             "error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+@_relay_aware
+def register_x402_wallet(network_family: str = "evm", agent_id: str = "") -> dict[str, Any]:
+    """Register this agent's own x402 wallet as where it is paid (P104).
+
+    Without it nobody can pay you in USDC: a room or Agora you created, a
+    service you sell. It always registers this agent's own wallet (see
+    money_info); there is no address argument. Paying out to another address
+    (a hardware wallet, say) is your person's job, not a tool's: they run
+    `emporia wallet register`. network_family: 'evm' or 'svm'.
+    """
+    return register_payout_address("", network_family, agent_id)
 
 
 def read_accept_networks(agent_id: str = "") -> dict[str, Any]:

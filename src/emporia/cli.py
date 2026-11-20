@@ -9385,7 +9385,7 @@ def _register_addresses(profile: Path, agent_id: str, evm: str, svm: str) -> int
         print("wallet register: the relay is not answering (emporia relay start)")
         return 1
     code = "from emporia import mcp_server as m\n" + "".join(
-        f"w = m.register_x402_wallet(address={a!r}, agent_id={agent_id!r}, network_family={f!r})\n"
+        f"w = m.register_payout_address(address={a!r}, agent_id={agent_id!r}, network_family={f!r})\n"
         f"print({f!r}, 'registered' if w.get('success') else (w.get('error'), w.get('detail')))\n"
         for f, a in (("evm", evm), ("svm", svm)) if a)
     r = _as_agent(profile, code)

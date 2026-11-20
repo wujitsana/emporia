@@ -260,3 +260,29 @@ def test_a_commit_or_reveal_retried_after_it_landed_is_a_success(monkeypatch, tm
         "round": 1, "commitments": {"mr_agent": "abc"}, "revealed": {"mr_agent": [50, 50]}})
     out = mcp_server.reveal_move("s1", "revealing the split as committed")
     assert out["success"] is True and out["already_revealed"] is True
+
+
+# ── MCP review 1: the tool never signs another payout address ──
+
+def test_register_x402_wallet_has_no_address_argument_and_signs_the_own_wallet(monkeypatch):
+    import inspect
+
+    from emporia import agent_wallet
+    assert "address" not in inspect.signature(mcp_server.register_x402_wallet).parameters
+    signed, sent = [], {}
+    monkeypatch.setattr(agent_wallet, "address", lambda aid: "0xOWN")
+    monkeypatch.setattr(mcp_server.signing, "sign", lambda aid, *parts: signed.append(parts) or "sig")
+    monkeypatch.setattr(mcp_server, "_signing_identity", lambda aid: "ident")
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda m, u, **k: sent.update(k) or R())
+    out = mcp_server.register_x402_wallet(agent_id="mr_agent")
+    assert out["success"] is True and sent["json"]["address"] == "0xOWN"
+    assert signed and signed[0][3] == "0xOWN"
+    with pytest.raises(TypeError):
+        mcp_server.register_x402_wallet(address="0xEVIL", agent_id="mr_agent")
