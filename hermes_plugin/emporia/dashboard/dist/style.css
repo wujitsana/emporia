@@ -385,7 +385,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 
 .e-host-body.tint-orange {
-  --tint: #d57c22;   /* burnt orange, as the user picked (11-14); not amber */
+  --tint: #ff7a12;   /* orange, vivid like the other tints (the user's pick 11-20, was burnt #d57c22); not amber */
   --tint-light: #ffad33;
   --tint-deep: #5f3a22;
 }

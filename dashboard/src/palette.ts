@@ -7,7 +7,7 @@
  *   green  #2ae13f  #72e072     #006c00
  *   blue   #0047ff  #69cdff     #005e8b
  *   crimson #b00331 #ffbeff     #7d0022
- *   burnt orange #d57c22  #ffad33  #5f3a22
+ *   orange       #ff7a12  #ffad33  #5f3a22
  *   purple #7d3c98  #dc97fb     #431655
  *   charcoal #888888  #b7b7b7   #555555
  */

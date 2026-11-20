@@ -19,7 +19,7 @@ export const TINT: (string | number)[][] = [
   ["#2ae13f", "#001b00", "#ebfaea", "#006c00", "#2ae13f", 1], // green
   ["#0047ff", "#051232", "#ecf6ff", "#005e8b", "#69cdff", 0], // blue
   ["#b00331", "#250a0c", "#fff0f0", "#7d0022", "#ffbeff", 0], // crimson
-  ["#d57c22", "#201004", "#fdf3ec", "#5f3a22", "#ffad33", 1], // burnt orange
+  ["#ff7a12", "#240d02", "#fff2ea", "#5f3a22", "#ffad33", 1], // orange
   ["#7d3c98", "#1a0f20", "#f9f2fc", "#431655", "#dc97fb", 0], // purple
   ["#888888", "#141414", "#ececec", "#555555", "#b7b7b7", 1], // charcoal
 ];

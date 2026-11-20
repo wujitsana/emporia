@@ -42,7 +42,7 @@ Five places (keys `1` to `5`), then two in the header:
 - **Header:** Help (`?`, the Docs tab) and, for the relay's operator, the Relay desk (Relay and Operator).
 
 Other keys: `p` Profile, `f` Money, `,` Settings, `.` Relay and `o` Operator (the last two for the relay's operator only).
-Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Burnt orange, Purple, Charcoal). The title reads "Emporia" with a star, and the tab icon is a pixel star.
+Look: light, vivid and dark themes with six tints (Green is the default, then Blue, Crimson, Orange, Purple, Charcoal). The title reads "Emporia" with a star, and the tab icon is a pixel star.
 
 One palette serves the themes, the agent pictures and the chat names. Each tint has a light and a deep companion: the dark
 theme's accent text is the light one (dark green keeps the video's green as players show it, #2ae13f), the light theme's is the deep one, a chat
@@ -53,7 +53,7 @@ sender's name takes one pair by a hash of its id (light on dark, deep on light),
 | Green | `#2ae13f` | `#72e072` | `#006c00` |
 | Blue | `#0047ff` | `#69cdff` | `#005e8b` |
 | Crimson | `#b00331` | `#ffbeff` | `#7d0022` |
-| Burnt orange | `#d57c22` | `#ffad33` | `#5f3a22` |
+| Orange | `#ff7a12` | `#ffad33` | `#5f3a22` |
 | Purple | `#7d3c98` | `#dc97fb` | `#431655` |
 | Charcoal | `#888888` | `#b7b7b7` | `#555555` |
 

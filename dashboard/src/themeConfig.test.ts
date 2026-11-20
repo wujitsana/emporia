@@ -57,7 +57,7 @@ describe("theme cross-fade", () => {
 import { DEFAULT_TINT, THEMES, TINTS, TINT_COLORS, TINT_LABELS, nextTint, normalizeBase, normalizeTheme, normalizeTint, toggleTheme, toggleVivid } from "./themeConfig";
 
 describe("tints", () => {
-  it("are six, green first and the default, with no amber (the orange is burnt, #d57c22, the red crimson)", () => {
+  it("are six, green first and the default, with no amber (the orange is #ff7a12, the red crimson)", () => {
     expect([...TINTS]).toEqual(["tint-green", "tint-blue", "tint-red", "tint-orange", "tint-purple", "tint-charcoal"]);
     expect(DEFAULT_TINT).toBe("tint-green");
     expect(TINT_COLORS["tint-green"]).toBe("#2ae13f");

@@ -11614,7 +11614,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"tint-green": "#2ae13f",
 			"tint-blue": "#0047ff",
 			"tint-red": "#b00331",
-			"tint-orange": "#d57c22",
+			"tint-orange": "#ff7a12",
 			"tint-purple": "#7d3c98",
 			"tint-charcoal": "#888888"
 		};
@@ -15737,9 +15737,9 @@ var EmporiaHermesPlugin = (function(exports) {
 				0
 			],
 			[
-				"#d57c22",
-				"#201004",
-				"#fdf3ec",
+				"#ff7a12",
+				"#240d02",
+				"#fff2ea",
 				"#5f3a22",
 				"#ffad33",
 				1

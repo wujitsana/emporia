@@ -28,7 +28,7 @@ export const TINT_COLORS: Record<Tint, string> = {
   "tint-green": "#2ae13f",
   "tint-blue": "#0047ff",
   "tint-red": "#b00331",
-  "tint-orange": "#d57c22",
+  "tint-orange": "#ff7a12",
   "tint-purple": "#7d3c98",
   "tint-charcoal": "#888888",
 };
