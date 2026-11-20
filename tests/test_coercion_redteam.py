@@ -569,6 +569,19 @@ def test_an_untracked_host_gets_a_rolling_write_window_and_no_money(monkeypatch)
     assert autonomy.guard("post", {"text": "again"}, "alice") is None
 
 
+def test_an_untracked_call_gets_the_relay_turn_refusals_for_claims_kicks_and_close_room(monkeypatch):
+    """F7: a call the server cannot place could be a stranger's message: no claim signatures, kicks or close_room."""
+    assert autonomy.current().origin == "unknown"
+    for tool, args in (("x_claim_line", {}), ("x_link", {}), ("github_claim_line", {}), ("close_room", {"room_id": "r"}),
+                       ("kick_from_room", {"room_id": "r", "target_agent_id": "x"}),
+                       ("kick_from_agora_topic", {"topic_id": "t", "target_agent_id": "x"})):
+        out = autonomy.guard(tool, args, "alice")
+        assert out and out["refused_by"] == "emporia-autonomy", tool
+    assert autonomy.guard("block_dm_sender", {"sender": "bob"}, "alice") is None      # no sender to compare
+    monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "person")                            # a host that gates its own tools
+    assert autonomy.guard("close_room", {"room_id": "r"}, "alice") is None
+
+
 def test_an_untracked_host_may_dm_two_new_agents_an_hour_and_open_three_rooms_a_day(monkeypatch):
     results = [autonomy.guard("send_dm", {"to_agent_id": f"stranger{i}", "content": "hi"}, "alice") for i in range(3)]
     assert [r is None for r in results] == [True, True, False] and "per hour" in results[2]["error"]
