@@ -14,7 +14,9 @@ from tests.test_erc8004_register import STABLE, card
 
 target, fake = _reg.target, _reg.fake      # the registration tests' fixtures
 
-VECTORS = json.loads((pathlib.Path(__file__).parent / "fixtures" / "avatar_vectors.json").read_text())["vectors"]
+_FIXTURE = json.loads((pathlib.Path(__file__).parent / "fixtures" / "avatar_vectors.json").read_text())
+VECTORS = _FIXTURE["vectors"]
+ROOMS_MARKS = _FIXTURE["rooms_marks"]      # one Rooms picture per floor mark, so every mark is held to both ports
 
 
 def sha(s):
@@ -28,6 +30,14 @@ def test_there_are_64_vectors():
 @pytest.mark.parametrize("v", VECTORS, ids=[v["id"][:8] for v in VECTORS])
 def test_the_picture_matches_the_shared_vectors(v):
     assert sha(avatars.token_avatar(v["id"])) == v["token"]
+
+
+def test_every_rooms_floor_mark_has_a_vector_and_matches_it():
+    assert sorted(v["mark"] for v in ROOMS_MARKS) == list(range(12))
+    for v in ROOMS_MARKS:
+        b = bytes.fromhex(v["id"])
+        assert b[31] % 8 in (0, 2, 5) and b[9] % 12 == v["mark"]
+        assert sha(avatars.token_avatar(v["id"])) == v["token"]
 
 
 def test_a_picture_is_plain_flat_svg():

@@ -41,7 +41,8 @@ export function ThemePanelBody({
         aria-checked={vivid}
         className="e-switch e-theme-duo__btn"
         data-on={vivid ? "true" : "false"}
-        style={{ color: tintColor, background: vivid ? tintColor : "transparent" }}
+        // On vivid the page is the tint, so the track's outline is the ink there (a tint outline would vanish).
+        style={{ color: vivid ? inkColor : tintColor, background: vivid ? tintColor : "transparent" }}
         onClick={() => onTheme(toggleVivid(theme, last))}
         title={vivid ? `vivid on (click for ${last === "theme-dark" ? "dark" : "light"})` : "vivid off (click for vivid)"}
         aria-label={vivid ? `Vivid: on, switch to ${last === "theme-dark" ? "dark" : "light"}` : "Vivid: off, switch on"}

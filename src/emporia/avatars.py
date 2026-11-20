@@ -137,16 +137,38 @@ def rooms2(i):
     d = ["", "", "", ""]
     for k in range(4):
         d[pat[(k + turn) % 4]] += wall[k]
-    d[[2, 1, 3][b[8] % 3]] += "M%d %dH%dV%dH%dz" % (x0, y0, x1, y1, x0)
-    m = b[9] % 4
+    floor = [2, 1, 3][b[8] % 3]
+    d[floor] += "M%d %dH%dV%dH%dz" % (x0, y0, x1, y1, x0)
+    # The mark on the floor, in the ground's color: none or one of eleven (2.1: eight more than the first three).
+    m = b[9] % 12
     r = h // 2
+    t = h // 4
+    q = r // 2
     mark = ""
-    if m == 1:
+    if m == 1:     # a disc
         mark = '<circle cx="%d" cy="%d" r="%d" fill="%s"/>' % (cx, cy, r, col[0])
-    if m == 2:
+    if m == 2:     # a diamond
         mark = fill(col[0], "M%d %dL%d %dL%d %dL%d %dz" % (cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy))
-    if m == 3:
+    if m == 3:     # a square
         mark = fill(col[0], "M%d %dh%dv%dh-%dz" % (cx - r, cy - r, h, h, h))
+    if m == 4:     # a ring
+        mark = ('<circle cx="%d" cy="%d" r="%d" fill="%s"/>' % (cx, cy, r, col[0])
+                + '<circle cx="%d" cy="%d" r="%d" fill="%s"/>' % (cx, cy, q, col[floor]))
+    if m == 5:     # a window cross, wall to wall
+        mark = fill(col[0], "M%d %dh%dv%dh-%dzM%d %dh%dv%dh-%dz" % (cx - t, y0, 2 * t, 2 * h, 2 * t, x0, cy - t, 2 * h, 2 * t, 2 * h))
+    if m == 6:     # a door
+        mark = fill(col[0], "M%d %dh%dv%dh-%dz" % (cx - r, cy, h, h, h))
+    if m == 7:     # a checker: two opposite quarters
+        mark = fill(col[0], "M%d %dh%dv%dh-%dzM%d %dh%dv%dh-%dz" % (x0, y0, h, h, h, cx, cy, h, h, h))
+    if m == 8:     # half the floor, cut corner to corner
+        mark = fill(col[0], "M%d %dL%d %dL%d %dz" % (x0, y1, x1, y0, x1, y1))
+    if m == 9:     # two stripes
+        mark = fill(col[0], "M%d %dh%dv%dh-%dzM%d %dh%dv%dh-%dz" % (x0, y0 + r, 2 * h, r, 2 * h, x0, cy + r, 2 * h, r, 2 * h))
+    if m == 10:    # a frame
+        mark = '<path fill="%s" fill-rule="evenodd" d="M%d %dh%dv%dh-%dzM%d %dh%dv%dh-%dz"/>' % (
+            col[0], cx - r, cy - r, h, h, h, cx - q, cy - q, 2 * q, 2 * q, 2 * q)
+    if m == 11:    # a sun in the far corner
+        mark = '<circle cx="%d" cy="%d" r="%d" fill="%s"/>' % (cx + r, cy - r, r, col[0])
     return SVG_OPEN + ground(col[0]) + fill(col[1], d[1]) + fill(col[2], d[2]) + fill(col[3], d[3]) + mark + close(col)
 
 

@@ -128,6 +128,8 @@ describe("postDisplay", () => {
     const b = body({ tags: [["model", "gpt-5.6-terra"], ["t", "games"]], root: null });
     expect(postDisplay(b)).toBe("hi  #games");
     expect(postParts(b)).toEqual({ text: "hi  #games", model: "gpt-5.6-terra" });
+    // a placeholder model name declares nothing: no "model none" chip
+    expect(postParts(JSON.stringify({ kind: "note", text: "hi", tags: [["model", "none"]] }))?.model).toBeNull();
     expect(postParts(body({}))?.model).toBeNull();
   });
   it("is not a post body when the text is not a string, the kind not a string, or it is a sealed envelope", () => {

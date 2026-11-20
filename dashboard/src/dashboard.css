@@ -1051,13 +1051,14 @@ body.theme-light {
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 /* On vivid the page is the tint itself, so the accent circle would vanish into it: ring it in the text color. */
 .theme-vivid .e-theme-circle--accent { box-shadow: inset 0 0 0 2px var(--theme-text); }
-/* The vivid switch: track filled with the tint when on, outlined in it when off (colors set inline); the knob slides. */
+/* The vivid switch, square like the header's boxes: track filled with the tint when on (outlined in the ink, as the
+   page is the tint), outlined in the tint when off (colors set inline); the knob slides. */
 .e-switch {
   position: relative; width: 28px; height: 16px; padding: 0; flex-shrink: 0; cursor: pointer;
-  border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit;
+  border: 1px solid currentColor; border-radius: 0; background: transparent; color: inherit;
 }
 .e-switch__knob {
-  position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%;
+  position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 0;
   background: currentColor; transition: transform 0.12s ease;
 }
 .e-switch[data-on="true"] .e-switch__knob { transform: translateX(12px); }
@@ -2813,7 +2814,11 @@ body.e-look.theme-vivid.tint-green { --anim-fill: #26cd39; --anim-ink: #001b00; 
 /* Dark cards and hover rows are the deep panel (the video's #0b2a0b in green), not a mix of the tint over the canvas. */
 .e-look.theme-dark .e-dashboard-shell { --anim-wash: var(--e-panel); }
 /* The hover / selected wash in vivid is the panel color: text on it clears 4.5:1 in every tint. */
-.e-look.theme-vivid .e-dashboard-shell { --anim-wash: var(--theme-background-modal); }
+/* Vivid: the hover / selected wash is the ink at 12 % over the page (the panel is the page itself on green and one small
+   step off it elsewhere, so a panel wash barely showed). Mirrored in badges/tokens.ts (WASH.vivid). */
+.e-look.theme-vivid .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--theme-text) 12%, transparent); }
+/* Charcoal's ink is too close to a darkened gray (4.3:1): its wash goes lighter instead, like its panel. */
+.e-look.theme-vivid.tint-charcoal .e-dashboard-shell { --anim-wash: color-mix(in srgb, white 30%, transparent); }
 
 /* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
    Four L-shaped corners drawn as background images, so no element and no
@@ -3136,6 +3141,14 @@ body.e-look.theme-vivid.tint-green { --anim-fill: #26cd39; --anim-ink: #001b00; 
 .e-look .e-chat-line__name { color: var(--e-sender-deep, var(--theme-text)); }
 body.e-look.theme-dark .e-chat-line__name { color: var(--e-sender-light, var(--theme-text)); }
 body.e-look.theme-vivid .e-chat-line__name { color: var(--theme-text); }
+/* A chat in the card style of Home (rooms, messages, table talk): each message a card on the card background, space
+   between them, the name as a card byline, room above the words. */
+.e-look .e-chat-messages { gap: 12px; padding: 14px 16px; }
+.e-look .e-chat-line { gap: 10px; padding: 10px 12px; background-color: color-mix(in srgb, var(--theme-text) 4%, transparent); }
+.e-look.theme-dark .e-chat-line { background-color: var(--e-panel); }
+.e-look .e-chat-line__meta { gap: 8px; margin-bottom: 6px; }
+.e-look .e-chat-line__name { font-size: 0.76rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.e-look .e-chat-line .e-quiet-chip { border-radius: 0; }
 .e-look .e-entity-chip--agent,
 .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }
 

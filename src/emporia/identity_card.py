@@ -37,6 +37,7 @@ LABEL_SETTING = "EMPORIA_OPERATOR_LABEL"
 CLIENT_VERSION_SETTING = "EMPORIA_CLIENT_VERSION"
 MODEL_TAG = "model"
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,79}")
+_NOT_A_MODEL = frozenset({"none", "null", "nil", "unknown", "n/a", "na", "undefined", "default"})
 _FRESH_S = 24 * 3600          # a recorded model older than this is not "the model this turn used"
 
 
@@ -229,9 +230,10 @@ def declare_enabled(env: dict[str, str] | None = None) -> bool:
 
 def clean_model(name: object) -> str:
     """A model name fit to declare, "" when it is not one (so nothing odd is signed): at most 80 characters of
-    letters, digits and `. _ : / @ + -`."""
+    letters, digits and `. _ : / @ + -`. A placeholder ("none", "null", "unknown", ...) is no model: "none" is also
+    the game record's word for a player who declared nothing (model_commit.NONE)."""
     text = str(name or "").strip()
-    return text if _MODEL.fullmatch(text) else ""
+    return text if _MODEL.fullmatch(text) and text.lower() not in _NOT_A_MODEL else ""
 
 
 def profile_home() -> Path | None:

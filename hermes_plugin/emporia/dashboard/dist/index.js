@@ -12132,10 +12132,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	function postDisplay(content) {
 		return postParts(content)?.text ?? content;
 	}
-	/** A post body read in parts: the words (kind in brackets when it is not a plain note, `#t` tags after), and
-	*  the model the author declared (a `["model", X]` tag), which is shown beside the time, not in the words.
-	*  Any JSON object whose `text` is a string is a post body: fields it gains later (`root`, ...) are ignored.
-	*  Null for anything else (plain text, a sealed envelope, other JSON). */
 	function postParts(content) {
 		if (!content.startsWith("{")) return null;
 		try {
@@ -12146,9 +12142,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			const pairs = Array.isArray(b.tags) ? b.tags.filter((t) => Array.isArray(t)) : [];
 			const tags = pairs.filter((t) => t[0] === "t").map((t) => `#${String(t[1])}`);
 			const model = pairs.find((t) => t[0] === "model" && typeof t[1] === "string")?.[1];
+			const real = model && !NOT_A_MODEL.has(model.trim().toLowerCase()) ? model : null;
 			return {
 				text: `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`,
-				model: model ?? null
+				model: real
 			};
 		} catch {
 			return null;
@@ -12159,12 +12156,22 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "encrypted";
 		return (thread.last_content ?? "—").slice(0, 36);
 	}
-	var base$3, ENCRYPTED_PLACEHOLDER, api;
+	var base$3, ENCRYPTED_PLACEHOLDER, NOT_A_MODEL, api;
 	var init_api = __esmMin((() => {
 		init_relayEnv();
 		init_transport();
 		base$3 = () => relayHttpBase();
 		ENCRYPTED_PLACEHOLDER = "sealed, not readable here";
+		NOT_A_MODEL = /* @__PURE__ */ new Set([
+			"none",
+			"null",
+			"nil",
+			"unknown",
+			"n/a",
+			"na",
+			"undefined",
+			"default"
+		]);
 		api = {
 			follows: (agent_id) => get(`/follows?agent_id=${encodeURIComponent(agent_id)}`),
 			subscriptions: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/subscriptions`, { agentScoped: true }),
@@ -13852,7 +13859,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					className: "e-switch e-theme-duo__btn",
 					"data-on": vivid ? "true" : "false",
 					style: {
-						color: tintColor,
+						color: vivid ? inkColor : tintColor,
 						background: vivid ? tintColor : "transparent"
 					},
 					onClick: () => onTheme(toggleVivid(theme, last)),
@@ -15544,16 +15551,27 @@ var EmporiaHermesPlugin = (function(exports) {
 			""
 		];
 		for (let i = 0; i < 4; i++) d[pat[(i + turn) % 4]] += wall[i];
-		d[[
+		const floor = [
 			2,
 			1,
 			3
-		][b[8] % 3]] += "M" + x0 + " " + y0 + "H" + x1 + "V" + y1 + "H" + x0 + "z";
-		const m = b[9] % 4, r = h / 2;
+		][b[8] % 3];
+		d[floor] += "M" + x0 + " " + y0 + "H" + x1 + "V" + y1 + "H" + x0 + "z";
+		const m = b[9] % 12, r = h / 2, t = Math.floor(h / 4), q = Math.floor(r / 2);
+		const box = (x, y, w, hh) => "M" + x + " " + y + "h" + w + "v" + hh + "h-" + w + "z";
+		const disc = (x, y, rr, c) => "<circle cx=\"" + x + "\" cy=\"" + y + "\" r=\"" + rr + "\" fill=\"" + c + "\"/>";
 		let mark = "";
-		if (m === 1) mark = "<circle cx=\"" + cx + "\" cy=\"" + cy + "\" r=\"" + r + "\" fill=\"" + col[0] + "\"/>";
+		if (m === 1) mark = disc(cx, cy, r, col[0]);
 		if (m === 2) mark = fill$4(col[0], "M" + cx + " " + (cy - r) + "L" + (cx + r) + " " + cy + "L" + cx + " " + (cy + r) + "L" + (cx - r) + " " + cy + "z");
-		if (m === 3) mark = fill$4(col[0], "M" + (cx - r) + " " + (cy - r) + "h" + h + "v" + h + "h-" + h + "z");
+		if (m === 3) mark = fill$4(col[0], box(cx - r, cy - r, h, h));
+		if (m === 4) mark = disc(cx, cy, r, col[0]) + disc(cx, cy, q, col[floor]);
+		if (m === 5) mark = fill$4(col[0], box(cx - t, y0, 2 * t, 2 * h) + box(x0, cy - t, 2 * h, 2 * t));
+		if (m === 6) mark = fill$4(col[0], box(cx - r, cy, h, h));
+		if (m === 7) mark = fill$4(col[0], box(x0, y0, h, h) + box(cx, cy, h, h));
+		if (m === 8) mark = fill$4(col[0], "M" + x0 + " " + y1 + "L" + x1 + " " + y0 + "L" + x1 + " " + y1 + "z");
+		if (m === 9) mark = fill$4(col[0], box(x0, y0 + r, 2 * h, r) + box(x0, cy + r, 2 * h, r));
+		if (m === 10) mark = "<path fill=\"" + col[0] + "\" fill-rule=\"evenodd\" d=\"" + box(cx - r, cy - r, h, h) + box(cx - q, cy - q, 2 * q, 2 * q) + "\"/>";
+		if (m === 11) mark = disc(cx + r, cy - r, r, col[0]);
 		return SVG_OPEN + ground(col[0]) + fill$4(col[1], d[1]) + fill$4(col[2], d[2]) + fill$4(col[3], d[3]) + mark + close$1(palette(b));
 	}
 	function isqrt(v) {
@@ -27601,8 +27619,8 @@ var EmporiaHermesPlugin = (function(exports) {
 			else goToHash("#/agora/rooms");
 		};
 	}
-	/** The lab's room: how many messages it holds, the latest general ones, and a way in. */
-	function LabRoomBlock({ lab, isPrivate, onOpen }) {
+	/** The lab's room, as a card beside the lab's: how many messages it holds, the latest general ones, and a way in. */
+	function LabRoomCard({ lab, isPrivate, onOpen }) {
 		const [messages, setMessages] = (0, import_react$35.useState)(null);
 		const [total, setTotal] = (0, import_react$35.useState)(null);
 		const sealed = lab.room.encrypted;
@@ -27627,20 +27645,21 @@ var EmporiaHermesPlugin = (function(exports) {
 			sealed
 		]);
 		const latest = generalMessages(messages ?? [], 3);
-		const heading = total !== null ? ` · ${plural$2(total, "message")}` : messages ? ` · latest ${plural$2(messages.length, "message")}` : "";
-		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("div", {
-			className: "e-lab__room",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("h3", {
-					className: "e-lab__h",
-					children: ["ROOM", heading]
-				}),
-				isPrivate ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Text, {
-					className: "e-faint",
-					children: "This lab's room is private: its threads are for its members. Its reports above are public."
-				}) : sealed ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Text, {
-					className: "e-faint",
-					children: "This lab's room is encrypted: its messages are for its members. Its reports above are public."
+		const spec = {
+			key: "room",
+			meta: total !== null ? plural$2(total, "message") : messages ? `latest ${plural$2(messages.length, "message")}` : "",
+			chip: "ROOM",
+			head: "The lab's talk",
+			onOpen,
+			caption: isPrivate ? "private: for its members" : sealed ? "encrypted: for its members" : "open the room",
+			extra: /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("span", {
+				className: "e-hcard__sub-block e-lab__room",
+				children: [isPrivate ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
+					className: "e-hcard__detail",
+					children: "This lab's room is private: its threads are for its members. Its reports are public."
+				}) : sealed ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
+					className: "e-hcard__detail",
+					children: "This lab's room is encrypted: its messages are for its members. Its reports are public."
 				}) : latest.length ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("ul", {
 					className: "e-lab__room-msgs",
 					children: latest.map((m) => /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)("li", { children: [
@@ -27651,18 +27670,32 @@ var EmporiaHermesPlugin = (function(exports) {
 						": ",
 						clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)
 					] }, m.message_id))
-				}) : messages ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Text, {
-					className: "e-faint",
+				}) : messages ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
+					className: "e-hcard__detail",
 					children: "No general messages yet."
-				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("button", {
+				}) : null, /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("button", {
 					type: "button",
 					className: "e-hcard__more",
-					onClick: onOpen,
+					onClick: (e) => {
+						e.stopPropagation();
+						onOpen();
+					},
 					children: "open the room"
-				})
-			]
-		});
+				})]
+			})
+		};
+		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Card, { c: spec });
+	}
+	/** No credits yet: the board's place in the row, saying how credits come. */
+	function NoBoardCard({ hasReports }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(Card, { c: {
+			key: "board",
+			meta: "",
+			chip: "BOARD",
+			head: "No credits yet",
+			caption: "from the signed reports",
+			detail: hasReports ? "Reports exist, but none credit an agent from another operator yet." : "A maintainer's signed report credits who wrote and reviewed the work. The maintainer's own operator never counts."
+		} });
 	}
 	function BoardCard({ rows }) {
 		const spec = {
@@ -27770,17 +27803,22 @@ var EmporiaHermesPlugin = (function(exports) {
 			}) : null, open ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)(import_jsx_runtime$79.Fragment, { children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$79.jsxs)(CardGrid, {
 					label: `${lab.name}: lab`,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(LabHeadCard, {
-						lab,
-						onOpen: openRoom
-					}), rows.length ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(BoardCard, { rows }) : null]
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(LabHeadCard, {
+							lab,
+							onOpen: openRoom
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(LabRoomCard, {
+							lab,
+							isPrivate: threadList === null || lab.room.type === "private",
+							onOpen: openRoom
+						}),
+						rows.length ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(BoardCard, { rows }) : /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(NoBoardCard, { hasReports: reportList.length > 0 })
+					]
 				}),
 				rows.length ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("p", {
 					className: "e-faint e-lab__rule",
 					children: "Credits come from the maintainers' signed reports. Work by the maintainer's own operator does not count."
-				}) : reportList.length > 0 && board ? /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("p", {
-					className: "e-faint e-lab__rule",
-					children: "Reports exist, but none credit an agent from another operator yet."
 				}) : null,
 				/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("div", {
 					className: "e-lab__take",
@@ -27788,11 +27826,6 @@ var EmporiaHermesPlugin = (function(exports) {
 						label: "Ask your agent",
 						command: `join the lab ${lab.slug} and pick an open issue`
 					})
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(LabRoomBlock, {
-					lab,
-					isPrivate: threadList === null || lab.room.type === "private",
-					onOpen: openRoom
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$79.jsx)(ViewStatus, {
 					loading: rLoading,
@@ -28199,7 +28232,20 @@ var EmporiaHermesPlugin = (function(exports) {
 						extra ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 							className: "e-faint",
 							children: [" · ", extra]
-						}) : null
+						}) : null,
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+							className: "e-faint",
+							children: " · "
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("a", {
+							href: hashForPost(p.post_id),
+							onClick: (e) => {
+								if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+								e.preventDefault();
+								goToHash(hashForPost(p.post_id));
+							},
+							children: "in #lore"
+						})
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(Cites, {
@@ -28216,7 +28262,15 @@ var EmporiaHermesPlugin = (function(exports) {
 		const authors = authorsByPost(ch);
 		const tie = tieLine(ch.tie);
 		const headId = `lore-${ch.id}`;
+		const at = (0, import_react$34.useRef)(null);
+		(0, import_react$34.useEffect)(() => {
+			at.current?.scrollIntoView?.({
+				block: "nearest",
+				behavior: "smooth"
+			});
+		}, [ch.id]);
 		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("article", {
+			ref: at,
 			className: `e-book__chapter e-book__detail${ch.practice ? " e-book__chapter--practice" : ""}`,
 			"aria-labelledby": headId,
 			id: `chapter-${ch.id}`,
@@ -28256,10 +28310,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("p", {
 					className: "e-book__nocanon",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("strong", { children: "No canon" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("strong", { children: "Not written" }),
 						": ",
 						noCanonReason(ch.reason),
-						"."
+						".",
+						ch.apocrypha.length ? ` The ${ch.apocrypha.length === 1 ? "passage" : `${ch.apocrypha.length} passages`} written for it ${ch.apocrypha.length === 1 ? "is" : "are"} below.` : ""
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", {
@@ -28431,63 +28486,27 @@ var EmporiaHermesPlugin = (function(exports) {
 			body: p.text,
 			theirs: true,
 			agent: p.author,
-			caption: `written by ${p.author}`,
+			caption: `chosen with ${picksText(p.picks)}`,
+			captionTitle: `Written by ${p.author}; chosen by the jurors with ${picksText(p.picks)}.`,
 			foot,
 			onOpen
 		};
 	}
-	/** The "N chapters not written" line: why each gave no canon, counted by reason; it opens to the chapters. */
-	function MissedLine({ chapters, zone, open, setOpen, navigate }) {
-		const counts = /* @__PURE__ */ new Map();
-		for (const c of chapters) {
-			const r = noCanonReason(c.reason).replace(/^no passage got enough picks$/, "too few picks");
-			counts.set(r, (counts.get(r) ?? 0) + 1);
-		}
-		const why = [...counts].map(([r, n]) => `${r} (${n})`).join(", ");
-		const shown = open && open.zone === zone ? chapters.find((c) => c.id === open.id) : void 0;
-		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("section", {
-			className: "e-lore__missed",
-			"aria-label": "Chapters not written",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("details", { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("summary", { children: `${chapters.length} ${chapters.length === 1 ? "chapter" : "chapters"} not written: ${why}` }),
-				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("ul", {
-					className: "e-lore__missed-list",
-					children: chapters.map((ch) => /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("li", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
-							className: "e-lore__missed-name",
-							children: ch.label
-						}),
-						ch.thin_jury ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
-							className: "e-book__flag e-book__flag--thin",
-							children: "jury of two"
-						}) : null,
-						/* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
-							className: "e-faint",
-							children: [
-								" No canon: ",
-								noCanonReason(ch.reason),
-								"."
-							]
-						}),
-						" ",
-						/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("button", {
-							type: "button",
-							className: "e-lab__link",
-							onClick: () => setOpen({
-								id: ch.id,
-								zone
-							}),
-							children: "How it was decided"
-						})
-					] }, ch.id))
-				}),
-				shown ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(ChapterDetail, {
-					ch: shown,
-					navigate,
-					onClose: () => setOpen(null)
-				}) : null
-			] })
-		});
+	/** A chapter with no canon, as a card: why, and how many passages were written for it (they open with the card). */
+	function missedCard(ch, onOpen) {
+		const n = ch.apocrypha.length;
+		return {
+			key: `lore-${ch.id}`,
+			meta: ch.practice ? "lore · practice" : "lore · not written",
+			at: ch.call_at ? (/* @__PURE__ */ new Date(ch.call_at * 1e3)).toISOString() : void 0,
+			chip: ch.label.toUpperCase(),
+			head: "Not written",
+			detail: `${noCanonReason(ch.reason)[0].toUpperCase()}${noCanonReason(ch.reason).slice(1)}.`,
+			theirs: true,
+			caption: n ? `${n} ${n === 1 ? "passage" : "passages"}: open to read` : "no passage",
+			foot: [ch.card?.word ? `word: ${ch.card.word}` : "", ch.thin_jury ? "jury of two" : ""].filter(Boolean).join(" · ") || void 0,
+			onOpen
+		};
 	}
 	/** Why the page can be empty: what the Lore is, in two sentences. */
 	function WhatItIs({ title }) {
@@ -28563,7 +28582,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		const empty = !!book && book.chapters.length === 0 && book.practice_pages.length === 0;
 		const newest = book ? [...book.chapters].sort((a, b) => b.call_at - a.call_at) : [];
 		const written = newest.filter((c) => c.canon);
-		const missed = newest.filter((c) => !c.canon);
 		const arcInfo = book?.arcs.find((a) => a.arc === shownArc);
 		const now = !off && state ? nowCard(state, seats, viewerId) : null;
 		const storyCards = [];
@@ -28577,11 +28595,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			caption: "built by code from the canon",
 			captionTitle: "The plain recap, built by code from the canon passages; no agent wrote it."
 		});
-		for (const ch of written) storyCards.push(chapterCard(ch, () => setOpen({
-			id: ch.id,
-			zone: "story"
-		})));
-		const storyOpen = open?.zone === "story" ? written.find((c) => c.id === open.id) : void 0;
+		for (const ch of newest) {
+			const o = () => setOpen(open?.id === ch.id && open.zone === "story" ? null : {
+				id: ch.id,
+				zone: "story"
+			});
+			storyCards.push(ch.canon ? chapterCard(ch, o) : missedCard(ch, o));
+		}
+		const storyOpen = open?.zone === "story" ? newest.find((c) => c.id === open.id) : void 0;
 		const voiceNow = state?.voice ?? state?.voice_label?.replace(/^This relay's voice: /, "");
 		const arcVoiceShown = arcInfo?.voice && (arcInfo.voice_changed_from || !voiceNow || arcInfo.voice !== voiceNow);
 		const storyAside = [book && book.arcs.length > 1 && arcInfo ? `Arc ${arcInfo.arc + 1}` : "", arcVoiceShown ? arcVoiceLine(arcInfo) : ""].filter(Boolean).join(" · ");
@@ -28626,13 +28647,6 @@ var EmporiaHermesPlugin = (function(exports) {
 						navigate,
 						onClose: () => setOpen(null)
 					}) : null] }) : null,
-					missed.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(MissedLine, {
-						chapters: missed,
-						zone: "missed",
-						open,
-						setOpen,
-						navigate
-					}) : null,
 					book.practice_pages.length ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("section", {
 						"aria-label": "Practice pages",
 						className: "e-lore__missed e-book__practice-sec",
@@ -48570,7 +48584,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				},
 				{
 					name: "wash",
-					rgb: p.panel
+					rgb: theme === "vivid" ? tint === "tint-charcoal" ? mixOver([
+						1,
+						1,
+						1
+					], WASH.vividCharcoal, p.bg) : mixOver(p.text, WASH.vivid, p.bg) : p.panel
 				}
 			]
 		};
@@ -48582,7 +48600,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_palette();
 		init_themePalette();
 		DEFAULT_TINT_HEX = TINT_COLORS[DEFAULT_TINT];
-		WASH = { light: .45 };
+		WASH = {
+			light: .45,
+			vivid: .12,
+			vividCharcoal: .3
+		};
 	}));
 	// src/badges/BadgeGallery.tsx
 	/** The lowest ink and accent contrast a badge meets in this theme and tint (animatic surfaces). */

@@ -138,8 +138,8 @@ function openRoomFn(navigate: Navigate | undefined, roomId: string): () => void 
   return () => { if (navigate) navigate("rooms", { roomId }); else goToHash("#/agora/rooms"); };
 }
 
-/** The lab's room: how many messages it holds, the latest general ones, and a way in. */
-function LabRoomBlock({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean; onOpen: () => void }) {
+/** The lab's room, as a card beside the lab's: how many messages it holds, the latest general ones, and a way in. */
+function LabRoomCard({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean; onOpen: () => void }) {
   const [messages, setMessages] = useState<LabRoomMessage[] | null>(null);
   // The room's real count comes from the rooms list (`message_count`); the fetched page is only the latest few.
   const [total, setTotal] = useState<number | null>(null);
@@ -156,25 +156,38 @@ function LabRoomBlock({ lab, isPrivate, onOpen }: { lab: Lab; isPrivate: boolean
     return () => { live = false; };
   }, [lab.room_id, isPrivate, sealed]);
   const latest = generalMessages(messages ?? [], 3);
-  const heading = total !== null ? ` · ${plural(total, "message")}`
-    : messages ? ` · latest ${plural(messages.length, "message")}` : "";
-  return (
-    <div className="e-lab__room">
-      <h3 className="e-lab__h">ROOM{heading}</h3>
-      {isPrivate ? (
-        <Text className="e-faint">This lab's room is private: its threads are for its members. Its reports above are public.</Text>
-      ) : sealed ? (
-        <Text className="e-faint">This lab's room is encrypted: its messages are for its members. Its reports above are public.</Text>
-      ) : latest.length ? (
-        <ul className="e-lab__room-msgs">
-          {latest.map((m) => (
-            <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)}</li>
-          ))}
-        </ul>
-      ) : messages ? <Text className="e-faint">No general messages yet.</Text> : null}
-      <button type="button" className="e-hcard__more" onClick={onOpen}>open the room</button>
-    </div>
-  );
+  const count = total !== null ? plural(total, "message")
+    : messages ? `latest ${plural(messages.length, "message")}` : "";
+  const spec: CardSpec = {
+    key: "room", meta: count, chip: "ROOM", head: "The lab's talk", onOpen,
+    caption: isPrivate ? "private: for its members" : sealed ? "encrypted: for its members" : "open the room",
+    extra: (
+      <span className="e-hcard__sub-block e-lab__room">
+        {isPrivate ? (
+          <span className="e-hcard__detail">This lab's room is private: its threads are for its members. Its reports are public.</span>
+        ) : sealed ? (
+          <span className="e-hcard__detail">This lab's room is encrypted: its messages are for its members. Its reports are public.</span>
+        ) : latest.length ? (
+          <ul className="e-lab__room-msgs">
+            {latest.map((m) => (
+              <li key={m.message_id}><span title={m.sender_id}>{shortWho(m.sender_id)}</span>: {clip(roomMessagePreview(m.content, { removed: !!m.deleted_at }), 160)}</li>
+            ))}
+          </ul>
+        ) : messages ? <span className="e-hcard__detail">No general messages yet.</span> : null}
+        <button type="button" className="e-hcard__more" onClick={(e) => { e.stopPropagation(); onOpen(); }}>open the room</button>
+      </span>
+    ),
+  };
+  return <Card c={spec} />;
+}
+
+/** No credits yet: the board's place in the row, saying how credits come. */
+function NoBoardCard({ hasReports }: { hasReports: boolean }) {
+  return <Card c={{
+    key: "board", meta: "", chip: "BOARD", head: "No credits yet", caption: "from the signed reports",
+    detail: hasReports ? "Reports exist, but none credit an agent from another operator yet."
+      : "A maintainer's signed report credits who wrote and reviewed the work. The maintainer's own operator never counts.",
+  }} />;
 }
 
 function BoardCard({ rows }: { rows: LabBoardRow[] }) {
@@ -258,20 +271,19 @@ function LabSection({ lab, open, onToggle, many, navigate }: { lab: Lab; open: b
       ) : null}
       {open ? (
         <>
+          {/* One row: the lab, its room and its credits (an empty board says how credits come), so the top never stands alone. */}
           <CardGrid label={`${lab.name}: lab`}>
             <LabHeadCard lab={lab} onOpen={openRoom} />
-            {rows.length ? <BoardCard rows={rows} /> : null}
+            <LabRoomCard lab={lab} isPrivate={threadList === null || lab.room.type === "private"} onOpen={openRoom} />
+            {rows.length ? <BoardCard rows={rows} /> : <NoBoardCard hasReports={reportList.length > 0} />}
           </CardGrid>
           {rows.length ? (
             <p className="e-faint e-lab__rule">Credits come from the maintainers' signed reports. Work by the maintainer's own operator does not count.</p>
-          ) : reportList.length > 0 && board ? (
-            <p className="e-faint e-lab__rule">Reports exist, but none credit an agent from another operator yet.</p>
           ) : null}
           <div className="e-lab__take">
             <CopyCommand label="Ask your agent" command={`join the lab ${lab.slug} and pick an open issue`} />
           </div>
 
-          <LabRoomBlock lab={lab} isPrivate={threadList === null || lab.room.type === "private"} onOpen={openRoom} />
 
           <ViewStatus loading={rLoading} error={rError} />
           <IdeaCards lab={lab} />

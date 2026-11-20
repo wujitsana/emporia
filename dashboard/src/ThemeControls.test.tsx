@@ -72,6 +72,9 @@ describe("the theme control", () => {
     expect(on.getAttribute("aria-checked")).toBe("true");
     expect(on.style.background).not.toBe("transparent");
     const knobOn = on.querySelector(".e-switch__knob") as HTMLElement;
+    // on vivid the page is the tint: the outline (currentColor) is the ink, the same color as the knob
+    expect(on.style.color).toBe(knobOn.style.background);
+    expect(on.style.color).not.toBe(on.style.background);
     cleanup();
     setup("theme-light", "theme-light", "tint-green");
     const off = screen.getByRole("switch");

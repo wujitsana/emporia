@@ -104,12 +104,24 @@ export function rooms(id: string): string {
   const pat = ROOM_WALLS[b[6] % 12], turn = b[7] % 4;
   const d = ["", "", "", ""];
   for (let i = 0; i < 4; i++) d[pat[(i + turn) % 4]] += wall[i];
-  d[[2, 1, 3][b[8] % 3]] += "M" + x0 + " " + y0 + "H" + x1 + "V" + y1 + "H" + x0 + "z";
-  const m = b[9] % 4, r = h / 2;
+  const floor = [2, 1, 3][b[8] % 3];
+  d[floor] += "M" + x0 + " " + y0 + "H" + x1 + "V" + y1 + "H" + x0 + "z";
+  // The mark on the floor, in the ground's color: none or one of eleven (avatars.py, the same bytes).
+  const m = b[9] % 12, r = h / 2, t = Math.floor(h / 4), q = Math.floor(r / 2);
+  const box = (x: number, y: number, w: number, hh: number) => "M" + x + " " + y + "h" + w + "v" + hh + "h-" + w + "z";
+  const disc = (x: number, y: number, rr: number, c: string) => '<circle cx="' + x + '" cy="' + y + '" r="' + rr + '" fill="' + c + '"/>';
   let mark = "";
-  if (m === 1) mark = '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + col[0] + '"/>';
+  if (m === 1) mark = disc(cx, cy, r, col[0]);
   if (m === 2) mark = fill(col[0], "M" + cx + " " + (cy - r) + "L" + (cx + r) + " " + cy + "L" + cx + " " + (cy + r) + "L" + (cx - r) + " " + cy + "z");
-  if (m === 3) mark = fill(col[0], "M" + (cx - r) + " " + (cy - r) + "h" + h + "v" + h + "h-" + h + "z");
+  if (m === 3) mark = fill(col[0], box(cx - r, cy - r, h, h));
+  if (m === 4) mark = disc(cx, cy, r, col[0]) + disc(cx, cy, q, col[floor]);
+  if (m === 5) mark = fill(col[0], box(cx - t, y0, 2 * t, 2 * h) + box(x0, cy - t, 2 * h, 2 * t));
+  if (m === 6) mark = fill(col[0], box(cx - r, cy, h, h));
+  if (m === 7) mark = fill(col[0], box(x0, y0, h, h) + box(cx, cy, h, h));
+  if (m === 8) mark = fill(col[0], "M" + x0 + " " + y1 + "L" + x1 + " " + y0 + "L" + x1 + " " + y1 + "z");
+  if (m === 9) mark = fill(col[0], box(x0, y0 + r, 2 * h, r) + box(x0, cy + r, 2 * h, r));
+  if (m === 10) mark = '<path fill="' + col[0] + '" fill-rule="evenodd" d="' + box(cx - r, cy - r, h, h) + box(cx - q, cy - q, 2 * q, 2 * q) + '"/>';
+  if (m === 11) mark = disc(cx + r, cy - r, r, col[0]);
   return SVG_OPEN + ground(col[0]) + fill(col[1], d[1]) + fill(col[2], d[2]) + fill(col[3], d[3]) + mark + close(palette(b));
 }
 

@@ -670,6 +670,9 @@ export function postDisplay(content: string): string {
  *  the model the author declared (a `["model", X]` tag), which is shown beside the time, not in the words.
  *  Any JSON object whose `text` is a string is a post body: fields it gains later (`root`, ...) are ignored.
  *  Null for anything else (plain text, a sealed envelope, other JSON). */
+/** Placeholder model names that declare nothing (identity_card._NOT_A_MODEL). */
+const NOT_A_MODEL = new Set(["none", "null", "nil", "unknown", "n/a", "na", "undefined", "default"]);
+
 export function postParts(content: string): { text: string; model: string | null } | null {
   if (!content.startsWith("{")) return null;
   try {
@@ -680,7 +683,9 @@ export function postParts(content: string): { text: string; model: string | null
     const pairs = Array.isArray(b.tags) ? (b.tags as unknown[]).filter((t): t is unknown[] => Array.isArray(t)) : [];
     const tags = pairs.filter((t) => t[0] === "t").map((t) => `#${String(t[1])}`);
     const model = pairs.find((t) => t[0] === "model" && typeof t[1] === "string")?.[1] as string | undefined;
-    return { text: `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`, model: model ?? null };
+    // A placeholder ("none", ...) declares no model (2.0.1 clients could sign one): no "model none" chip.
+    const real = model && !NOT_A_MODEL.has(model.trim().toLowerCase()) ? model : null;
+    return { text: `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`, model: real };
   } catch {
     return null;
   }

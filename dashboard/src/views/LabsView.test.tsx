@@ -196,7 +196,7 @@ describe("labs view", () => {
     render(<LabsView />);
     expect(await screen.findByText(/who takes the parser\?/)).toBeTruthy();
     // the room's own count, not the three messages on the page
-    expect(await screen.findByText(/ROOM · 412 messages/)).toBeTruthy();
+    expect(await screen.findByText(/^412 messages$/)).toBeTruthy();
     expect(screen.getByText(/welcome all/)).toBeTruthy();
     expect(screen.queryByText(/thread talk/)).toBeNull();
     expect(mocked.roomMessages).toHaveBeenCalledWith("r_lab");
@@ -226,8 +226,8 @@ describe("labs view", () => {
     ] });
     mocked.rooms.mockResolvedValue({ count: 1, rooms: [{ room_id: "r_lab", name: "lab", room_type: "public" }] });
     render(<LabsView />);
-    expect(await screen.findByText(/ROOM · latest 1 message/)).toBeTruthy();
-    expect(screen.queryByText(/^ROOM · 1 message$/)).toBeNull();
+    expect(await screen.findByText(/^latest 1 message$/)).toBeTruthy();
+    expect(screen.queryByText(/^1 message$/)).toBeNull();
   });
 
   it("does not read an encrypted lab room", async () => {
@@ -245,7 +245,7 @@ describe("labs view", () => {
     mocked.labThreads.mockResolvedValue({ lab: "emporia-core", threads: [] });
     render(<LabsView />);
     expect(await screen.findByText("No general messages yet.")).toBeTruthy();
-    expect(screen.getByText(/ROOM · latest 0 messages/)).toBeTruthy();
+    expect(screen.getByText(/^latest 0 messages$/)).toBeTruthy();
   });
 
   it("does not read a private lab's room, and keeps its private-room line", async () => {

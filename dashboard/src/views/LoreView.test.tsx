@@ -34,7 +34,9 @@ describe("lore view", () => {
     render(<LoreView />);
     const card = await waitFor(() => { const c = cardOf("Chapter 1"); expect(c).toBeTruthy(); return c; });
     expect(within(card).getByText("The knife stood at the gate for 3 nights. Two agents argued.")).toBeTruthy();
-    expect(within(card).getByText(/written by /)).toBeTruthy();
+    // the scribe is named once, at the top right; the caption says how it was chosen
+    expect(within(card).queryByText(/written by /)).toBeNull();
+    expect(within(card).getByText(/^chosen with \d+ picks?$/)).toBeTruthy();
     expect(within(card).getByText("KNIFE")).toBeTruthy();
     expect(card.textContent).toMatch(/cites \d+ records?/);
     // the cites are not on the main page
@@ -45,6 +47,9 @@ describe("lore view", () => {
     const link = within(ch1).getAllByRole("link").find((a) => a.getAttribute("href") === "#/agora/post/pst_bb2b67894c8fae8d3168ef1260477d1f");
     expect(link).toBeTruthy();
     expect(link!.textContent).toMatch(/fx_p1 reports on the day at the gate/);
+    // each passage links to its post in #lore (the reply chain)
+    const canonId = book.chapters.find((c) => c.label === "Chapter 1")!.canon!.post_id;
+    expect(within(ch1).getAllByRole("link", { name: "in #lore" }).some((a) => a.getAttribute("href") === `#/agora/post/${canonId}`)).toBe(true);
   });
 
   it("shows the arc's voice, the relay's voice on the Now card and the plain recap", async () => {
@@ -62,20 +67,22 @@ describe("lore view", () => {
     expect(screen.getByText(/built by code/)).toBeTruthy();
   });
 
-  it("collapses the chapters with no canon into one line with counts, and says why in its fold", async () => {
+  it("shows a chapter with no canon as a card too: why, how many passages, and they open with it", async () => {
     const more = structuredClone(book);
-    more.chapters.push({ ...structuredClone(more.chapters[1]), id: "x9", label: "Chapter 9", call_at: more.chapters[1].call_at + 5, reason: "no_candidates", thin_jury: true });
+    more.chapters.push({ ...structuredClone(more.chapters[1]), id: "x9", label: "Chapter 9", call_at: more.chapters[1].call_at + 5, reason: "no_candidates", apocrypha: [], thin_jury: true });
     fetchMock.mockImplementation(() => reply(more));
     render(<LoreView />);
-    const sec = await waitFor(() => screen.getByRole("region", { name: "Chapters not written" }));
-    expect(within(sec).getByText("2 chapters not written: nobody wrote a passage in time (1), too few picks (1)")).toBeTruthy();
-    expect(within(sec).getByText("Chapter 2")).toBeTruthy();
-    expect(within(sec).getByText(/No canon: no passage got enough picks/)).toBeTruthy();
-    expect(within(sec).getAllByText("jury of two").length).toBe(2);
-    // a failed chapter is not a card
-    expect(cardOf("Chapter 2")).toBeUndefined();
-    fireEvent.click(within(sec).getAllByRole("button", { name: "How it was decided" })[0]);
-    await waitFor(() => expect(within(sec).getAllByRole("article").length).toBe(1));
+    const c2 = await waitFor(() => { const c = cardOf("Chapter 2"); expect(c).toBeTruthy(); return c; });
+    expect(within(c2).getByText("NOT WRITTEN")).toBeTruthy();
+    expect(within(c2).getByText("No passage got enough picks.")).toBeTruthy();
+    const n = more.chapters.find((c) => c.label === "Chapter 2")!.apocrypha.length;
+    if (n) expect(within(c2).getByText(new RegExp(`^${n} passages?: open to read$`))).toBeTruthy();
+    const c9 = cardOf("Chapter 9");
+    expect(within(c9).getByText("Nobody wrote a passage in time.")).toBeTruthy();
+    expect(within(c9).getByText("no passage")).toBeTruthy();
+    expect(c9.textContent).toMatch(/jury of two/);
+    const ch = await openChapter("Chapter 2");
+    expect(within(ch).getByText(/Not written/)).toBeTruthy();
   });
 
   it("keeps the apocrypha in a fold of the opened chapter and lists the rules a set-aside passage broke", async () => {
@@ -236,7 +243,7 @@ describe("the Lore, made for reading", () => {
     render(<LoreView />);
     const story = await screen.findByRole("region", { name: "The story" });
     const chips = [...story.querySelectorAll(".e-hcard__chip")].map((c) => c.textContent).filter((t) => t?.startsWith("CHAPTER"));
-    expect(chips).toEqual(["CHAPTER 3", "CHAPTER 1"]);
+    expect(chips).toEqual(["CHAPTER 3", "CHAPTER 2", "CHAPTER 1"]);
   });
 
   it("closes an opened chapter again and keeps it folded by default", async () => {

@@ -94,6 +94,12 @@ def test_declared_model_comes_from_the_plugins_record_then_config(tmp_path, monk
     assert identity_card.model_tags() == [] and identity_card.with_model_tag([["t", "x"]]) == [["t", "x"]]
 
 
+def test_a_placeholder_model_name_declares_nothing():
+    for name in ("none", "None", "NULL", "unknown", "n/a", "default"):
+        assert identity_card.clean_model(name) == ""
+    assert identity_card.clean_model("deepseek/deepseek-v4-flash") == "deepseek/deepseek-v4-flash"
+
+
 def test_the_model_tag_is_a_valid_post_tag():
     assert not wire.tags_problem([["model", "nous/hermes-4"]])
 
