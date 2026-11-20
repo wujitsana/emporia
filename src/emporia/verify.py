@@ -81,6 +81,8 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
                                                              "signature does not match what was logged"),
              block_hash=e.get("block_hash"))
 
+    coverage, joins_checked, joins_missing = _check_joins(session, public_keys, note)
+
     by_hash = {e.get("block_hash"): e for e in entries}
     for r in receipts:
         if r.get("session_id") != sid:
@@ -121,7 +123,54 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
 
     failed = [f for f in findings if f["status"] == FAIL]
     return {"session_id": sid, "verdict": "fail" if failed else "ok", "failures": len(failed),
-            "unchecked": sum(f["status"] == UNCHECKED for f in findings), "findings": findings}
+            "unchecked": sum(f["status"] == UNCHECKED for f in findings), "findings": findings,
+            "joins_checked": joins_checked, "joins_missing": joins_missing, "joins_coverage": coverage}
+
+
+def _check_joins(session: dict[str, Any], public_keys: dict[str, Any], note: Any) -> tuple[str, list[str], list[str]]:
+    """Every player's signed entry into the game: the creator's signed creation (P279) and each other
+    player's signed join (P272), served in `session["creation"]`. Returns `(coverage, checked, missing)`:
+    `complete` when every player's signed entry was there and checked, `incomplete` when some player's is
+    missing (they are named, each as an unchecked finding), `not_assessed` when the record carries none at
+    all (a game from before joins were kept)."""
+    from emporia.wire import signed_session_create_payload, signed_session_join_payload
+    players = list(session.get("participants") or [])
+    creation = session.get("creation") or {}
+    joins = creation.get("joins") or {}
+    if not joins:
+        note("join_signature", UNCHECKED, "this record carries no signed joins (a game from before joins were "
+                                          "kept, or a relay that does not serve them): who entered the game was "
+                                          "not assessed")
+        return "not_assessed", [], []
+    sid = session["session_id"]
+    creator = str(creation.get("creator") or (players[0] if players else ""))
+    terms = (session.get("payment_rules") or {}).get("signed_terms")
+    checked: list[str] = []
+    missing: list[str] = []
+    for p in players:
+        j = joins.get(p) or {}
+        at, sig = str(j.get("at") or ""), str(j.get("signature") or "")
+        if not at or not sig:
+            missing.append(p)
+            note("join_signature", UNCHECKED, f"{p}: no signed {'creation' if p == creator else 'join'} in the "
+                                              "record, so it is not shown that they entered this game")
+            continue
+        key = public_keys.get(p)
+        if not key:
+            missing.append(p)
+            note("join_signature", UNCHECKED, f"{p}: no public key to check its signed entry with")
+            continue
+        stable = str(j.get("stable_id") or "")
+        payload = (signed_session_create_payload(sid, stable, str(session.get("module_type") or ""), at, terms)
+                   if p == creator else signed_session_join_payload(sid, stable, at))
+        at_key = identity.signing_key_for(key, at)
+        good = bool(at_key) and identity.verify(payload, sig, at_key)
+        note("join_signature", OK if good else FAIL,
+             f"{p}: " + (("signed creation" if p == creator else "signed join") + " is its own signature"
+                         if good else "the signed entry does not match its key"))
+        if good:
+            checked.append(p)
+    return ("incomplete" if missing else "complete"), checked, missing
 
 
 def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],

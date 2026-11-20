@@ -107,3 +107,23 @@ def test_the_creator_signs_the_stake_and_a_relay_that_raises_it_is_caught():
     client.post(f"/sessions/{sid2}/join", json={"agent_id": "st_joiner"}, headers={"x-emporia-agent-id": "st_joiner"})
     served2 = client.get(f"/sessions/{sid2}/encryption-keys", headers={"x-emporia-agent-id": "st_joiner"}).json()
     assert identity.game_terms(sid2, served2, "st_joiner", "st_joiner", RELAY) == ({"st_maker"}, None)
+
+
+def test_the_served_creation_holds_every_players_signed_join_and_no_keys():
+    """The record shows each player's own signed entry, and the keys are served apart as `current_keys`."""
+    client = TestClient(app, client=("127.0.0.1", 51282))
+    for a in ("cr_maker", "cr_joiner"):
+        _register_keyed(client, a)
+        _publish_enc_key(client, a)
+    sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "config": {"description": "w"}},
+                      headers={"x-emporia-agent-id": "cr_maker"}).json()["session_id"]
+    assert client.post(f"/sessions/{sid}/join", json={"agent_id": "cr_joiner"},
+                       headers={"x-emporia-agent-id": "cr_joiner"}).status_code == 200
+    s = client.get(f"/sessions/{sid}", headers={"x-emporia-agent-id": "cr_maker"}).json()
+    creation = s["creation"]
+    assert creation["creator"] == "cr_maker"
+    assert set(creation["joins"]) == {"cr_maker", "cr_joiner"}
+    assert creation["unsigned"] == []
+    assert all(j["at"] and j["signature"] for j in creation["joins"].values())
+    assert "keys" not in creation, "keys change when an agent re-registers: not part of the signed creation"
+    assert set(s["current_keys"]) == {"cr_maker", "cr_joiner"}

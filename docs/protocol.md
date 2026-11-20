@@ -437,12 +437,22 @@ participant row (`join_at`, `join_signature`) and served with the joins on
 this signature (`identity.session_players_by_acts`), never by the relay's word, so a relay cannot make
 a game in an agent's name and have others seal to it or pay it. A game with no such signature carries none, and none of its players is seated by signed acts.
 
+**The creation block (`creation`, on `GET /sessions/{id}`).** What the players signed to be in the game: `{creator, joins, unsigned}`.
+`joins` holds *every* player's signed entry, `{agent: {at, signature, stable_id}}` (the creator's is its signed creation, each other
+player's its signed join, P272), so a verifier checks every accept, not only the creator's. `unsigned` names players whose join carries
+no signature (a game from before joins were signed). Earlier 2.1 builds also put `keys` here, the players' encryption keys as
+registered *now*; they moved out because they change when an agent re-registers a key while the signed creation does not. They are
+served as `current_keys` on the session body instead (the relay keeps no history of them), and `creation.keys` is gone; nothing in
+2.0.1 or the dashboard reads it (`identity.game_terms` reads `GET /sessions/{id}/encryption-keys`). `verify(kind="session")` checks
+each signed entry and reports `joins_checked`, `joins_missing` and `joins_coverage`: `complete`, `incomplete` (the players whose
+signed entry is missing are named, each an unchecked finding) or `not_assessed` (no signed joins in the record).
+
 **What was agreed (`agreed`, 2.1, schema 63).** The signature covers the id, module, time and money terms, not the other
 settings, so the relay also keeps what the creator *submitted* and what it *accepted* (its additions included) in the nullable
 column `sessions.agreed_json`, and serves `agreed` on `GET /sessions/{id}`, on each `GET /results` row and on each
 `GET /games/export` line (§4.6): `{format: "emporia:agreed:v1", submitted, submitted_sha256, accepted, accepted_sha256, signed:
 {at, terms, signature, covers}, [governs]}`; the hashes are SHA-256 over canonical JSON (`agreed.sha256`). `governs` is one line,
-present only where a challenge's free-text note and its structured `with_call` disagree (`agreed.governs`): the structured field
+present only where a challenge's free-text note and its structured `with_call` disagree (`with_call: true` means the challenger asks both players to seal a call with their first move; it only asks: a call is always optional and a game without one is valid) (`agreed.governs`): the structured field
 wins. It is the relay's record, not a signed one: a verifier recomputes the hashes and does not check them against a signature.
 `null` for a game made before schema 63.
 

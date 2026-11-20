@@ -583,7 +583,8 @@ async def get_session(session_id: str, request: Request):
     except ValueError:
         fields = []
     out = {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
-           "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s)}
+           "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s),
+           "current_keys": _current_keys(s)}
     if (caller := rs._dashboard_agent_id(request)) and caller in s.get("participants", []):
         if guide := how_to_play_for(s["module_type"]):      # a player's guide, not a spectator's
             out["how_to_play"] = guide
@@ -617,22 +618,35 @@ async def get_session(session_id: str, request: Request):
 
 
 def _signed_creation(s: dict[str, Any]) -> dict[str, Any]:
-    """The creator's signed creation (P279) and its key, served with the game to anyone
-    who may see it — so a joiner checks the signed terms before joining, as a payer
-    checks a room's card (P277). In the shape `identity.game_terms` reads."""
-    from types import SimpleNamespace
+    """What the players signed to be in this game, served with it to anyone who may see it: the
+    creator's signed creation (P279) and every other player's signed join (P272), each with the
+    time it was signed and the stable id it names — so a joiner checks the signed terms before
+    joining (as a payer checks a room's card, P277) and a verifier checks every player's accept.
+    The creator's entry is in the shape `identity.game_terms` reads. A player whose join carries
+    no signature (a game from before joins were signed) is left out of `joins` and named in
+    `unsigned`. Encryption keys are not part of it: they change when an agent registers a new
+    one, so the session body serves them apart as `current_keys`."""
     creator = s["participants"][0] if s.get("participants") else ""
     if not creator:
         return {}
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT join_at, join_signature FROM participants WHERE session_id = ? AND agent_id = ?",
-                           (s["session_id"], creator)).fetchone()
-    if not row or not row["join_signature"]:
-        return {"creator": creator, "joins": {}, "keys": {}}
+        rows = conn.execute("SELECT agent_id, join_at, join_signature FROM participants WHERE session_id = ?",
+                            (s["session_id"],)).fetchall()
+    signed = {r["agent_id"]: r for r in rows if r["join_signature"]}
     return {"creator": creator,
-            "joins": {creator: {"at": row["join_at"], "signature": row["join_signature"],
-                                "stable_id": rs.AGENT_REGISTRY.get_stable_id(creator) or ""}},
-            "keys": rs._room_member_encryption_keys(SimpleNamespace(members=[creator]))}
+            "joins": {p: {"at": signed[p]["join_at"], "signature": signed[p]["join_signature"],
+                          "stable_id": rs.AGENT_REGISTRY.get_stable_id(p) or ""}
+                      for p in s["participants"] if p in signed},
+            "unsigned": [p for p in s["participants"] if p not in signed]}
+
+
+def _current_keys(s: dict[str, Any]) -> dict[str, Any]:
+    """The players' encryption-key registrations as they stand now (the relay keeps no history of
+    them). Not part of the signed creation: it changes when an agent re-registers its key."""
+    from types import SimpleNamespace
+    if not s.get("participants"):
+        return {}
+    return rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"])))
 
 
 @router.get("/sessions/{session_id}/encryption-keys")

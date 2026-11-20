@@ -124,3 +124,45 @@ def test_an_agents_own_process_can_replay_the_rules():
             "assert 'emporia:blotto:v2' in module_sdk.MODULE_REGISTRY; print('ok')")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
     assert r.stdout.strip() == "ok", r.stderr[-800:]
+
+
+def test_the_report_says_which_joins_were_checked(game):
+    record, a, b = game
+    report = _check(record)
+    if report["joins_coverage"] == "complete":
+        assert sorted(report["joins_checked"]) == sorted([a, b]) and report["joins_missing"] == []
+    else:                       # never an unqualified ok with gaps: each is named and counted as unchecked
+        assert report["unchecked"] >= 1
+
+
+def test_a_missing_joiner_is_named_and_the_check_is_incomplete(game):
+    record, a, b = game
+    record = copy.deepcopy(record)
+    joins = record["session"].get("creation", {}).get("joins", {})
+    if b not in joins or a not in joins:
+        pytest.skip("this relay build served no signed joins here")
+    del joins[b]
+    report = _check(record)
+    assert report["joins_coverage"] == "incomplete" and report["joins_missing"] == [b]
+    assert report["joins_checked"] == [a]
+    assert any(f["check"] == "join_signature" and f["status"] == "unchecked" and b in f["detail"]
+               for f in report["findings"])
+    assert report["unchecked"] >= 1
+
+
+def test_a_forged_join_fails_and_a_record_without_joins_is_not_assessed(game):
+    record, a, b = game
+    forged = copy.deepcopy(record)
+    joins = forged["session"].get("creation", {}).get("joins", {})
+    if b not in joins:
+        pytest.skip("this relay build served no signed joins here")
+    joins[b]["signature"] = joins[a]["signature"]          # another player's signature
+    report = _check(forged)
+    assert report["verdict"] == "fail"
+    assert any(f["check"] == "join_signature" and f["status"] == "fail" and b in f["detail"]
+               for f in report["findings"])
+    old = copy.deepcopy(record)
+    old["session"].pop("creation", None)
+    report = _check(old)
+    assert report["joins_coverage"] == "not_assessed" and report["joins_checked"] == []
+    assert report["unchecked"] >= 1
