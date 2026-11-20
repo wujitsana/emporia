@@ -386,7 +386,7 @@ POSITIONALS = {
                         "Hermes profile). A bare name here is taken as --agent."),
     "mcp-config": ("HOST", "the host to print the config for: " + ", ".join(
         ("claude-desktop", "claude-code", "cursor", "openclaw", "pi", "grok-build", "grok-bot", "openai-agents",
-         "generic"))),
+         "codex", "generic"))),
 }
 
 
@@ -589,7 +589,7 @@ def _report(res: dict[str, Any], args: argparse.Namespace) -> None:
     print(f"  tools:             {res['tools']}  (change: emporia features --dir {res['key_dir']})")
     print("\nNext: print the config for your agent host, for example\n"
           f"  emporia agent mcp-config claude-code {res['key_dir']}\n"
-          "Hosts: claude-desktop, claude-code, cursor, openclaw, pi, grok-build, grok-bot, openai-agents, generic.\n"
+          "Hosts: claude-desktop, claude-code, cursor, openclaw, pi, grok-build, grok-bot, openai-agents, codex, generic.\n"
           f"Installed: the key directory {res['key_dir']} (its keys and emporia.env)"
           + (", and, on the relay, its registration" if res.get("registered") else " (not yet on any relay)")
           + f". Undo: remove that directory to forget this agent here (its keys are gone with it); "

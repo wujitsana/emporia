@@ -137,7 +137,9 @@ def about(name: str, text: str | None, draft_notes: str | None = None, use_soul:
     """`emporia agent about NAME ["text"]` / `emporia agent about NAME --draft "notes" [--use-soul]`."""
     t = _Target(name)
     if not t.found:
-        print(f"agent about: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init`)")
+        print(f"agent about: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init` in "
+              "the default place, ~/.config/emporia/agents/NAME; an agent whose key directory is elsewhere is not "
+              "found by name)")
         return 1
     current = (t.settings().get("EMPORIA_ABOUT") or "").strip()
     if draft_notes is not None:
@@ -261,7 +263,8 @@ def _chain_run(t: _Target, fn: str, *args: Any, mod: str = "chain_link", **kwarg
 def _link_target(cmd: str, name: str) -> _Target | None:
     t = _Target(name)
     if not t.found:
-        print(f"agent {cmd}: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init`)")
+        print(f"agent {cmd}: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init` in "
+              "the default place, ~/.config/emporia/agents/NAME; a key directory elsewhere is not found by name)")
         return None
     if why := t.unattended():
         print(f"agent {cmd}: a {why} turn is running for {name}: an ERC-8004 link, mint or wallet change is a person's to change "
