@@ -193,3 +193,34 @@ def test_a_reveal_never_made_is_broken_even_before_the_pledged_deadline():
     assert PL.resolve(p, walked, commits, {}, ts(200))["status"] == "broken"
     other = {**walked, "state": {**walked["state"], "metadata": {"abandoned_by": "c"}}}
     assert PL.resolve(p, other, commits, {}, ts(200))["status"] == "void", "another player ended it"
+
+
+def test_a_walk_away_stays_on_the_sheet_when_newer_sessions_fill_the_window(client, monkeypatch):
+    """Audit F2: the sheet read only the newest 1000 sessions, so flooding with cheap games pushed old walk-aways
+    out. Penalties are read all-time; the window (here 1) only limits what Finish reads."""
+    from emporia.routes import standing as st
+    a, b = f"f2_a_{uuid.uuid4().hex[:6]}", f"f2_b_{uuid.uuid4().hex[:6]}"
+    for x in (a, b):
+        _register(client, x)
+
+    def table(creator, other):
+        sid = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": creator,
+                                             "config": {}}, headers=_hdr(creator)).json()["session_id"]
+        assert client.post(f"/sessions/{sid}/join", json={"agent_id": other}, headers=_hdr(other)).status_code == 200
+        return sid
+
+    sid = table(a, b)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        state = json.loads(conn.execute("SELECT state_json FROM sessions WHERE session_id = ?", (sid,)).fetchone()[0])
+        state["data"]["commitments"] = {a: "0" * 64}
+        state["current_agent"], state["step_number"] = b, 1
+        conn.execute("UPDATE sessions SET state_json = ?, current_agent = ?, step_number = 1, status = 'active' "
+                     "WHERE session_id = ?", (json.dumps(state), b, sid))
+    assert client.post(f"/sessions/{sid}/abandon", json={}, headers=_hdr(a)).status_code == 200
+    newer = table(a, b)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE sessions SET status = 'completed', updated_at = '2999-01-01T00:00:00+00:00' "
+                     "WHERE session_id = ?", (newer,))
+    monkeypatch.setattr(st, "_RECORD_LIMIT", 1)
+    st._TABLE_CACHE["key"] = None
+    assert client.get(f"/agents/{a}/sheet").json()["trust"]["abandoned_on_turn"] == 1

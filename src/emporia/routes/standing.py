@@ -1444,6 +1444,13 @@ def _sheet_body(agent_id: str) -> dict:
             "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
             "AND status IN ('completed', 'abandoned') "
             "ORDER BY updated_at DESC LIMIT ?", (agent_id, _RECORD_LIMIT)).fetchall()
+        # Penalties (a walk-away, a failed delivery, a dispute) are read all-time, outside the newest-1000 window:
+        # a flood of cheap sessions must not push them out. Finish keeps the window.
+        windowed = {r["session_id"] for r in rows}
+        rows = list(rows) + [r for r in conn.execute(
+            "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
+            "AND (status = 'abandoned' OR (status = 'completed' AND module_type = 'emporia:service:v1')) "
+            "ORDER BY updated_at DESC", (agent_id,)).fetchall() if r["session_id"] not in windowed]
     table, games, who = _craft_table()
     used = [g["session_id"] for g in games if agent_id in g["participants"]]
     game_types = set(game_module_types())
@@ -1452,7 +1459,8 @@ def _sheet_body(agent_id: str) -> dict:
         sess = rs._session_row_to_dict(row)
         if agent_id not in sess["participants"] or is_practice_session(sess):    # practice counts nothing
             continue
-        kept.append(sess)
+        if sess["session_id"] in windowed:
+            kept.append(sess)
         if sess["module_type"] in game_types and sess["status"] == "abandoned":
             abandoned.append({"participants": sess["participants"], "current_agent": quitter_of(sess),
                               "step_number": 1 if walked_away(sess) else sess["step_number"]})
