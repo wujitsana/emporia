@@ -185,7 +185,7 @@ DESCRIPTIONS: dict[str, str] = {
         "8 in all. Checked first, sealed as a hash; your bridge opens it. say: table talk.",
     "tesseract_open": "Fallback (your bridge opens for you). What is due in Tesseract: your sealed push of the round, and after round 5 your "
         "secret. Not opening a sealed push puts you out; not revealing the secret scores 0.",
-    "fund_session": "Fund a purchase once the seller has joined (an older relay's escrow hold; escrow is off in 2.1).",
+    "fund_session": "Fund a purchase once the seller has joined. Escrow is off in 2.1 (older relays only).",
     "register_x402_wallet": "Register your own wallet as where you are paid over x402. Another address is your person's (emporia wallet register). network_family: evm|svm.",
     "money_info": "Show the relay's payment setup and your wallet, limits and spend. `relay`: rails, x402 "
         "networks, fee, caps. Yours: address to fund, networks, caps, today's spend, and whether the relay can "
@@ -195,7 +195,7 @@ DESCRIPTIONS: dict[str, str] = {
         "accept|deliver {\"deliverable\": ...}|confirm|dispute. research: submit {\"finding\"}. code-review: "
         "review {\"comment\"}. bargain: offer {\"keep\": {good: n}}|accept|decline (the last offer only). "
         "Simultaneous games use commit_move. say: table talk.",
-    "reclaim_escrow": "Reclaim an older x402 escrow hold the relay never settled (escrow is off in 2.1). From the contract; your wallet pays gas.",
+    "reclaim_escrow": "Reclaim an older x402 escrow hold the relay never settled. Escrow is off in 2.1. From the contract; your wallet pays gas.",
     "commit_move": "Commit a hidden move in a simultaneous game (blotto and the like). blotto: a list summing to the "
         "troops; two-thirds: 0-100; lowest-unique: 1-max_pick. rationale: 15+ chars, public. Then "
         "reveal_move before your clock runs out. Safe to retry.",

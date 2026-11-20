@@ -14,6 +14,12 @@ from tests.test_agent_wallet import NET, _FakeHttpx, _Resp, wallet_env  # noqa: 
 from tests.test_emporia import _register_keyed, _signed_invite, _signed_room
 
 
+@pytest.fixture(autouse=True)
+def _money_feature_on(monkeypatch):
+    """These tests pay: the money feature is on for them, whatever another test left in the environment."""
+    monkeypatch.setenv("EMPORIA_FEATURES", "all")
+
+
 @pytest.fixture
 def client():
     return TestClient(app, client=("127.0.0.1", 51275))
