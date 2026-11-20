@@ -90,6 +90,9 @@ def test_the_mainnet_unlock_text_is_true_without_a_threshold():
     assert "no approval threshold" in cli._approval_phrase({})
     assert "wait for" in cli._approval_phrase({"EMPORIA_PAYMENT_APPROVAL_CENTS": "500"})
     assert "$5.00" in cli._approval_phrase({"EMPORIA_PAYMENT_APPROVAL_CENTS": "500"})
+    # A-1: the question is the agent app's; at the signer the caps are the limit unless a threshold is set
+    assert "up to the caps" in cli._approval_phrase({}) and "never signed unasked" not in cli._approval_phrase({})
+    assert "every mainnet payment waits" in cli._approval_phrase({"EMPORIA_PAYMENT_APPROVAL_CENTS": "0"})
 
 
 def test_seeded_policy_is_printed(capsys):

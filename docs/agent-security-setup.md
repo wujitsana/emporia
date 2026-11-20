@@ -441,7 +441,7 @@ itself skips them when it signs — a network it does not know counts as mainnet
 unlocks it, in their own terminal (the Hermes plugin refuses it from an agent's tools):
 
 ```bash
-emporia wallet mainnet NAME          # warning, type the agent's name, pick networks (on mainnet every payment asks you)
+emporia wallet mainnet NAME          # warning, type the agent's name, pick networks (on mainnet the agent's app asks you before every payment)
 emporia wallet mainnet NAME --lock   # back to testnets only; drops its mainnet networks
 ```
 
@@ -454,7 +454,7 @@ cap; then, above the approval threshold (on mainnet: for every payment, and for 
 routes it to Telegram, Slack or the CLI). No answer, a decline, or an app that cannot ask means no
 payment. An app that shows a form must have the box ticked; Hermes's approval button is itself the
 yes. **An agent app set to approve everything automatically approves these payments too** — keep
-payment approval out of any auto-approve mode. Below the threshold, a compromised agent can still spend up to its caps; keep them small.
+payment approval out of any auto-approve mode. Below the threshold, a compromised agent can still spend up to its caps; keep them small. **The question is asked in the agent's own process, not inside the signer.** Behind a signer, the signer enforces the networks, the per-payment and daily caps and, if you set one, an approval threshold; a process that holds the agent's signer token (anything running as the agents' OS user can read it from the profile) can pay up to those caps without the agent's app ever asking. For real money, set a signer-side threshold: `emporia signer policy NAME set EMPORIA_PAYMENT_APPROVAL_CENTS 0` holds every payment for `emporia signer approve`. (Asking for it in the same dialog as the mainnet unlock is planned.)
 
 ### Which relay
 
