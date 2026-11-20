@@ -1,4 +1,4 @@
-"""`quests:v8`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
+"""`quests:v9`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
 
 the quests-v4 design note (kept outside the repo). Records become events once (`events`); every condition in the book is
 checked against them (`judge`); `evaluate` puts the answer together — quests, arcs, tracks, the weekly
@@ -645,7 +645,7 @@ def _rival(evs: Iterable[Mapping]) -> dict | None:
 def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = None, now: float | None = None,
              expeditions: Iterable[Mapping] = (),
              feats_done: Iterable[Mapping] = (), play_games: Iterable[Mapping] = ()) -> dict:
-    """`quests:v8` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
+    """`quests:v9` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
     expeditions posted so far (the weekly quest), and
     v3's Trader and Voice feats computed with v4's rule (`quests.feats(operator=counted_operator(...))`), and
     `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""
@@ -658,7 +658,10 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     # The house counts for nothing toward XP: a quest earned only by playing the house (or a debrief of such a
     # game, or a deal with it) is done, with its badge and its place in an arc, but pays no XP until a record
     # that is not the house's reaches it (`paid`: qid -> when).
-    evs_xp = [e for e in evs if not played_by_house(e)]
+    # The same for a game, a deal or a debrief with the agent's own operator's other agents (`vs` is not `other`):
+    # done and badged, no XP (quests:v9). A solo post (`vs: self`) is no interaction and still pays.
+    evs_xp = [e for e in evs if not played_by_house(e)
+              and (e.get("event") not in ("game", "deal", "debrief") or e.get("vs") == "other")]
     paid: dict[str, str] = {}
     for qid, d in B.QUESTS.items():
         if not _shown(qid, ctx):

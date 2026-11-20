@@ -9,6 +9,7 @@ on the neighbouring agent list.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -228,14 +229,21 @@ def _who() -> dict[str, progression.Who]:
 _TABLE_CACHE: dict = {"key": None, "value": None, "calls": None}
 
 
+def _agents_key(conn) -> tuple:
+    """A change to who is registered, or to any agent's operator label, changes this key (a hash of the labels:
+    every label has the same length, so moving an agent to another label must not leave it unchanged)."""
+    n, joined = conn.execute("SELECT COUNT(*), COALESCE(group_concat(agent_id || char(31) || operator_label, char(30)), '') "
+                             "FROM (SELECT agent_id, operator_label FROM authorized_agents ORDER BY agent_id)").fetchone()
+    return (n, hashlib.sha256(joined.encode()).hexdigest())
+
+
 def _craft_table() -> tuple[dict, list[dict], dict]:
     """(ratings, games, who), recomputed only when sessions or agents changed —
     so reading sheets cannot be used to make the relay redo the whole history.
     The same pass keeps every counted call (Insight), read by `_calls()`."""
     with rs.DB_LOCK, rs.get_db() as conn:
         key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
-               tuple(conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
-                                  "COALESCE(SUM(LENGTH(agent_id)), 0) FROM authorized_agents").fetchone()))
+               _agents_key(conn))
     if _TABLE_CACHE["key"] != key:
         games, who = _craft_games(), _who()
         views: dict[str, dict] = {}
@@ -400,13 +408,18 @@ async def season_ladders(limit: int = 25):
     made once their rating had settled), then Craft per set play — over the season's records.
     Open: no end date until the operator sets one; history is never reset."""
     _sheets_on()
+    limit = rs._clamp_limit(limit)
+    return await cached_public(("season", limit), lambda: _season_body(limit))
+
+
+def _season_body(limit: int) -> dict:
     from emporia.routes.likes import all_likes
     ideas = _ideas_adopted() if relay_modules.on("labs", "reports") else None
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
     _, games, who = _craft_table()
     out = {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                       progression.house_agents(), rs._clamp_limit(limit), ideas,
+                                       progression.house_agents(), limit, ideas,
                                        tiers=_renown_tiers(), off_board=_operator_agents(who)),
            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     if not any(out["boards"].values()):
@@ -420,7 +433,7 @@ async def season_ladders(limit: int = 25):
 def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]:
     """Launch additions: every finished public game `agent_id` (or an agent in `also`) played on this
     relay, as quests and feats read it — with the house agent too (XP and badges move no standing), and
-    chess. `also`: the agent's operator's other agents, for quests:v8's operator-wide play cap."""
+    chess. `also`: the agent's operator's other agents, for quests:v9's operator-wide play cap."""
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
     agents = list(dict.fromkeys((agent_id, *also)))
@@ -873,7 +886,7 @@ def _operator_removals(conn, agent_id: str, now: float) -> list[float]:
 
 
 def allowance_of(agent_id: str) -> dict | None:
-    """`allowance:v1` for `agent_id` (allowance.py): {tier 1..3, label, source earned|vouched, why, raises,
+    """`allowance:v2` for `agent_id` (allowance.py): {tier 1..3, label, source earned|vouched, why, raises,
     limits: the caps at that tier, …}; or None where no allowance binds: switched off (EMPORIA_ALLOWANCE=0),
     the house, or the relay operator's own agent. Kept a few seconds."""
     if not agent_id or not allowance.on() or agent_id in _exempt():
@@ -1190,32 +1203,39 @@ async def season_board(request: Request, limit: int = 25):
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
     caller = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
-    if _season_ended(s, now):
-        with rs.DB_LOCK, rs.get_db() as conn:
-            row = conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
-                               (s["season"],)).fetchone()
+    def _standing() -> tuple[dict, str | None]:
+        """The board's body and, from the end, the stored final's signature. Runs in a thread: computing it walks
+        every agent's records, and the final is computed outside the database lock."""
+        if _season_ended(s, now):
+            def stored():
+                with rs.DB_LOCK, rs.get_db() as conn:
+                    return conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
+                                        (s["season"],)).fetchone()
+            row = stored()
             if row is None:
                 per, ctx, exp = season_inputs()
-                body = _season_standing_body(s, per, ctx, exp, now)
-                sig = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "season-final", [body]))
-                conn.execute("INSERT OR IGNORE INTO season_finals (season, body_json, signature, frozen_at) "
-                             "VALUES (?, ?, ?, ?)", (s["season"], json.dumps(body, sort_keys=True), sig,
-                                                      datetime.now(UTC).isoformat(timespec="seconds")))
-                row = conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
-                                   (s["season"],)).fetchone()
-        body = json.loads(row["body_json"])
+                fresh = _season_standing_body(s, per, ctx, exp, now)
+                sig = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "season-final", [fresh]))
+                with rs.DB_LOCK, rs.get_db() as conn:     # only the write holds the lock; the first freeze wins
+                    conn.execute("INSERT OR IGNORE INTO season_finals (season, body_json, signature, frozen_at) "
+                                 "VALUES (?, ?, ?, ?)", (s["season"], json.dumps(fresh, sort_keys=True), sig,
+                                                          datetime.now(UTC).isoformat(timespec="seconds")))
+                row = stored()
+            return json.loads(row["body_json"]), row["signature"]
+        hit = _SEASON_CACHE.get(s["season"])
+        if hit and now - hit[0] < _SEASON_TTL:
+            return hit[1], None
+        per, ctx, exp = season_inputs()
+        live = _season_standing_body(s, per, ctx, exp, now)
+        _SEASON_CACHE[s["season"]] = (now, live)
+        return live, None
+    body, final_sig = await run_in_threadpool(_standing)
+    if final_sig is not None:
         return {**body, "final": True, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-                "signature": row["signature"], "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
+                "signature": final_sig, "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
                 "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
                 if caller else None, "scope": "this_relay",
                 "total": len(body["standings"])}
-    hit = _SEASON_CACHE.get(s["season"])
-    if hit and now - hit[0] < _SEASON_TTL:
-        body = hit[1]
-    else:
-        per, ctx, exp = season_inputs()
-        body = _season_standing_body(s, per, ctx, exp, now)
-        _SEASON_CACHE[s["season"]] = (now, body)
     return {**body, "final": False, "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
             "total": len(body["standings"]),
             "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
@@ -1444,6 +1464,13 @@ def _sheet_body(agent_id: str) -> dict:
             "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
             "AND status IN ('completed', 'abandoned') "
             "ORDER BY updated_at DESC LIMIT ?", (agent_id, _RECORD_LIMIT)).fetchall()
+        # Penalties (a walk-away, a failed delivery, a dispute) are read all-time, outside the newest-1000 window:
+        # a flood of cheap sessions must not push them out. Finish keeps the window.
+        windowed = {r["session_id"] for r in rows}
+        rows = list(rows) + [r for r in conn.execute(
+            "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
+            "AND (status = 'abandoned' OR (status = 'completed' AND module_type = 'emporia:service:v1')) "
+            "ORDER BY updated_at DESC", (agent_id,)).fetchall() if r["session_id"] not in windowed]
     table, games, who = _craft_table()
     used = [g["session_id"] for g in games if agent_id in g["participants"]]
     game_types = set(game_module_types())
@@ -1452,7 +1479,8 @@ def _sheet_body(agent_id: str) -> dict:
         sess = rs._session_row_to_dict(row)
         if agent_id not in sess["participants"] or is_practice_session(sess):    # practice counts nothing
             continue
-        kept.append(sess)
+        if sess["session_id"] in windowed:
+            kept.append(sess)
         if sess["module_type"] in game_types and sess["status"] == "abandoned":
             abandoned.append({"participants": sess["participants"], "current_agent": quitter_of(sess),
                               "step_number": 1 if walked_away(sess) else sess["step_number"]})

@@ -124,3 +124,45 @@ def test_review_an_expedition_after_the_end_changes_neither_hash_nor_standing():
     assert frozen([late]) == frozen([])
     early = {**late, "post_id": "p0", "created_at": "2026-11-04T10:00:00+00:00"}
     assert frozen([early])[0] != frozen([])[0], "an expedition inside the window is covered by the hash"
+
+
+def test_audit_f4_the_final_is_computed_outside_the_database_lock_and_season_is_kept(monkeypatch):
+    """The first read after the end computed the final while holding the database lock, on the event loop. It is
+    computed in a thread with the lock free, and /season is kept for EMPORIA_PUBLIC_CACHE_SECONDS like the rest."""
+    client = TestClient(rs.app)
+    tag = uuid.uuid4().hex[:6]
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    monkeypatch.setenv("EMPORIA_SEASON", f"season-{tag}")
+    monkeypatch.setenv("EMPORIA_SEASON_START", "2020-01-01T00:00:00+00:00")
+    monkeypatch.setenv("EMPORIA_SEASON_END", "2021-01-01T00:00:00+00:00")
+    held = []
+    real = ST.season_inputs
+
+    def spy():
+        held.append(rs.DB_LOCK._is_owned())
+        return real()
+    monkeypatch.setattr(ST, "season_inputs", spy)
+    assert client.get("/season/board").json()["final"] is True
+    assert held == [False], "computed with the lock free"
+
+    monkeypatch.setenv("EMPORIA_PUBLIC_CACHE_SECONDS", "30")
+    ST._PUBLIC_CACHE.clear()
+    calls = []
+    real_body = ST._season_body
+    monkeypatch.setattr(ST, "_season_body", lambda limit: calls.append(limit) or real_body(limit))
+    first = client.get("/season").json()
+    assert client.get("/season").json() == first and calls == [25]
+    ST._PUBLIC_CACHE.clear()
+
+
+def test_audit_f10_a_label_change_to_one_of_the_same_length_moves_the_craft_cache_key():
+    tag = uuid.uuid4().hex[:6]
+    a = f"lk_a_{tag}"
+    _register(a)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", ("op_" + "a" * 26, a))
+        before = ST._agents_key(conn)
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", ("op_" + "b" * 26, a))
+        after = ST._agents_key(conn)
+        conn.execute("UPDATE authorized_agents SET operator_label = '' WHERE agent_id = ?", (a,))
+    assert before != after and before[0] == after[0]

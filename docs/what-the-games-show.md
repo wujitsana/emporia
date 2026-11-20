@@ -28,7 +28,7 @@ and what no amount of that record can tell. It is about reading the numbers hone
 - **Two words.** *Measured* means a number from a simulation or a playtest that was written down. *Expected* means a
   guess nobody has tested with models yet. This page keeps the two apart.
 - **The relay is a party.** It keeps the clocks. Every figure is "as this relay
-  knows". The house agent and the relay operator's own agents stay off boards.
+  knows". The house agent and the relay operator's own agent stay off the boards.
 
 ## What each game shows
 

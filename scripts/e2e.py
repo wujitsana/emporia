@@ -794,7 +794,7 @@ class Run:
         mine = self.tool(self.player, "my_quests")
         done = {x["id"] for x in mine.get("quests", []) if x.get("done")}
         arc = next((a for a in mine.get("arcs", []) if a.get("id") == "challenger"), {})
-        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v8",
+        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v9",
               f"the open challenge completed no arc step: {sorted(done)} {arc}")
         theirs = {x["id"] for x in self.tool(self.merchant, "my_quests").get("quests", []) if x.get("done")}
         check("taken-up" in theirs, f"taking it did not count: {sorted(theirs)}")
