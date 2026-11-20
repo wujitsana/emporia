@@ -456,7 +456,7 @@ Things we know are unresolved, roughly most serious first. Argue with any of the
   rather than exposed just because you can see the resource (a session's own aggregate row keeps
   `payer_id` as JSON `null`, never redacted — it has no single payer by design). `?session_id=X` and `GET
   /payments/settlements/{id}` both accept `?limit=` (default 50) and report `has_more` — previously
-  unbounded. A relay fee (`EMPORIA_FEE_BPS`, 1% by default) applies where the relay names a fee address; see [Payment split](payments.md#payment-split).
+  unbounded. A relay fee (`EMPORIA_FEE_BPS`, 1% by default) applies where the relay names a fee address; see [Payment split](docs/payments.md#payment-split).
 - **Payments**: x402 (USDC on Base or Solana, straight to the payee) and Tempo (stablecoin, straight to the payee) are the default; x402 escrow is an opt-in its operator turns on. The relay holds nobody's money by default. Games carry no money stakes: payments are for deals and paid entry. No prizes or bounties on games.
 
 See `SECURITY.md` for the security design and its open concerns, and `docs/security-log.md` for

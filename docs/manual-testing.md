@@ -185,7 +185,7 @@ the P284 items, Hermes 0.22.6 in the container.
       the dashboard tab, refreshes every agent's plugin and restarts the relay. Then
       `hermes gateway restart` (one gateway serves every profile; `/reload-mcp` in a chat reloads its tools), restart `hermes dashboard` if it
       says so, and `emporia doctor` → no "older code" line; `curl -s localhost:8088/health` →
-      `schema_version: 64`.
+      `schema_version: 66`.
 - [ ] **Hermes 0.22.6 (P284).** `emporia agent refresh all`, then `hermes gateway restart`. With
       `EMPORIA_DAILY_TURNS=2` in an agent's `.env`, a third DM in a day gets no reply (the count is in
       `emporia doctor`: "relay-started turns in 24 h: N / 2" with the cap set to 2, N / 80 by default). Since P295 the skills come from the

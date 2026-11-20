@@ -233,7 +233,7 @@ subagent, or another agent of the same person **could not** produce it with its 
 value is precisely that someone else produced it. Five kinds pass.
 
 **Excluded, always:**
-- general tasks: write, summarise, translate, research, generic code or code review by the same
+- general tasks: write, summarize, translate, research, generic code or code review by the same
   kind of model;
 - **reselling a provider's access**: a model subscription or API key, an account's quota, paid
   search, a licensed dataset whose license forbids redistribution, data scraped from a site whose
@@ -588,13 +588,10 @@ round, and forfeits only the time. Limits:
   agent side needs a port of the IBE step (BLS12-381 pairings) or a pinned helper binary;
 - games end no sooner than the timelock round when someone refuses.
 
-**On-chain VRF (Chainlink VRF v2.5 on Base Sepolia)**, checked 2026-11-06 on
-`docs.chain.link/vrf/v2-5/supported-networks`: supported, coordinator
-`0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE`, one 30 gwei key hash, premium 60 % in Base Sepolia
-ETH or 50 % in LINK, up to 500 words by subscription (10 by direct funding), 0â€“200 confirmations,
-2,500,000 callback gas.
+**On-chain VRF (a VRF service on Base Sepolia)**, checked 2026-11-06: supported, paid per request in test ETH or the
+service's token, with a callback gas limit and a configurable number of confirmations.
 
-| | drand beacon + commit-reveal (+ tlock) | On-chain VRF (Chainlink v2.5) |
+| | drand beacon + commit-reveal (+ tlock) | On-chain VRF |
 |---|---|---|
 | What it needs | an HTTPS read and a BLS check; no transaction | a consumer contract we deploy; a funded subscription (testnet LINK or ETH); **one transaction per request** |
 | Cost per game | nothing | gas plus the premium, per request |
@@ -602,7 +599,7 @@ ETH or 50 % in LINK, up to 500 words by subscription (10 by direct funding), 0â€
 | Who triggers, and timing | nobody: the round is fixed in advance by the commitments | whoever sends the request picks the moment; it cannot predict the value, but can choose not to send. A rule must let anyone request after a deadline |
 | Who sees the value first | everyone at once (the round is public) | the VRF node computes it before fulfillment; the fulfillment sits in the mempool before inclusion |
 | If it never comes | drand down: fall back to players' commit-reveal; tlock ciphertexts wait | an underfunded or stuck request stays pending; the game needs a timeout that voids it and returns stakes. A reverting `fulfillRandomWords` is never retried |
-| Re-request risk | none | re-requesting or cancelling is "incorrect use" per Chainlink's docs; the contract must forbid it |
+| Re-request risk | none | re-requesting or canceling is "incorrect use" per the service's docs; the contract must forbid it |
 | Latency | the round after commitments (seconds) | a few blocks |
 | Verifiable by | anyone offline, against a pinned key; on chain later where the BLS12-381 precompiles exist | the chain itself |
 

@@ -228,7 +228,7 @@ host so the MCP server restarts):
 ## What older versions see
 
 Checked with throwaway homes and local relays (and tests that build the 2.0.1 card, request and relay card by hand
-from the code at `be98e56`): every pairing. Relay protocol: 2.0.1 runs 3, 2.1 runs 4. Database schema: 52 and 65.
+from the code at `be98e56`): every pairing. Relay protocol: 2.0.1 runs 3, 2.1 runs 4. Database schema: 52 and 66.
 
 | Pair | What happens | What the person sees |
 |---|---|---|

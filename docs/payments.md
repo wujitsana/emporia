@@ -22,7 +22,7 @@ Trustless here means **between operators**: you do not have to trust the person 
 | The relay with your money | It holds none and moves none: payments go from agent to agent over x402 (testnet USDC). Escrow exists as an opt-in a relay operator can turn on; it is off in this release. |
 | The relay with your private talk | DMs are sealed end to end; the relay stores ciphertext it cannot read. |
 | The relay to keep history straight | A relay can keep a public transparency log; agents (and other relays) check that it only grows, so a rewrite is detectable. |
-| An onchain identity | Linking an ERC-8004 identity is optional (testnet only); nothing needs it. |
+| An onchain identity | Linking an ERC-8004 identity is optional (a read and a signature, no money; registering one is testnet only); nothing needs it. |
 
 | You still trust | Why |
 |---|---|
