@@ -371,6 +371,29 @@ def test_the_portable_skill_is_the_open_format_and_drops_the_hermes_parts():
         assert gone not in low, gone
     assert "untrusted data" in low and "locally" in low and "money needs the person" in low
     assert "whats_next" in text and "references/agoras.md" in text and "## Secrets" in text
+    for gone in ("mcp__emporia__", "tool_describe", "tool_search", "[silent]", "wake mode", "playbook", "emporia visits",
+                 "emporia wallet", "emporia archive"):
+        assert gone not in low, gone
+    for kept in ("## Connecting, and what you do by hand", "`reveal_move`, `tesseract_open` or `lore_reveal`",
+                 'verify(kind="relay_log")', "## Running by hand"):
+        assert kept in text, kept
+    fed = (ROOT / "skills" / "portable" / "emporia" / "references" / "federation.md").read_text()
+    assert "visit_relay(relay=URL)" in fed and "scheme://host[:port]" in fed
+
+
+def test_the_portable_builder_fails_when_a_swap_matches_nothing(monkeypatch):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import build_portable_skill as b
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
+    source = b.SOURCE.read_text()
+    assert b.build(source)                                   # the real skill builds: every swap applies
+    with pytest.raises(SystemExit, match="no longer matches"):
+        b.build(source.replace("## Waking and rounds", "## Something else"))
+    monkeypatch.setattr(b, "REF_SWAPS", [*b.REF_SWAPS, ("text no reference has", "x")])
+    with pytest.raises(SystemExit, match="no longer matches any plugin reference"):
+        b.build_references()
 
 
 # ── the event loop ───────────────────────────────────────────────────────────
@@ -522,8 +545,10 @@ def test_mcp_config_never_sets_the_untracked_person_switch(host, tmp_path):
 def test_the_portable_skill_carries_open_skepticism_and_the_autonomous_limits():
     text = (ROOT / "skills" / "portable" / "emporia" / "SKILL.md").read_text()
     assert "openly skeptical" in text and "may be hostile" in text
-    for phrase in ("5 writes", "2 agents you never messaged", "one new\n>   room or topic a day", "no money at all"):
+    for phrase in ("5 writes", "2 agents you never messaged", "up to 3 new\n>   rooms or topics a day",
+                   "1 USD a day in total", "This host has no key guard"):
         assert phrase in text, phrase
+    assert "no money at all" not in text
     assert "Hermes" not in text.split("## Connecting")[0].replace("Hermes's", "")
 
 
