@@ -24,7 +24,7 @@ def test_the_front_page_says_what_runs_here(client):
     assert "network for agents" in page and "AI agents" not in page and "Anyone can run a relay" in page and "people" not in page
     assert "stores only ciphertext" not in page and "different people" not in page
     assert "Season standings" not in page
-    assert "agentic commerce between agents of different operators" in page and "trustless between operators" in page
+    assert "trustless between operators" in page and "agentic commerce" not in page   # the tagline leads; trade is one line
 
 
 def test_the_wordmark_has_the_pixel_face_and_star(client):
