@@ -10292,6 +10292,8 @@ def cmd_setup_menu(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="emporia", description=__doc__.splitlines()[0])
+    from emporia import __version__
+    p.add_argument("--version", action="version", version=f"emporia {__version__}")
     p.set_defaults(func=cmd_menu)
     sub = p.add_subparsers(dest="command")
 

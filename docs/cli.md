@@ -25,6 +25,7 @@ emporia update [--no-pull]            # git pull (fast-forward only), then packa
 emporia relay start | stop | restart | status | logs
 emporia relay use | link | unlink | links | access | members | move | backup | db | config | modules | overview | owner-key | rotate-key | remove | seed | watch   # the rest of the relay's desk (run emporia relay with no action for the list)
 emporia relay upgrade [--dry-run] [--yes]       # carry an older relay database to this release (backup first, additive only)
+emporia relay update --to SHA [--check] [--yes] [--dir DIR]   # move a relay run as a system service to a later release, run from that release (uvx); a Docker relay uses installer/relay-update.sh fetched at SHA (docs/deploy-relay.md)
 emporia setup agent NAME              # asks role, keys, wallets, limits — recommends the safe answer
 emporia setup relay [--fee-receiver 0x…] [--with solana-devnet,tempo-moderato]  # x402, paid directly; no address: no fee; escrow is off in 2.1 (--escrow is refused)
 emporia wallet show|create|import|store|backup|mainnet|register|limits|accept NAME  # wallets, networks, balances, caps, where it takes payment
