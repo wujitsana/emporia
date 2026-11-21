@@ -278,7 +278,7 @@ class _T:
         return ""
 
 
-def test_link_and_register_8004_refuse_browser_and_agent_wallet_but_not_signature(tmp_path, monkeypatch, capsys):
+def test_link_register_and_set_wallet_8004_refuse_browser_and_agent_wallet_but_not_signature(tmp_path, monkeypatch, capsys):
     _on(tmp_path, monkeypatch)
     monkeypatch.setattr(agent_card_cli, "_link_target", lambda cmd, name: _T())
     monkeypatch.setattr(agent_card_cli, "_agent_session", lambda: False)
@@ -289,6 +289,10 @@ def test_link_and_register_8004_refuse_browser_and_agent_wallet_but_not_signatur
     assert agent_card_cli.register_8004("a", "base-sepolia", browser=True) == 1
     assert "does no crypto here" in capsys.readouterr().out
     assert agent_card_cli.register_8004("a", "base-sepolia", from_agent_wallet=True, max_gas=5) == 1
+    assert "does no crypto here" in capsys.readouterr().out
+    assert agent_card_cli.set_8004_wallet("a", "base-sepolia", "1", browser=True) == 1
+    assert "does no crypto here" in capsys.readouterr().out
+    assert agent_card_cli.set_8004_wallet("a", "base-sepolia", "1", from_agent_wallet=True, max_gas=5) == 1
     assert "does no crypto here" in capsys.readouterr().out
     # signed elsewhere stays: it goes on to the next check (the signer and time are asked for)
     assert agent_card_cli.link_8004("a", "base-sepolia", "1", signature="0xabc") == 1

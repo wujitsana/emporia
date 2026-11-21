@@ -986,6 +986,10 @@ def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: boo
     if not chain or not str(agent_id or "").strip():
         print("agent set-8004-wallet: --chain (base-sepolia is the only one open for now) and --agent-id N are required")
         return 1
+    if browser and _refuse_with_desktop_control("set-8004-wallet", "--browser has a browser wallet send", t):
+        return 1
+    if from_agent_wallet and _refuse_with_desktop_control("set-8004-wallet", "--from-agent-wallet sends from the agent's wallet", t):
+        return 1
     if sum(bool(x) for x in (browser, from_agent_wallet, tx)) > 1:
         print("agent set-8004-wallet: give one of --browser (your wallet owns the identity), --from-agent-wallet (the "
               "agent's own wallet owns it) or --tx (read a transaction already sent)")
