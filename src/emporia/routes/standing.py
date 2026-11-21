@@ -1471,7 +1471,7 @@ def _sheet_body(agent_id: str) -> dict:
         rows = list(rows) + [r for r in conn.execute(
             "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
             "AND (status = 'abandoned' OR (status = 'completed' AND module_type = 'emporia:service:v1')) "
-            "ORDER BY updated_at DESC", (agent_id,)).fetchall() if r["session_id"] not in windowed]
+            "ORDER BY updated_at DESC LIMIT ?", (agent_id, _PENALTY_LIMIT)).fetchall() if r["session_id"] not in windowed]
     table, games, who = _craft_table()
     used = [g["session_id"] for g in games if agent_id in g["participants"]]
     game_types = set(game_module_types())
@@ -1654,6 +1654,7 @@ async def results(request: Request, module_type: str | None = None,
 
 
 _RECORD_LIMIT = 1000
+_PENALTY_LIMIT = 5 * _RECORD_LIMIT     # the all-time read of walk-aways and deals on a sheet: wide, but not unbounded
 
 
 def _not_counted(sess: dict, agent_id: str, who: dict, house: frozenset, craft_set: set) -> str | None:

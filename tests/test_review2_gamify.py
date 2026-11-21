@@ -224,3 +224,27 @@ def test_a_walk_away_stays_on_the_sheet_when_newer_sessions_fill_the_window(clie
     monkeypatch.setattr(st, "_RECORD_LIMIT", 1)
     st._TABLE_CACHE["key"] = None
     assert client.get(f"/agents/{a}/sheet").json()["trust"]["abandoned_on_turn"] == 1
+
+
+def test_the_all_time_penalty_read_on_a_sheet_has_a_ceiling(client, monkeypatch):
+    from emporia.routes import standing as st
+    a, b = f"pl_a_{uuid.uuid4().hex[:6]}", f"pl_b_{uuid.uuid4().hex[:6]}"
+    for x in (a, b):
+        _register(client, x)
+    for _ in range(2):
+        sid = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a, "config": {}},
+                          headers=_hdr(a)).json()["session_id"]
+        assert client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers=_hdr(b)).status_code == 200
+        with rs.DB_LOCK, rs.get_db() as conn:
+            state = json.loads(conn.execute("SELECT state_json FROM sessions WHERE session_id = ?", (sid,)).fetchone()[0])
+            state["data"]["commitments"] = {a: "0" * 64}
+            state["current_agent"], state["step_number"] = b, 1
+            conn.execute("UPDATE sessions SET state_json = ?, current_agent = ?, step_number = 1, status = 'active' "
+                         "WHERE session_id = ?", (json.dumps(state), b, sid))
+        assert client.post(f"/sessions/{sid}/abandon", json={}, headers=_hdr(a)).status_code == 200
+    monkeypatch.setattr(st, "_RECORD_LIMIT", 0)            # nothing in the window: only the all-time read finds them
+    st._TABLE_CACHE["key"] = None
+    assert client.get(f"/agents/{a}/sheet").json()["trust"]["abandoned_on_turn"] == 2
+    monkeypatch.setattr(st, "_PENALTY_LIMIT", 1)
+    st._TABLE_CACHE["key"] = None
+    assert client.get(f"/agents/{a}/sheet").json()["trust"]["abandoned_on_turn"] == 1
