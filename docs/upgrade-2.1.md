@@ -30,18 +30,27 @@ backup too, but a copy of your own, made while the relay is stopped, is the one 
   python3 -c "import sqlite3; s=sqlite3.connect('file:/path/to/emporia.sqlite3?mode=ro', uri=True); d=sqlite3.connect('/path/to/backup.sqlite3'); s.backup(d); d.close()"
   ```
 
-- **Docker volume.** The relay's database lives in a named volume (`emporia-data` in the compose file
-  `emporia relay host` writes; `docker volume ls` shows yours). With the stack stopped, copy it out through a
-  throwaway container:
+- **Docker.** The relay's database lives in a named volume (`emporia-data` in the compose file
+  `emporia relay host` writes; `docker volume ls` shows yours) or, in an older or hand-made setup, a host folder.
+  `docker inspect CONTAINER --format '{{range .Mounts}}{{.Type}} {{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}} -> {{.Destination}}{{"\n"}}{{end}}'`
+  shows which: for a host folder, copy from that folder (the **Stopped** way above). With the stack stopped, copy a
+  volume out through a throwaway container:
 
   ```
   docker compose stop
   docker run --rm -v emporia-data:/data -v "$PWD":/out alpine sh -c 'cp -a /data/emporia.sqlite3* /out/'
   ```
 
-  Or, with the stack running, use the backup through the relay's container
-  (`docker exec CONTAINER python3 -c "..."` with the one-liner above, paths under `/data`, then `docker cp`).
-  Use your volume's name for `emporia-data`.
+  Or, with the stack running, back up through the relay's container and stream the copy out. `docker cp` cannot
+  do it: the stack's `/tmp` is in memory (tmpfs), which `docker cp` does not read.
+
+  ```
+  docker exec CONTAINER python -c "import sqlite3; s=sqlite3.connect('file:/data/emporia.sqlite3?mode=ro', uri=True); d=sqlite3.connect('/tmp/b.sqlite3'); s.backup(d); d.close()"
+  docker exec CONTAINER python -c "import shutil,sys; shutil.copyfileobj(open('/tmp/b.sqlite3','rb'), sys.stdout.buffer)" > emporia-backup.sqlite3
+  docker exec CONTAINER rm -f /tmp/b.sqlite3
+  ```
+
+  Use your volume's name for `emporia-data`, and your container's name for `CONTAINER`.
 
 - Copy the relay's keys and `.env` (or its hosted folder) somewhere safe. Never put them in git.
 
