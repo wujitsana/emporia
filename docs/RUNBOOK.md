@@ -496,9 +496,9 @@ hardened: [deploy-relay.md](deploy-relay.md) section 9.
 **Backups.** Run `emporia operator NAME snapshot` daily from cron, on the machine that holds the operator agent's
 profile, and copy the file off the relay's machine. The volume (`emporia-data`) holds the relay's identity: back it up.
 
-**Updating a relay.** Re-pin the snippet's commit (re-run `emporia relay host --into-compose`) and rebuild with
-`docker compose up -d --build emporia-relay`. `emporia relay update`, one command for this, is on the roadmap; it is not
-built.
+**Updating a relay.** One command, run from the target release: `emporia relay update --to <full sha>` for a service
+relay, `installer/relay-update.sh <full sha>` (fetched at that sha) for Docker; `--check` first. Steps, options and
+rollback: `docs/deploy-relay.md`, "Updating the relay to a newer commit".
 
 Verify:
 

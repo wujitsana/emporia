@@ -93,3 +93,6 @@ backups/
 # a worktree links the main checkout's venv and node_modules: never commit the links
 .venv
 node_modules
+
+# written by the Docker build and the runtime install (src/emporia/build_info.py)
+src/emporia/BUILD_COMMIT
