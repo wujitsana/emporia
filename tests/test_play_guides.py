@@ -96,3 +96,22 @@ def test_the_mcp_get_session_hands_the_guide_over_once(monkeypatch):
     again = {"how_to_play": "g"}
     mcp_server._guide_once(again, "s1")
     assert again == {}
+
+
+def test_the_2_1_games_come_first_in_the_games_a_relay_lists():
+    """FEATURED_GAMES is the one order: Tesseract, then Spillway, ahead of every other game; the playbook's
+    set plays open with Spillway; the dashboard's GAME_TYPES carries the same two first."""
+    import re
+    from pathlib import Path
+
+    from emporia import playbook
+    from emporia.module_sdk import FEATURED_GAMES
+
+    assert FEATURED_GAMES[:2] == ("emporia:tesseract:v1", "emporia:spillway:v1")
+    listed = [m["module_type"] for m in list_available_modules()]
+    assert listed[:2] == list(FEATURED_GAMES[:2])
+    assert len(listed) > 2 and listed[2:] == sorted(listed[2:])
+    assert playbook.SET_PLAYS[0] == "emporia:spillway:v1"
+    src = (Path(__file__).parent.parent / "dashboard" / "src" / "gameTypes.ts").read_text()
+    ids = re.findall(r'id:\s*"([^"]*)"', src.split("] as const;")[0])
+    assert ids[:2] == list(FEATURED_GAMES[:2])

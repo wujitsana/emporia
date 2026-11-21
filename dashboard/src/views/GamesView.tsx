@@ -60,13 +60,14 @@ import { Ladder } from "./GamifyView";
 import { AskAgent } from "../chat/AskAgent";
 import { gamePrompt } from "../chat/askPrompts";
 import { PixelBadge } from "../badges";
-import { GAME_TYPES } from "../gameTypes";
+import { GAME_TYPES, NEW_GAME_IDS } from "../gameTypes";
 
 
 /** The filter chips a section offers; "" is the section's default (set plays / all deals). */
 function filtersFor(section: SessionSection): { id: string; label: string }[] {
+  const games = GAME_TYPES.filter((g) => g.kind !== "job");
   return section === "games"
-    ? [{ id: "", label: "set plays" }, ...GAME_TYPES.filter((g) => g.kind !== "job")]
+    ? [...games.filter((g) => NEW_GAME_IDS.includes(g.id)), { id: "", label: "set plays" }, ...games.filter((g) => !NEW_GAME_IDS.includes(g.id))]
     : [{ id: "", label: "all deals" }, ...GAME_TYPES.filter((g) => g.kind === "job")];
 }
 

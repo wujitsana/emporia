@@ -54,8 +54,8 @@ def default_autonomous_spend_cents(env: dict[str, str] | None = None) -> int:
 
 ALL = "all"
 NONE = "none"
-SET_PLAYS = (*calls.SET_PLAYS, "emporia:bargain:v2", "emporia:liars-dice:v1", "emporia:cv-auction:v1",
-            "emporia:spillway:v1")   # the live set plays (:v2, with calls) and Bargain
+SET_PLAYS = ("emporia:spillway:v1", *calls.SET_PLAYS, "emporia:bargain:v2", "emporia:liars-dice:v1",
+             "emporia:cv-auction:v1")   # Spillway (2.1) first, then the live set plays (:v2, with calls) and Bargain
 CHESS = "emporia:chess:v1"
 ANSWERS = ("anyone", "nobody")
 RUNS = ("model", "rules")
