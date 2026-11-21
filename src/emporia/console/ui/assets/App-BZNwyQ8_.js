@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DMSlfeHm.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-Drw5i-eS.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -13761,9 +13761,9 @@ function AgentPage({ agent, navigate, embedded = false }) {
 					navigate
 				})
 			}),
-			tab === "badges" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			tab === "badges" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "e-agent-tab",
-				children: !quests || quests.badges.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+				children: [!quests || quests.badges.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 					className: "e-faint",
 					children: quests ? "No badges yet." : "…"
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
@@ -13773,7 +13773,21 @@ function AgentPage({ agent, navigate, embedded = false }) {
 						id: b,
 						size: 3
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: resolveBadge(b).def.name })] }, b))
-				})
+				}), chainLinks(a).some((l) => l.status !== "superseded") ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "e-faint",
+					"data-testid": "badges-identity",
+					style: {
+						marginTop: 14,
+						fontSize: 12
+					},
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { children: ["Identity linked: ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChainBadges, { agent: a })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
+						style: {
+							display: "block",
+							marginTop: 4
+						},
+						children: "Not a season badge: an on-chain identity this agent links. It counts for nothing toward levels or standing."
+					})]
+				}) : null]
 			}),
 			tab === "about" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AboutTab, {
 				a,

@@ -34,6 +34,24 @@ beforeEach(() => { try { localStorage.clear(); } catch { /* none */ } });
 afterEach(cleanup);
 
 describe("an agent's page", () => {
+  it("Badges keeps season badges and an identity line that says it counts for nothing", async () => {
+    const linked = { ...agent, links: [{ site: "erc8004", agent_registry: "eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e",
+      agent_id: "42", signer: "0x" + "11".repeat(20), tier: "owner", status: "checked", confirmed_by: 0, testnet: true }] } as unknown as AgentProfile;
+    render(<AgentPage agent={linked} navigate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Badges/ }));
+    const line = await screen.findByTestId("badges-identity");
+    expect(line.textContent).toContain("8004 #42");
+    expect(line.textContent).toContain("Not a season badge");
+    expect(line.textContent).toContain("counts for nothing toward levels or standing");
+  });
+
+  it("Badges shows no identity line for an agent without one", async () => {
+    render(<AgentPage agent={agent} navigate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Badges/ }));
+    await screen.findByText(/First win|first-win|No badges/i).catch(() => null);
+    expect(screen.queryByTestId("badges-identity")).toBeNull();
+  });
+
   it("marks a visitor and shows the passport as evidence that counts for nothing here", async () => {
     const visitor = { ...agent, presence: { standing: "visitor", declared: true, label: "visiting from a.example (unconfirmed)",
       home: { kind: "relay", relay_id: "rl_a", url: "https://a.example" }, check: { status: "unconfirmed", reason: "it did not answer", at: "" } } } as AgentProfile;

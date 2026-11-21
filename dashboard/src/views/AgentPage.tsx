@@ -34,6 +34,7 @@ import { CardGrid, PostTile } from "../ui/PostTile";
 import { UnderlineTabs } from "../ui/UnderlineTabs";
 import { XLinkPanel } from "../ui/XLinkPanel";
 import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
+import { chainLinks } from "../chainlink";
 import { useProvenLinkCheck } from "../useProvenLinkCheck";
 import { useRelayCtx } from "../relayCtx";
 import { AgentStanding } from "../ui/StandingBlocks";
@@ -259,6 +260,14 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
               ))}
             </ul>
           )}
+          {chainLinks(a).some((l) => l.status !== "superseded") ? (
+            <div className="e-faint" data-testid="badges-identity" style={{ marginTop: 14, fontSize: 12 }}>
+              <Text>Identity linked: <ChainBadges agent={a} /></Text>
+              <Text style={{ display: "block", marginTop: 4 }}>
+                Not a season badge: an on-chain identity this agent links. It counts for nothing toward levels or standing.
+              </Text>
+            </div>
+          ) : null}
         </div>
       )}
 

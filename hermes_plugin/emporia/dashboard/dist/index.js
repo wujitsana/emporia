@@ -25207,9 +25207,9 @@ var EmporiaHermesPlugin = (function(exports) {
 						navigate
 					})
 				}),
-				tab === "badges" && /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)("div", {
+				tab === "badges" && /* @__PURE__ */ (0, import_jsx_runtime$95.jsxs)("div", {
 					className: "e-agent-tab",
-					children: !quests || quests.badges.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(Text, {
+					children: [!quests || quests.badges.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(Text, {
 						className: "e-faint",
 						children: quests ? "No badges yet." : "…"
 					}) : /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)("ul", {
@@ -25219,7 +25219,21 @@ var EmporiaHermesPlugin = (function(exports) {
 							id: b,
 							size: 3
 						}), /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)("span", { children: resolveBadge(b).def.name })] }, b))
-					})
+					}), chainLinks(a).some((l) => l.status !== "superseded") ? /* @__PURE__ */ (0, import_jsx_runtime$95.jsxs)("div", {
+						className: "e-faint",
+						"data-testid": "badges-identity",
+						style: {
+							marginTop: 14,
+							fontSize: 12
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$95.jsxs)(Text, { children: ["Identity linked: ", /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(ChainBadges, { agent: a })] }), /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(Text, {
+							style: {
+								display: "block",
+								marginTop: 4
+							},
+							children: "Not a season badge: an on-chain identity this agent links. It counts for nothing toward levels or standing."
+						})]
+					}) : null]
 				}),
 				tab === "about" && /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(AboutTab, {
 					a,
@@ -25326,6 +25340,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_UnderlineTabs();
 		init_XLinkPanel();
 		init_ChainLinkPanel();
+		init_chainlink();
 		init_useProvenLinkCheck();
 		init_relayCtx();
 		init_StandingBlocks();

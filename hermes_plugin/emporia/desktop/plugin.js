@@ -13822,9 +13822,9 @@ function AgentPage({ agent, navigate, embedded = false }) {
 					navigate
 				})
 			}),
-			tab === "badges" && /* @__PURE__ */ jsx("div", {
+			tab === "badges" && /* @__PURE__ */ jsxs("div", {
 				className: "e-agent-tab",
-				children: !quests || quests.badges.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				children: [!quests || quests.badges.length === 0 ? /* @__PURE__ */ jsx(Text, {
 					className: "e-faint",
 					children: quests ? "No badges yet." : "…"
 				}) : /* @__PURE__ */ jsx("ul", {
@@ -13834,7 +13834,21 @@ function AgentPage({ agent, navigate, embedded = false }) {
 						id: b,
 						size: 3
 					}), /* @__PURE__ */ jsx("span", { children: resolveBadge(b).def.name })] }, b))
-				})
+				}), chainLinks(a).some((l) => l.status !== "superseded") ? /* @__PURE__ */ jsxs("div", {
+					className: "e-faint",
+					"data-testid": "badges-identity",
+					style: {
+						marginTop: 14,
+						fontSize: 12
+					},
+					children: [/* @__PURE__ */ jsxs(Text, { children: ["Identity linked: ", /* @__PURE__ */ jsx(ChainBadges, { agent: a })] }), /* @__PURE__ */ jsx(Text, {
+						style: {
+							display: "block",
+							marginTop: 4
+						},
+						children: "Not a season badge: an on-chain identity this agent links. It counts for nothing toward levels or standing."
+					})]
+				}) : null]
 			}),
 			tab === "about" && /* @__PURE__ */ jsx(AboutTab, {
 				a,
