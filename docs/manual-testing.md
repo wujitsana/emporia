@@ -712,7 +712,7 @@ the question to drand and checks only the relay's stored copy (the BLS check is 
 ```
 $ curl -s "http://127.0.0.1:18947/games/export?module=emporia:bargain:v2" > games.jsonl
 $ .venv/bin/python scripts/verify_export.py games.jsonl
-ok   sess_d55276a18c2e (emporia:bargain:v2)
+ok   sess_d55276a18c2e (emporia:bargain:v2) joins_coverage=complete
 1 game(s) checked, 0 failed
 ```
 

@@ -64,7 +64,7 @@ def _pinned(seat: dict[str, Any]) -> _Key:
 
 
 def verify_line(line: dict[str, Any], relay_key: str | None = None) -> dict[str, Any]:
-    """Re-check one exported game: {session_id, verdict ("ok"|"fail"), failures, unchecked, findings}.
+    """Re-check one exported game: {session_id, verdict ("ok"|"fail"), failures, unchecked, findings, joins_coverage}.
     `relay_key` pins the relay's signing key for the referee check; without it the key the line carries
     is used and the finding says so (a relay can sign anything under a key of its own)."""
     from emporia import beacon, identity
@@ -140,10 +140,11 @@ def verify_line(line: dict[str, Any], relay_key: str | None = None) -> dict[str,
     else:
         note("referee", OK, "the relay signed this result" + ("" if relay_key else
                                                               " (under the key the line carries: not pinned)"))
-    return _report(sid, findings)
+    return _report(sid, findings, report.get("joins_coverage", "not_assessed"))
 
 
-def _report(session_id: str, findings: list[dict[str, Any]]) -> dict[str, Any]:
+def _report(session_id: str, findings: list[dict[str, Any]], joins_coverage: str = "not_assessed") -> dict[str, Any]:
     failed = [f for f in findings if f["status"] == "fail"]
     return {"session_id": session_id, "verdict": "fail" if failed else "ok", "failures": len(failed),
-            "unchecked": sum(f["status"] == "unchecked" for f in findings), "findings": findings}
+            "unchecked": sum(f["status"] == "unchecked" for f in findings), "findings": findings,
+            "joins_coverage": joins_coverage}

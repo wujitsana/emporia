@@ -187,6 +187,7 @@ def test_the_cli_passes_a_good_file_and_fails_a_tampered_one(tmp_path):
     run = [sys.executable, "-I", str(ROOT / "scripts" / "verify_export.py")]
     ok = subprocess.run([*run, str(good)], capture_output=True, text=True, timeout=240)
     assert ok.returncode == 0 and "2 game(s) checked, 0 failed" in ok.stdout, ok.stdout + ok.stderr
+    assert ok.stdout.count("joins_coverage=") == 2, ok.stdout        # the coverage is printed beside every verdict
     no = subprocess.run([*run, str(bad)], capture_output=True, text=True, timeout=240)
     assert no.returncode == 1 and "1 failed" in no.stdout and "log_chain" in no.stdout, no.stdout + no.stderr
     assert subprocess.run([*run, str(tmp_path / "none")], capture_output=True, text=True).returncode == 2

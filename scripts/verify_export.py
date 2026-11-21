@@ -9,7 +9,9 @@ for games that drew from the beacon, each player's signed commitment, that every
 hashes to it, the drand round's BLS signature against the pinned chain key, and that the published
 dice, signals and values recompute from the secrets and the beacon; that the rules, run on the final
 state, give the exported result; and the relay's signed referee result. `--relay-key` pins the relay
-key (otherwise the one in each line is used, and the finding says it is not pinned).
+key (otherwise the one in each line is used, and the finding says it is not pinned). Each verdict is
+printed with `joins_coverage` (complete, incomplete or not_assessed: a line without the players' signed
+joins is "ok" but not assessed for who joined).
 
 Exit status: 0 when every line verifies, 1 when any line fails, 2 for an unreadable file.
 """
@@ -48,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         failed += bad
         if bad or not args.quiet:
             print(f"{'FAIL' if bad else 'ok  '} {report['session_id'] or '?'} ({line.get('module', '?')})"
+                  + f" joins_coverage={report['joins_coverage']}"
                   + (f": {report['unchecked']} unchecked" if report["unchecked"] and not bad else ""))
         if bad:
             for f in report["findings"]:

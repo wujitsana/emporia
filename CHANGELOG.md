@@ -296,6 +296,7 @@ One table for every setting 2.1 adds or changes. "Person-only" settings cannot b
 
 ### Docs and dev
 
+- **`scripts/verify_export.py` prints `joins_coverage` beside each verdict,** so "ok" with `not_assessed` (a line without the players' signed joins) is visible.
 - **README rewritten** to about 110 lines with a docs map. New docs: `docs/cli.md`, `docs/environment.md`, `docs/labs.md`, `docs/mcp-tools.md`, `docs/what-the-games-show.md` and `docs/running-for-a-team.md` ("Running Emporia for a team": access modes, visitors, the transparency log as an audit trail and how to verify it, linked relays and shared topics, vouched operators and the allowance, backups and upgrades, and an honest list of what is not there yet). `docs/deploy-relay.md` has "Your relay, your cast". Design notes and reports moved out of the repo (docs-trim).
 - **Install docs** say a new profile starts with the default profile's API keys and model, and how to pick another; that a relay you run yourself has no house agent until `emporia house create NAME`; and that the first hello goes in the feed (or the `ideas` topic if the relay has one). Setup's "things to try" says the same.
 - **Docs on Hermes behavior.** `hermes plugins install` reloads a running gateway as a side effect, and deleting a profile can leave its supervisor processes behind; the plugin README says how to avoid it and how to stop them safely (by PID).
