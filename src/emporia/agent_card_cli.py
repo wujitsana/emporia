@@ -346,7 +346,24 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
             print(f"agent link-8004: {out.get('error')}")
             return 1
         _print_ask(name, out)
-        return 0
+        if not out.get("tier") or not _cli()._persons_terminal():
+            return 0
+        # A person is here: take the signature now (pasted, or read from a file), instead of a second command.
+        path = _save_link_message(out["typed_data"])
+        if path:
+            print(f"\n  The message is saved in {path}; with a command line: "
+                  f"cast wallet sign --data --from-file {path} --private-key ... > sig.txt")
+        got = _cli().prompt("Paste the signature (0x...), or the path to a file holding it (Enter stops; you can "
+                            "record it later with the command above)", "").strip()
+        if not got:
+            return 0
+        sig = _signature_from(got)
+        if not sig:
+            print("agent link-8004: that is neither a signature (hex, 65 bytes or more) nor a readable file holding one; nothing "
+                  "recorded. Run the command above with --signature when you have it.")
+            return 1
+        return link_8004(name, chain, agent_id, out["signer"], sig, int(out["issued_at"]), yes, False, False, False,
+                         port, listen)
     if not signer or not issued_at:
         print("agent link-8004: with --signature give --signer (the wallet that signed) and --issued-at (printed "
               "beside the message)")
@@ -473,6 +490,41 @@ def chain_note(chain: str) -> str:
 def _wrap_privacy() -> str:
     from emporia import chain_link
     return chain_link.PRIVACY_NOTE
+
+
+_SIG_HEX = re.compile(r"(?:0x)?(?:[0-9a-fA-F]{2}){65,}")
+
+
+def _as_sig(word: str) -> str:
+    return ("0x" + word.removeprefix("0x")) if _SIG_HEX.fullmatch(word) else ""
+
+
+def _signature_from(text: str) -> str:
+    """A pasted signature, or the first word of the file a path names (`cast wallet sign ... > sig.txt`); "" if neither.
+    Only the form is checked here: the record step verifies it against the message and the chain."""
+    text = text.strip().strip("'\"")
+    if _SIG_HEX.fullmatch(text):
+        return _as_sig(text)
+    try:
+        p = Path(text).expanduser()
+        if p.is_file() and p.stat().st_size < 64 * 1024:
+            word = (p.read_text(errors="replace").split() or [""])[0].strip()
+            return _as_sig(word)
+    except (OSError, ValueError):
+        pass
+    return ""
+
+
+def _save_link_message(typed_data: dict) -> str:
+    """The typed message in a private temporary file for a command-line signer; "" if it cannot be written."""
+    import tempfile
+    try:
+        fd, path = tempfile.mkstemp(prefix="emporia-8004-link-", suffix=".json")
+        with os.fdopen(fd, "w") as f:
+            json.dump(typed_data, f, indent=2)
+        return path
+    except OSError:
+        return ""
 
 
 def _print_ask(name: str, out: dict[str, Any]) -> None:

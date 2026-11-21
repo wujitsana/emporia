@@ -310,3 +310,61 @@ def test_link_wait_waits_for_the_agent_then_goes_on(target, chain, monkeypatch, 
 def test_register_wait_needs_a_transaction_or_the_browser(target, capsys):
     assert card.register_8004(target.name, "base-sepolia", wait=True) == 1
     assert "--wait goes with --tx" in capsys.readouterr().out
+
+
+def _recording(monkeypatch):
+    sent = {}
+
+    def fake_request(method, url, *, agent_id="", json=None, **kw):
+        sent.update(url=url, body=json)
+
+        class R:
+            status_code = 200
+            def json(self_):
+                return {"link": {"status": "claimed"}, "links": []}
+        return R()
+    monkeypatch.setattr(mcp_server, "_bearer_request", fake_request)
+    monkeypatch.setattr(mcp_server, "_base", lambda: "http://relay.test")
+    return sent
+
+
+def _person(monkeypatch, answers):
+    cli = card._cli()
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    it = iter(answers)
+    monkeypatch.setattr(cli, "prompt", lambda q, d="": next(it))
+
+
+@pytest.mark.parametrize("how", ["paste", "file"])
+def test_at_the_terminal_the_signature_is_taken_at_once_pasted_or_from_a_file(target, chain, capsys, monkeypatch, tmp_path, how):
+    key, addr = _owned_by_eoa(chain)
+    sent = _recording(monkeypatch)
+    captured = {}
+
+    def answer_with_signature(q, d=""):
+        if q.startswith("Paste the signature"):
+            out = capsys.readouterr().out
+            typed = json.loads(out[out.index("{\n"): out.index("\n}\n") + 2])
+            captured["issued"], captured["sig"] = _sign(key, addr, issued=int(typed["message"]["issuedAt"]))
+            assert "The message is saved in" in out and "cast wallet sign --data --from-file" in out
+            if how == "file":
+                f = tmp_path / "sig.txt"
+                f.write_text(captured["sig"] + "\n")
+                return str(f)
+            return captured["sig"]
+        return "y"                                    # the publish question
+    cli = card._cli()
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", answer_with_signature)
+    assert card.link_8004(target.name, "base-sepolia", str(AGENT)) == 0
+    assert sent["url"].endswith(f"/agents/{target.name}/links/erc8004") and sent["body"]["wallet_sig"].removeprefix("0x") == captured["sig"].removeprefix("0x")
+
+
+def test_enter_stops_and_junk_is_refused_and_records_nothing(target, chain, capsys, monkeypatch):
+    _owned_by_eoa(chain)
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: pytest.fail("posted"))
+    _person(monkeypatch, [""])
+    assert card.link_8004(target.name, "base-sepolia", str(AGENT)) == 0
+    _person(monkeypatch, ["hello"])
+    assert card.link_8004(target.name, "base-sepolia", str(AGENT)) == 1
+    assert "neither a signature" in capsys.readouterr().out
