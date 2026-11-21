@@ -321,6 +321,61 @@ def test_what_the_page_decodes_is_escaped_and_an_undecodable_call_is_shown_raw_o
     assert "could not be read here" in raw and "<dt>Name</dt>" not in raw
 
 
+def _register_tx_of(mutate):
+    from emporia import erc8004_register as reg
+    file = reg.registration_file("kestrel", "Plays fair.", "https://relay.example", SID, True, image=reg.token_picture(SID))
+    mutate(file)
+    return {"chain_id": 84532, "to": REG, "data": "0x" + reg.calldata(reg.data_uri(file)).hex()}
+
+
+@needs_lib
+def test_calldata_with_an_extra_trailing_word_gets_the_raw_only_view():
+    from emporia import erc8004_wallet as W
+    tx = _register_tx()
+    assert bs.describe_call(tx) is not None
+    longer = dict(tx, data=tx["data"] + "00" * 32)
+    assert bs.describe_call(longer) is None
+    page = bs.tx_page_html(longer, chain_label="Base Sepolia (testnet)", agent_name="kestrel", summary="s", nonce="n")
+    assert "could not be read here" in page and "<dt>Name</dt>" not in page
+    wallet = "0x" + "12" * 20
+    sw = {"chain_id": 84532, "to": REG, "data": "0x" + W.set_wallet_calldata(7, wallet, 1_900_000_000, b"\x01" * 65).hex()}
+    assert bs.describe_call(sw) is not None
+    assert bs.describe_call(dict(sw, data=sw["data"] + "00" * 32)) is None
+
+
+@needs_lib
+def test_a_registration_with_a_second_service_gets_the_raw_only_view():
+    tx = _register_tx_of(lambda f: f["services"].append({"name": "other", "endpoint": "https://elsewhere.example"}))
+    assert bs.describe_call(tx) is None
+    tx = _register_tx_of(lambda f: f["services"][0].update(extra="x"))
+    assert bs.describe_call(tx) is None
+
+
+@needs_lib
+def test_a_registration_key_the_rows_do_not_show_is_named_in_a_row():
+    call = bs.describe_call(_register_tx_of(lambda f: f.update(sneaky="1", active=False)))
+    rows = dict(call["rows"])
+    assert "sneaky" in rows["Also in the file (not shown here)"] and "active" in rows["Also in the file (not shown here)"]
+    assert "Also in the file (not shown here)" not in dict(bs.describe_call(_register_tx())["rows"])
+
+
+@needs_lib
+def test_an_image_of_any_kind_is_shown_as_present():
+    call = bs.describe_call(_register_tx_of(lambda f: f.update(image="https://elsewhere.example/p.png")))
+    assert call["image"] is None
+    assert "present" in dict(call["rows"])["Picture"] and "not shown" in dict(call["rows"])["Picture"]
+
+
+def test_the_page_shows_the_short_code_the_terminal_prints_and_it_differs_per_run():
+    a = bs.SigningPage(typed(), chain_label="x", agent_name="k")
+    assert len(a.code) == bs.CODE_LENGTH and set(a.code) <= set(bs.CODE_ALPHABET) and a.code not in a.token
+    same_token = {bs.SigningPage(typed(), chain_label="x", agent_name="k", token="fixed").code for _ in range(20)}
+    assert len(same_token) > 1             # drawn fresh each run, not derived from the token
+    assert f"<strong>{a.code}</strong>" in a.render("n") and "this page must show" in a.render("n")
+    send = bs.SendPage(_register_tx(), chain_label="x", agent_name="k", summary="s")
+    assert f"<strong>{send.code}</strong>" in send.render("n")
+
+
 def test_the_printed_steps_give_the_emporia_name_and_the_numeric_fallback():
     text, _ = bs.instructions(8765, "172.20.0.2", container=True, ssh=False, token="TOKEN", what="transaction")
     assert "http://emporia.localhost:8765/TOKEN" in text and "http://127.0.0.1:8765/TOKEN" in text

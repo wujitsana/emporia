@@ -49,6 +49,21 @@ _HEX = re.compile(r"(0x)?[0-9a-fA-F]+")
 _TX = re.compile(r"0x[0-9a-fA-F]{64}")
 
 
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"      # no 0/O, 1/I/L: read aloud or off a screen without a doubt
+CODE_LENGTH = 4
+
+
+def new_code() -> str:
+    """A short random code the terminal prints and the page shows, so the person can tell this page is the one their
+    command opened. Drawn on its own: it is not derived from the token."""
+    return "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
+
+
+def _code_line(code: str) -> str:
+    return (f'<p class="code">The terminal says this page must show <strong>{html.escape(code)}</strong>. '
+            'If it shows something else, close it.</p>\n') if code else ""
+
+
 class BrowserSignError(Exception):
     """Said to the person as it is."""
 
@@ -234,6 +249,7 @@ body{background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif;mar
 .mark svg{width:.62em;height:.62em;margin-left:.45em;fill:currentColor}
 .status,code{font-family:ui-monospace,monospace}.status{color:var(--acc);margin:0 0 1.4rem}
 h1{font-size:1.2rem;margin:0 0 .5rem}p{margin:.5rem 0}.dim{color:var(--dim)}
+.code{font-size:1.05rem;border:1px solid var(--line);padding:.5rem .7rem}.code strong{font-size:1.5rem;letter-spacing:.2em}
 .run{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1.2rem;margin:.9rem 0;padding:.7rem .9rem;
 border:1px solid var(--line);font:14px/1.5 ui-monospace,monospace}.run dt{color:var(--acc)}.run dd{margin:0;overflow-wrap:anywhere}
 .pic{display:flex;align-items:center;gap:.9rem;margin:.6rem 0}.pic img{border:1px solid var(--line);image-rendering:pixelated}
@@ -416,14 +432,14 @@ SCRIPT = r"""
 """
 
 
-def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str) -> str:
+def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str, code: str = "") -> str:
     """The page. `typed_data` is the JSON form a wallet takes (`erc8004.typed_data_json`)."""
     msg = typed_data["message"]
     data = _json_for_html({"typed_data": typed_data, "chain_label": chain_label,
                            "add_chain": chain_params(int(typed_data["domain"]["chainId"]))})
     shown = html.escape(json.dumps({k: typed_data[k] for k in ("domain", "primaryType", "message")}, indent=2))
     return _head(nonce, "Sign the link") + _masthead(f"sign in your wallet &middot; {html.escape(chain_label)}") + f"""<h1>Link ERC-8004 agent #{html.escape(str(msg['agentId']))} to {html.escape(agent_name)}</h1>
-<p><strong>&ldquo;{html.escape(str(msg['statement']))}&rdquo;</strong></p>
+{_code_line(code)}<p><strong>&ldquo;{html.escape(str(msg['statement']))}&rdquo;</strong></p>
 <p>Your wallet shows these same words, with the date and the details below. Nothing goes on-chain and it costs no gas.</p>
 <p class="dim">Signer: <code>{html.escape(str(msg['signer']))}</code></p>
 <p class="dim">Check the wallet popup: network {html.escape(chain_label)}. This page only asks for this one signature and closes.</p>
@@ -442,37 +458,57 @@ the message below with the signer's wallet some other way and give it to the ter
 
 _SEL_REGISTER = "f2c298be"           # register(string)                          (erc8004_register.SEL_REGISTER_URI)
 _SEL_SET_WALLET = "2d1ef5ae"         # setAgentWallet(uint256,address,uint256,bytes) (erc8004_wallet.SEL_SET_AGENT_WALLET)
+_REG_SHOWN = {"name", "description", "services", "x402Support", "image", "type", "active", "registrations",
+              "supportedTrust"}   # the keys the page shows, or the fixed ones it checks (see describe_call)
 _PICTURE = re.compile(r"data:image/(?:svg\+xml|png);base64,[A-Za-z0-9+/=]+")
 
 
 def describe_call(tx: dict) -> dict | None:
     """The call the wallet will send, decoded from its own bytes for a person to read: `{"kind", "rows": [(label,
-    value)], "image"}`, or None when it is not one of the two ERC-8004 calls this page sends (the page then shows the
-    raw call only). Values are plain text; the page escapes them."""
+    value)], "image"}`, or None when it is not one of the two ERC-8004 calls this page sends, or when the bytes are not
+    exactly what a clean encoding of the decoded values gives (extra words, loose padding: the page then shows the raw
+    call only). Values are plain text; the page escapes them."""
     try:
-        from eth_abi import decode
+        from eth_abi import decode, encode
         raw = bytes.fromhex(str(tx.get("data") or "").removeprefix("0x"))
     except (ImportError, ValueError):
         return None
     sel, body = raw[:4].hex(), raw[4:]
     try:
         if sel == _SEL_REGISTER:
-            from emporia.erc8004_register import decode_data_uri
+            from emporia.erc8004_register import REG_TYPE, decode_data_uri
             (uri,) = decode(["string"], body)
+            if bytes.fromhex(sel) + encode(["string"], [uri]) != raw:
+                return None
             doc = decode_data_uri(uri)
             if doc is None:
                 return {"kind": "register", "rows": [("Registration", "a link, not an on-chain file: " + uri[:200])],
                         "image": None}
-            svc = next((x for x in doc.get("services") or [] if isinstance(x, dict)), {})
+            services = doc.get("services") or []
+            if not isinstance(services, list) or len(services) > 1:
+                return None                 # a second service is not shown here: the raw call only
+            svc = next((x for x in services if isinstance(x, dict)), {})
+            if set(svc) - {"name", "endpoint", "stableId"}:
+                return None
             image = doc.get("image") if isinstance(doc.get("image"), str) and _PICTURE.fullmatch(doc["image"]) else None
+            extra = sorted(set(doc) - _REG_SHOWN)
+            usual = {"type": REG_TYPE, "active": True, "registrations": [], "supportedTrust": []}
+            extra += [k for k, v in usual.items() if k in doc and doc[k] != v and k not in extra]
+            picture = ("below, stored on chain in this registration" if image
+                       else "present, but not a small embedded image: not shown here" if doc.get("image") else "none")
             rows = [("Name", str(doc.get("name") or "")), ("Description", str(doc.get("description") or "")),
                     ("Profile", str(svc.get("endpoint") or "")), ("Stable id", str(svc.get("stableId") or "")),
                     ("Accepts payments (x402)", "yes" if doc.get("x402Support") else "no"),
-                    ("Picture", "below, stored on chain in this registration" if image else "none")]
+                    ("Picture", picture),
+                    ("Also in the file (not shown here)", ", ".join(extra))]
             return {"kind": "register", "rows": [(k, v) for k, v in rows if v], "image": image,
-                    "data_bytes": len(raw), "image_bytes": len(image.encode()) if image else 0}
+                    "data_bytes": len(raw), "image_bytes": len(doc["image"].encode()) if isinstance(doc.get("image"), str) else 0}
         if sel == _SEL_SET_WALLET:
-            agent_id, wallet, deadline, sig = decode(["uint256", "address", "uint256", "bytes"], body)
+            kinds = ["uint256", "address", "uint256", "bytes"]
+            vals = decode(kinds, body)
+            if bytes.fromhex(sel) + encode(kinds, list(vals)) != raw:
+                return None
+            agent_id, wallet, deadline, sig = vals
             until = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(deadline)))
             return {"kind": "set_wallet", "image": None, "rows": [
                 ("Identity", f"ERC-8004 agent #{agent_id}"), ("Paid at (new agent wallet)", str(wallet)),
@@ -484,7 +520,7 @@ def describe_call(tx: dict) -> dict | None:
     return None
 
 
-def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, nonce: str) -> str:
+def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, nonce: str, code: str = "") -> str:
     """The page for sending one transaction from the person's wallet. `tx` is `{chain_id, to, data}`; `summary` is the
     plain-words account of what it does (the CLI printed it too). The call is shown decoded from the exact bytes the
     wallet will send (`describe_call`), the raw call folded below it. Nothing is sent without the wallet's own prompt."""
@@ -521,7 +557,7 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
                f'({html.escape(fn_name)}) on the registry, with its fee; the full data sits behind its Data or Hex tab, '
                f'{inside}</p>') if call else '<p class="dim">This call could not be read here: check it against the details below.</p>'
     return _head(nonce, title) + _masthead(f"one transaction &middot; {html.escape(chain_label)}") + f"""<h1>{head}</h1>
-<p>{html.escape(summary)}</p>
+{_code_line(code)}<p>{html.escape(summary)}</p>
 <dl class="run">{table}</dl>
 {picture}
 {decoded}
@@ -560,6 +596,7 @@ class SigningPage:
         self.port_wanted, self.listen = check_port(port), validate_listen(listen)
         self.typed_data, self.chain_label, self.agent_name = typed_data, chain_label, agent_name
         self.token = token or secrets.token_urlsafe(24)
+        self.code = new_code()
         self.timeout = timeout
         self.result: dict | None = None
         self._server: HTTPServer | None = None
@@ -567,7 +604,8 @@ class SigningPage:
         self._signer = str(typed_data["message"]["signer"]).lower()
 
     def render(self, nonce: str) -> str:
-        return page_html(self.typed_data, chain_label=self.chain_label, agent_name=self.agent_name, nonce=nonce)
+        return page_html(self.typed_data, chain_label=self.chain_label, agent_name=self.agent_name, nonce=nonce,
+                         code=self.code)
 
     def accept(self, body: Any) -> dict | None:
         """The result for a well-formed POST body, else None (a refused POST does not use the one)."""
@@ -740,6 +778,7 @@ class SendPage(SigningPage):
         self.typed_data = {}
         self.chain_label, self.agent_name = chain_label, agent_name
         self.token = token or secrets.token_urlsafe(24)
+        self.code = new_code()
         self.timeout = timeout
         self.result = None
         self._server = None
@@ -748,7 +787,7 @@ class SendPage(SigningPage):
 
     def render(self, nonce: str) -> str:
         return tx_page_html(self.tx, chain_label=self.chain_label, agent_name=self.agent_name, summary=self.summary,
-                            nonce=nonce)
+                            nonce=nonce, code=self.code)
 
     def accept(self, body: Any) -> dict | None:
         try:

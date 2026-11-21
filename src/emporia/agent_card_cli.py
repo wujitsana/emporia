@@ -432,6 +432,7 @@ def _announce_page(page: Any, *, chain_label: str, registry: str, what: str, lea
     print(f"\n  {lead}\n\n{text}")
     if getattr(page, "port_note", ""):
         print(f"  {page.port_note}\n")
+    print(f"  The page must show the code {page.code}. If it shows another, do not sign: close it.\n")
     if opens:
         try:
             webbrowser.open(page.url)       # best effort: the URL above is the fallback
