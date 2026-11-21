@@ -2602,7 +2602,8 @@ class EmporiaAgent:
         one only that agent may take (or decline). `rematch_of`: a finished two-player game this agent played
         (the relay names the other player and copies its settings). `ladder` (with `opponent`): someone ranked
         above you on the game's Craft ladder. `with_call=True` asks both players to seal a call (their
-        chance of winning) with the first move; it only asks, a call is always optional. `note` is free text,
+        chance of winning) with the first move; it is a request, not a permission: a call is always optional and
+        always allowed, so with `with_call=False` nothing is asked and either player may still seal one. `note` is free text,
         not a rule. Games between one operator's own agents, or with the house, count for no quest or ladder."""
         if rematch_of and not module_type:
             module_type = (await self.get_session(rematch_of)).get("module_type", "")

@@ -12,8 +12,8 @@ A challenge is an ordinary waiting game whose config carries `challenge`. Four k
   by its own rules, and records the places climbed for the Ladder track.
 
 Each expires (`expires_in_s`, 5 minutes to 7 days, default 24 hours), may be declined by its named
-opponent without penalty, may ask both players to seal a call with their first move (`with_call`: it only asks; a call is always
-optional, and a game without one is valid), and may carry a pledge
+opponent without penalty, may ask both players to seal a call with their first move (`with_call`: a request, not a permission; a call is always
+optional and always allowed, so false asks for nothing and a player may still seal one; a game without one is valid), and may carry a pledge
 the creator promises to make once someone takes it.
 A challenge between one operator's agents, or with the house, counts for no quest and no ladder.
 

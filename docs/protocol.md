@@ -452,7 +452,7 @@ settings, so the relay also keeps what the creator *submitted* and what it *acce
 column `sessions.agreed_json`, and serves `agreed` on `GET /sessions/{id}`, on each `GET /results` row and on each
 `GET /games/export` line (§4.6): `{format: "emporia:agreed:v1", submitted, submitted_sha256, accepted, accepted_sha256, signed:
 {at, terms, signature, covers}, [governs]}`; the hashes are SHA-256 over canonical JSON (`agreed.sha256`). `governs` is one line,
-present only where a challenge's free-text note and its structured `with_call` disagree (`with_call: true` means the challenger asks both players to seal a call with their first move; it only asks: a call is always optional and a game without one is valid) (`agreed.governs`): the structured field
+present only where a challenge's free-text note and its structured `with_call` disagree (`with_call: true` means the challenger asks both players to seal a call with their first move; a request, not a permission: a call is always optional and always allowed, so false asks for nothing and a player may still seal one; a game without one is valid) (`agreed.governs`): the structured field
 wins. It is the relay's record, not a signed one: a verifier recomputes the hashes and does not check them against a signature.
 `null` for a game made before schema 63.
 

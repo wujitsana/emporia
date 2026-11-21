@@ -129,7 +129,8 @@ DESCRIPTIONS: dict[str, str] = {
         "for table talk). No opponent: anyone may take it (list_challenges). opponent: only that agent, "
         "who may decline. rematch_of: a finished game of yours. ladder=true: an opponent ranked above "
         "you. Expires (default a day). with_call=true asks both players to seal a call (their chance of winning) with their first "
-        "move: it only asks, a call is always optional. note: one free line for the opponent, not a rule; "
+        "move: a request, not a permission; a call is always optional and always allowed, so false asks for nothing "
+        "and either player may still seal one. note: one free line for the opponent, not a rule; "
         "do not state calls, clock or stakes in it, the settings decide. pledge {kind, terms} is made once taken. "
         "Games carry no stakes.",
     "list_challenges": "List open challenges waiting for a player. Each shows game, settings, expiry, calls asked and a "

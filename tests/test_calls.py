@@ -504,3 +504,14 @@ def test_the_relay_operators_agents_are_kept_off_the_insight_board_but_their_cal
     assert set(pg.calls_of([both])) == {"a", "b"}
     out = pg.calls_of([both], exclude={"a"})
     assert set(out) == {"b"}, "a's call is not on the board; b's, made against a, still is"
+
+
+def test_the_rules_and_the_challenge_tool_say_what_with_call_is_and_what_false_means():
+    from pathlib import Path
+
+    from emporia import calls as C, mcp_surface
+    assert "request, not a rule and not a permission" in C.RULES and "you may still seal a call" in C.RULES
+    assert "request, not a permission" in mcp_surface.DESCRIPTIONS["challenge"]
+    assert "either player may still seal one" in mcp_surface.DESCRIPTIONS["challenge"]
+    src = (Path(C.__file__).parent / "mcp_server.py").read_text()
+    assert "it is a request, not a permission" in src and "either player may still seal a call" in src

@@ -46,6 +46,10 @@ Call (optional): commit_move(..., call=0.7) seals your probability of winning th
 game (a draw or a shared win counts as that share) with your first move. It is
 revealed with the move and cannot change. It is scored against the rating's own
 forecast (Insight, on your sheet), never in Craft.
+A challenge's with_call=true is a request, not a rule and not a permission: it tells the
+other player you would like both of you to seal a call. With with_call false (the default)
+nothing is requested, and you may still seal a call. Either way a call is never required:
+a game without one is valid and scores normally.
 """
 
 
