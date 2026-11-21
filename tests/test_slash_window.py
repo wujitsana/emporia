@@ -66,7 +66,7 @@ def no_secrets(out):
 
 def test_every_new_subcommand_without_a_runtime(monkeypatch):
     monkeypatch.setattr(setup_cli, "runtime", lambda: None)
-    for sub in ("activity", "next", "games", "quests", "inbox", "labs", "card", "pending", "pause", "resume"):
+    for sub in ("activity", "next", "games", "quests", "inbox", "labs", "card", "lore", "pending", "pause", "resume"):
         assert sc.handle(sub) == sc.NOT_SET_UP, sub
     assert sc.handle("deny abc123") == sc.NOT_SET_UP
 
@@ -262,7 +262,8 @@ def test_peek_is_read_only_and_in_the_runtime():
     for writer in ("send_", "accept_", "play_", "approve", "deny", "pause", "set_", "post_", "pay"):
         assert writer not in block, writer
     from emporia import cli
-    assert set(cli.PEEK) == {"next", "inbox", "games", "quests", "card", "waiting"}   # waiting: the doctor's reply-wait check, read-only
+    assert set(cli.PEEK) == {"next", "inbox", "games", "quests", "card", "waiting", "lore"}   # waiting: the doctor's reply-wait check, read-only
+    assert "m.lore()" in block and "join" not in cli.PEEK["lore"], "a look at the Lore never joins it"
     assert "peek" in setup_cli.PASSTHROUGH
 
 
@@ -281,3 +282,16 @@ def test_no_new_output_carries_a_key(home, monkeypatch):
                       ("signer", "pending"): f"  intent_1  11-09 10:15  alice: send to {key}\n"})
     for sub in ("card", "pending"):
         no_secrets(sc.handle(sub))
+
+
+def test_lore_says_joined_the_chapter_its_role_and_what_is_due(home, monkeypatch):
+    use(monkeypatch, {("peek", "lore"): {"joined": True, "chapter": 3, "label": "III " + HOSTILE, "practice": True,
+                                         "phase": "write", "seconds_left": 3700, "role": "scribe", "due": "write"}})
+    out = sc.handle("lore")
+    assert "it has joined" in out and "a practice page" in out and "phase write (1h01m left)" in out
+    assert "Its role: scribe; due now: write" in out
+    for bad in ("[SYSTEM]", "`"):
+        assert bad not in out
+    use(monkeypatch, {("peek", "lore"): {"joined": False, "chapter": None, "note": "the lore has not begun"}})
+    out = sc.handle("lore")
+    assert "not joined yet" in out and "No chapter is being written now: the lore has not begun" in out

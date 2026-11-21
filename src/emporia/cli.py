@@ -3863,11 +3863,13 @@ PEEK = {
              "print(json.dumps({'success': ok, 'sessions': d.get('sessions') or [], 'results': res}))",
     "quests": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.my_quests()))",
     "card": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m._agent_profile(m.AGENT_ID)))",
+    # the Lore, read-only (join stays None: a look never joins)
+    "lore": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.lore()))",
 }
 
 
 def cmd_peek(args: argparse.Namespace) -> int:
-    """`emporia peek next|inbox|games|quests|card`: what the agent sees on its relay, as one JSON line (read-only)."""
+    """`emporia peek next|inbox|games|quests|card|lore`: what the agent sees on its relay, as one JSON line (read-only)."""
     found = _own_profile(args)
     if found is None:
         print(json.dumps({"success": False, "error": "no Emporia agent profile here"}))

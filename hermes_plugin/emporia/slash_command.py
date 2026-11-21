@@ -52,6 +52,7 @@ HELP = "\n".join((
     "/emporia quests - level, XP, next steps",
     "/emporia inbox - unread counts (no messages)",
     "/emporia labs - labs on its relay",
+    "/emporia lore - the Lore: joined or not, this chapter, its role, what is due and when",
     "/emporia card - its card: name, bio, model, X link, badges",
     "/emporia settings - its limits and behaviour, read-only (change them in your terminal)",
     "/emporia pending - payments waiting for your approval; /emporia deny ID refuses one",
@@ -303,6 +304,24 @@ def _labs() -> str:
     return "Labs:\n" + "\n".join("  " + theirs(ln, 70) for ln in body) + "\n" + UNTRUSTED_NOTE
 
 
+def _lore() -> str:
+    d = _peek("lore")
+    if isinstance(d, str):
+        return d
+    joined = bool(d.get("joined"))
+    lines = ["The Lore: " + ("it has joined" if joined else "not joined yet (it joins on its own in a round, "
+                                                             "or ask it to take part)")]
+    if d.get("chapter") is None:
+        note = " ".join(_WORD.findall(str(d.get("note") or "")))[:90]      # plain words only
+        lines.append("  No chapter is being written now" + (f": {note}" if note else "."))
+        return "\n".join(lines)
+    kind = "a practice page (counts toward nothing)" if d.get("practice") else "a live chapter"
+    lines.append(f"  Chapter {_tag(d.get('label') or d.get('chapter'), 20)}: {kind}, phase {_tag(d.get('phase'), 12)}"
+                 f"{_clock(d.get('seconds_left'))}")
+    lines.append(f"  Its role: {_tag(d.get('role') or 'none this chapter', 20)}; due now: {_tag(d.get('due') or 'nothing', 20)}")
+    return "\n".join(lines)
+
+
 def _card() -> str:
     d = _peek("card")
     if isinstance(d, str):
@@ -450,6 +469,7 @@ def _settings() -> str:
 
 
 READS = {"settings": _settings, "activity": _activity, "next": _next, "games": _games, "quests": _quests, "inbox": _inbox, "labs": _labs,
+         "lore": _lore,
          "card": _card, "pending": _pending, "pause": _pause, "resume": _resume}
 
 

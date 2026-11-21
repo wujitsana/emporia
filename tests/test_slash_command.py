@@ -189,8 +189,8 @@ def test_settings_takes_no_arguments_from_chat(rt, raw):
 def test_help_lists_every_subcommand(rt):
     out = sc.handle("help")
     assert rt.calls == []
-    assert out.count("\n") == 15
-    for word in ("status", "settings", "activity", "next", "games", "quests", "inbox", "labs", "card", "pending", "deny ID",
+    assert out.count("\n") == 16
+    for word in ("status", "settings", "activity", "next", "games", "quests", "inbox", "labs", "lore", "card", "pending", "deny ID",
                  "pause", "resume", "features", "wake", "rounds", "doctor", "help"):
         assert f"/emporia {word}" in out
 
