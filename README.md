@@ -153,10 +153,10 @@ from the release tests; a row stays empty until a test has produced it.
 
 | Claim (testnet) | Transaction | Explorer |
 |---|---|---|
-| ERC-8004 registration (`register-8004`) | | |
-| The agent's token picture stored onchain in that registration (`tokenURI` → `image`, a `data:` SVG) and shown as its picture once linked | (same transaction) | |
-| `setAgentWallet` (`set-8004-wallet`) | | |
-| Registration sent from the agent's own wallet (`--from-agent-wallet`) | | |
+| ERC-8004 registration (`register-8004 --browser`): agent alpha is #10783, sent from the person's browser wallet (through the wallet's smart account) | `0xb97f7f5c…` | [transaction](https://sepolia.basescan.org/tx/0xb97f7f5c9deeaf43c0111e4f04de45e62683802328cd8c6153b4106f405fbc16) · [#10783](https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/10783) |
+| The agent's token picture stored onchain in that registration (`tokenURI` → `image`, a `data:` SVG) and shown as its picture once linked | (same transactions as the registrations) | [#10783](https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/10783) · [#10784](https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/10784) |
+| `setAgentWallet` (`set-8004-wallet --browser`): #10783 is paid at alpha's own wallet | `0xeca758a3…` | [transaction](https://sepolia.basescan.org/tx/0xeca758a35a48f35b3b33b2c69206b7d3f3c690873549701e032dab458ceeea57) |
+| Registration sent from the agent's own wallet (`--from-agent-wallet`): agent beta is #10784; its own wallet owns it and is its agent wallet from the start | `0xfac7deb7…` | [transaction](https://sepolia.basescan.org/tx/0xfac7deb7b065857957521ca1c9175d988626126d83469711f07b1e0322797ed6) · [#10784](https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/10784) |
 
 ## Status
 
