@@ -42,6 +42,7 @@ import uuid
 from pathlib import Path
 from typing import Any, TextIO
 
+from emporia import also_waiting as waiting_mod
 from emporia import limits as _LIMITS
 from emporia.plugins.platforms.emporia.frames import format_frame, frame_topic
 from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
@@ -56,11 +57,13 @@ TOOLS_LINE = ("tools: mcp__emporia__<name>; use tool_describe for one you need (
 logger = logging.getLogger("emporia.bridge")
 
 
-def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: Any = None, note: str = "") -> str | None:
+def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: Any = None, note: str = "",
+                also: str = "") -> str | None:
     """The stdout line for one relay frame, or None when there is nothing to say.
     `relay`: the host of a visited relay; "" for home. `limits`: a `limits.LimitsLine`; the agent's own
     `limits:` line is then the last line of the notice. `note`: one line of the bridge's own (constant text built
-    from numbers: what it did for the agent since the last notice, such as an automatic open)."""
+    from numbers: what it did for the agent since the last notice, such as an automatic open). `also`: the
+    `also waiting:` line (`emporia.also_waiting`, numbers and fixed words only), placed before the tools and `limits:` lines."""
     notice = format_frame(frame, agent_id, relay)
     if notice is None:
         return None
@@ -72,6 +75,8 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "", limits: A
     text = f"[on {relay}] {notice.text}" if relay else notice.text
     if note:
         text += f"\n  done for you: {note}"
+    if also and notice.frame_type in _LIMITS.LINE_FRAMES:
+        text += f"\n  {also}"
     if limits is not None:
         try:
             own = limits.line(frame, notice.frame_type, notice.sender, topic or "", relay)
@@ -205,14 +210,17 @@ async def witness_pass(witness: Any, out: TextIO, name: str) -> None:
 
 async def run(relay_url: str, agent_id: str, profile_id: str | None,
               out: TextIO = sys.stdout, poll_seconds: float = 30.0, clock=None, auto: Any = False,
-              witness: Any = False) -> None:
+              witness: Any = False, waiting: Any = False) -> None:
     from emporia import wake
     from emporia.addresses import host_of
     from emporia.visits import visiting
+    from emporia.also_waiting import AlsoWaiting
     from emporia.limits import LimitsLine
     wake_mode, listed = wake.current(), wake.allowlist()
     watch = wake.Watch(os.environ.get("EMPORIA_DOTENV", ""))
     limits = LimitsLine(agent_id)
+    if waiting is False:        # (a test passes its own, or None)
+        waiting = AlsoWaiting(agent_id)
     if auto is False:           # (a test passes its own, or None)
         auto = build_autoreveal(relay_url, agent_id)
     if witness is False:        # (a test passes its own, or None)
@@ -225,14 +233,34 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
 
     async def deliver(frame: dict[str, Any], notice, relay: str, key: str | None) -> bool:
         done_for = auto.note_for(str(frame.get("session_id") or "")) if auto is not None and not relay else ""
-        line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits, done_for)   # may read the relay once a minute
+        others = [k for k, h in held.items() if k != key and h["relay"] == relay]
+        also, named = "", set()
+        if waiting is not None:
+            try:        # may read the relay (home only, once a minute); a failure is no line
+                also, named = await asyncio.to_thread(
+                    waiting.line, frame, notice.frame_type, key or "", relay,
+                    [held[k]["notice"].frame_type for k in others])
+            except Exception:
+                logger.debug("also-waiting line failed", exc_info=True)
+        line = await asyncio.to_thread(notice_line, frame, agent_id, relay, limits, done_for, also)   # may read the relay once a minute
         if line is None:
             return False
         out.write(line + "\n")
         out.flush()
         brake.woke(notice.frame_type, key)
+        if waiting is not None:
+            waiting.delivered(notice.frame_type, key or "")
         if key:
             held.pop(key, None)       # this wake covers the thread: whatever waited is shown with it
+        for k in others:              # a held frame of another thread that the line names is seen: the turn reaches it
+            item = held.get(k)        # through whats_next, so no second wake comes for it (it stays unread until read)
+            if item is not None and also and waiting_mod.CATEGORY.get(item["notice"].frame_type) in named:
+                held.pop(k, None)
+                if (t := timers.get(k)) is not None and t is not asyncio.current_task():
+                    t.cancel()
+                    timers.pop(k, None)
+                logger.info("wake brake: a %s in %s is named in the also-waiting line of another wake",
+                            item["notice"].frame_type, k)
         return True
 
     async def redeliver(key: str) -> None:
