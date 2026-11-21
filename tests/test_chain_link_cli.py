@@ -371,3 +371,29 @@ def test_enter_stops_and_junk_is_refused_and_records_nothing(target, chain, caps
     _person(monkeypatch, ["hello"])
     assert card.link_8004(target.name, "base-sepolia", str(AGENT)) == 1
     assert "neither a signature" in capsys.readouterr().out
+
+
+def test_the_saved_message_file_is_removed_after_use_on_every_path(target, chain, capsys, monkeypatch, tmp_path):
+    import re as _re
+    import tempfile
+    _owned_by_eoa(chain)
+    made = []
+    real = tempfile.mkstemp
+
+    def tracking(*a, **k):
+        fd, path = real(*a, dir=str(tmp_path), **{x: y for x, y in k.items() if x != "dir"})
+        made.append(path)
+        return fd, path
+    monkeypatch.setattr(tempfile, "mkstemp", tracking)
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: pytest.fail("posted"))
+    for answer, code in (("", 0), ("hello", 1)):
+        _person(monkeypatch, [answer])
+        assert card.link_8004(target.name, "base-sepolia", str(AGENT)) == code
+    out = capsys.readouterr().out
+    assert len(made) == 2 and all(p in out for p in made) and _re.search(r"The message is in", out)
+    assert not any(__import__("os").path.exists(p) for p in made)
+
+
+def test_the_tier_wording_is_printed_once_when_it_is_the_tier_word():
+    assert card._tier_say({"tier": "owner", "tier_wording": "owner"}) == "owner"
+    assert card._tier_say({"tier": "bound-owner", "tier_wording": "holder of the bound token"}) == "bound-owner (holder of the bound token)"

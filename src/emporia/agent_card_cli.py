@@ -27,6 +27,7 @@ Works for a Hermes agent profile and for an agent made with `emporia agent init`
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -367,18 +368,23 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
         if not here:
             return 0
         # A person is here: take the signature now (pasted, or read from a file), instead of a second command.
-        if path:
-            print(f"  With a command line: cast wallet sign --data --from-file {path} --private-key ... > sig.txt\n")
-        got = _cli().prompt("Paste the signature (0x...), or the path to a file holding it (Enter stops)", "").strip()
-        if not got:
-            return 0
-        sig = _signature_from(got)
-        if not sig:
-            print("agent link-8004: that is neither a signature (hex, 65 bytes or more) nor a readable file holding one; nothing "
-                  "recorded. Run this again when you have it.")
-            return 1
-        return link_8004(name, chain, agent_id, out["signer"], sig, int(out["issued_at"]), yes, False, False, False,
-                         port, listen)
+        try:
+            if path:
+                print(f"  With a command line: cast wallet sign --data --from-file {path} --private-key ... > sig.txt\n")
+            got = _cli().prompt("Paste the signature (0x...), or the path to a file holding it (Enter stops)", "").strip()
+            if not got:
+                return 0
+            sig = _signature_from(got)
+            if not sig:
+                print("agent link-8004: that is neither a signature (hex, 65 bytes or more) nor a readable file holding one; nothing "
+                      "recorded. Run this again when you have it.")
+                return 1
+            return link_8004(name, chain, agent_id, out["signer"], sig, int(out["issued_at"]), yes, False, False, False,
+                             port, listen)
+        finally:
+            if path:
+                with contextlib.suppress(OSError):
+                    os.unlink(path)
     if not signer or not issued_at:
         print("agent link-8004: with --signature give --signer (the wallet that signed) and --issued-at (printed "
               "beside the message)")
@@ -454,7 +460,7 @@ def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: s
         print(f"agent link-8004: the chain does not back this signer ({out.get('reason') or 'not proven'}): "
               "nothing to sign. Give --signer for the wallet that controls it.")
         return 1
-    print(f"  Once signed the card will say: {out['tier']} ({out['tier_wording']}).")
+    print(f"  Once signed the card will say: {_tier_say(out)}.")
     try:
         page = browser_sign.SigningPage(out["typed_data"], chain_label=out["chain_label"], agent_name=name, port=port,
                                         listen=addr, **({} if timeout is None else {"timeout": timeout})).start()
@@ -522,6 +528,12 @@ def _signature_from(text: str) -> str:
     except (OSError, ValueError):
         pass
     return ""
+
+
+def _tier_say(out: dict[str, Any]) -> str:
+    """The tier and its wording, the wording once when the two are the same word."""
+    tier, wording = out["tier"], out["tier_wording"]
+    return tier if not wording or wording == tier else f"{tier} ({wording})"
 
 
 def _save_link_message(typed_data: dict) -> str:
@@ -939,7 +951,7 @@ def _link_own_wallet(t: _Target, name: str, chain: str, agent_id: str, yes: bool
               f"({out.get('reason') or 'not proven'}): nothing to sign. Use the wallet that owns the identity "
               "(`--browser`).")
         return 1
-    print(f"  Once signed the card will say: {out['tier']} ({out['tier_wording']}).")
+    print(f"  Once signed the card will say: {_tier_say(out)}.")
     if not yes:
         print(f"  {chain_note(chain)}")
         print("\n" + _wrap_privacy() + "\n")
