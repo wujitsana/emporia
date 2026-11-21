@@ -584,15 +584,22 @@ def test_the_stats_route_reads_real_hermes_session_records(tmp_path):
     HERMES_HOME: the public SessionDB API it uses exists and returns what it reads."""
     harness = tmp_path / "harness.py"
     harness.write_text(f'''
-import importlib.util, json, time
+import importlib.util, json, os, sqlite3, time, warnings
+warnings.simplefilter("ignore", DeprecationWarning)      # Hermes 0.23.3+: hermes_state is a read shim
 from hermes_state import SessionDB
 db = SessionDB()
-for sid, chat, cost in (("s1", "emporia:alpha", 0.25), ("s2", "emporia:alpha:dm:beta", 0.5),
-                        ("s3", "emporia:gamma", 7.0)):
+costs = (("s1", "emporia:alpha", 0.25), ("s2", "emporia:alpha:dm:beta", 0.5), ("s3", "emporia:gamma", 7.0))
+for sid, chat, cost in costs:
     db.create_session(sid, "emporia", model="m", chat_id=chat)
-    db.update_token_counts(sid, input_tokens=10, output_tokens=1, estimated_cost_usd=cost)
+    if hasattr(type(db), "update_token_counts") or "update_token_counts" in dir(db):
+        db.update_token_counts(sid, input_tokens=10, output_tokens=1, estimated_cost_usd=cost)
 db.create_session("s4", "cli", model="m")
 db.close()
+# Hermes 0.23.3+ hands plugins the read methods only: the fixture writes the counts into its own throwaway state.db
+c = sqlite3.connect(os.path.join(os.environ["HERMES_HOME"], "state.db"))
+for sid, chat, cost in costs:
+    c.execute("UPDATE sessions SET input_tokens = 10, output_tokens = 1, estimated_cost_usd = ? WHERE id = ?", (cost, sid))
+c.commit(); c.close()
 spec = importlib.util.spec_from_file_location("p", {str(PLUGIN / "plugin_api.py")!r})
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 print(json.dumps(m._model_cost("alpha", 30, time.time() + 1)))
