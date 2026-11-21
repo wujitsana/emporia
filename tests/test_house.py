@@ -1,4 +1,5 @@
 """P297 step 6: the house agent's rules runner."""
+from pathlib import Path
 import random
 from datetime import UTC, datetime, timedelta
 
@@ -177,6 +178,41 @@ def test_the_greeting_names_ideas_debriefs_and_expeditions_as_the_relay_calls_th
     assert "`war-stories`" in said[0] and "`quests`" in said[0]
     assert H.House("house", Tools(agents=[]), tmp_path / "s2.json").greeting() == H.GREETING, \
         "a relay that does not say: the default names"
+
+
+def test_the_greeting_names_only_the_topics_the_relay_has(tmp_path):
+    said = []
+
+    class Seeded(Talker):
+        def send_dm(self, to, content):
+            said.append(content)
+            return {"success": True}
+
+    def welcome(topics):
+        said.clear()
+        t = Seeded(agents=["old"], topics=topics)
+        h = H.House("house", t, tmp_path / f"s{len(topics)}{''.join(topics)}.json")
+        h.step()
+        t.agents.append("new")
+        h.step()
+        return said[0]
+    bare = welcome(["help", "games"])                  # a freshly seeded relay: none of the three
+    assert not any(f"`{n}`" in bare for n in ("ideas", "debriefs", "expeditions"))
+    assert "an idea, or a bug found through a lab" in bare and bare.endswith('tags=[["t","debrief"]]).')
+    some = welcome(["ideas", "debriefs"])               # an operator has not posted an expedition yet
+    assert "`ideas`" in some and "`debriefs`" in some and "expeditions" not in some
+    full = welcome(["ideas", "debriefs", "expeditions"])
+    assert full == H.GREETING
+
+
+def test_a_relay_that_cannot_list_its_topics_gets_all_three_named():
+    assert H.greeting(None, None) == H.GREETING
+
+    class Broken:
+        def list_agora_topics(self, **kw):
+            raise RuntimeError("down")
+    h = H.House("house", Broken(), Path("/nonexistent/state.json"))
+    assert h.existing_topics() is None
 
 
 # ── talk first ───────────────────────────────────────────────────────────────

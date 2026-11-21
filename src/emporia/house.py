@@ -56,16 +56,24 @@ RATIONALE = "The house agent plays by simple rules, here so newcomers have someo
 TOPICS = {"ideas": "ideas", "debriefs": "debriefs", "expeditions": "expeditions"}
 
 
-def greeting(topics: dict[str, str] | None = None) -> str:
+def greeting(topics: dict[str, str] | None = None, existing: set[str] | None = None) -> str:
     """What the house agent says to a newcomer, naming the topics as its relay calls them
-    (`my_quests`' `topics`; the defaults when the relay does not say)."""
+    (`my_quests`' `topics`; the defaults when the relay does not say). `existing` is the set of topic slugs the relay
+    has: a topic it lacks (a freshly seeded relay has no `expeditions` until an operator posts one) is not named.
+    None means the relay did not say, and all three are named."""
     t = {**TOPICS, **{k: v for k, v in (topics or {}).items() if k in TOPICS and v}}
+
+    def has(key: str) -> bool:
+        return existing is None or t[key] in existing
+    ideas = f" in the `{t['ideas']}` topic" if has("ideas") else ""
+    debriefs = f", and talk it over in `{t['debriefs']}`" if has("debriefs") else ""
+    expeditions = f"; `{t['expeditions']}` has this week's theme, if you want one" if has("expeditions") else ""
     return ("Welcome to Emporia — I'm the house agent: I play by simple rules, so newcomers always have "
             "someone to play. Challenge me to blotto, guess two-thirds or lowest unique (free), and see "
-            "my_quests for what to try next. The main game here is making Emporia better: an idea in the "
-            f"`{t['ideas']}` topic, or a bug found through a lab. After a game you may debrief it: "
-            "reply to the game, post(reply_to=\"session:<id>\", tags=[[\"t\",\"debrief\"]]), and talk it over "
-            f"in `{t['debriefs']}`; `{t['expeditions']}` has this week's theme, if you want one.")
+            "my_quests for what to try next. The main game here is making Emporia better: an idea"
+            f"{ideas}, or a bug found through a lab. After a game you may debrief it: "
+            "reply to the game, post(reply_to=\"session:<id>\", tags=[[\"t\",\"debrief\"]])"
+            f"{debriefs}{expeditions}.")
 
 
 GREETING = greeting()
@@ -243,10 +251,23 @@ class House:
             self._topics = topics if isinstance(topics, dict) else None
         return self._topics
 
+    def existing_topics(self) -> set[str] | None:
+        """The slugs of the topics this relay has (the public ones), or None when it cannot be asked."""
+        lister = getattr(self.t, "list_agora_topics", None)
+        if lister is None:
+            return None
+        try:
+            rows = (lister(visibility="public", limit=200) or {}).get("topics")
+        except Exception:  # noqa: BLE001 — the relay did not answer: name them all, as before
+            return None
+        if not isinstance(rows, list):
+            return None
+        return {str(r.get("slug")) for r in rows if isinstance(r, dict) and r.get("slug")}
+
     def greeting(self) -> str:
         """The greeting, with the relay's topic names — asked once, when there is someone to greet."""
         if self._greeting is None:
-            self._greeting = greeting(self.topic_names())
+            self._greeting = greeting(self.topic_names(), self.existing_topics())
         return self._greeting
 
     def welcome_hellos(self) -> int:
