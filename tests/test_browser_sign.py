@@ -62,7 +62,7 @@ SIG = "0x" + "ab" * 65
 
 
 # -- the server -------------------------------------------------------------------------------------------------
-def test_it_listens_on_loopback_only_at_a_random_port_with_the_token_in_the_path():
+def test_it_listens_on_loopback_only_with_the_token_in_the_path():
     a, b = page(), page()
     try:
         assert a.url.startswith("http://emporia.localhost:") and a.url.endswith("/" + a.token)
@@ -70,6 +70,39 @@ def test_it_listens_on_loopback_only_at_a_random_port_with_the_token_in_the_path
         assert a.token != b.token and len(a.token) >= 30
     finally:
         a.close(), b.close()
+
+
+def test_the_default_port_is_8765_or_the_next_free_one_and_says_which():
+    import socket
+    probe = socket.socket()
+    try:
+        probe.bind((bs.HOST, bs.DEFAULT_PORT))
+    except OSError:
+        probe.close()
+        pytest.skip("port 8765 is held by something else on this machine")
+    probe.close()
+    first = page()
+    try:
+        assert first.port == bs.DEFAULT_PORT and first.port_note == ""
+        second = page()                              # 8765 is now busy: the next free port, said in words
+        try:
+            assert second.port > bs.DEFAULT_PORT
+            assert str(bs.DEFAULT_PORT) in second.port_note and str(second.port) in second.port_note
+        finally:
+            second.close()
+    finally:
+        first.close()
+
+
+def test_an_explicit_port_that_is_busy_is_an_error_not_a_move():
+    import socket
+    probe = socket.socket()
+    probe.bind((bs.HOST, 0))
+    try:
+        with pytest.raises(bs.BrowserSignError, match="in use"):
+            page(port=probe.getsockname()[1])
+    finally:
+        probe.close()
 
 
 def test_only_the_right_token_gets_the_page_and_everything_else_is_404():

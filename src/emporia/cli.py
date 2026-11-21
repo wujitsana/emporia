@@ -10389,7 +10389,7 @@ def build_parser() -> argparse.ArgumentParser:
                           "address, closes after one signature or 10 minutes), then checks and records the signature; "
                           "register-8004: your browser wallet sends the registration the same way")
     ag2.add_argument("--port", type=int, default=0, metavar="N",
-                     help="--browser: the page's port, 1024-65535 (default: random). Fix it when your browser is on another "
+                     help="--browser: the page's port, 1024-65535 (default: 8765, or the next free port, said when it moves). Fix it when your browser is on another "
                           "machine, so the SSH tunnel (`ssh -L N:127.0.0.1:N`) or a published container port can match")
     ag2.add_argument("--listen", default="auto", metavar="auto|ADDR",
                      help="--browser: the address the page listens on. auto (default) is 127.0.0.1, or inside a container "

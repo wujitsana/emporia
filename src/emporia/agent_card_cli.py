@@ -430,6 +430,8 @@ def _announce_page(page: Any, *, chain_label: str, registry: str, what: str, lea
     text, opens = browser_sign.instructions(page.port, page.listen, container=container, ssh=ssh, hostname=host,
                                             token=page.token, chain_label=chain_label, registry=registry, what=what)
     print(f"\n  {lead}\n\n{text}")
+    if getattr(page, "port_note", ""):
+        print(f"  {page.port_note}\n")
     if opens:
         try:
             webbrowser.open(page.url)       # best effort: the URL above is the fallback

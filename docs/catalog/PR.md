@@ -94,7 +94,7 @@ The entry's `image` is `docs/catalog/banner.png`.*
   the public randomness beacon fetch a round from the relay's `/beacon/<round>` cache and, if that fails, from the
   beacon's public hosts, and verify it themselves; only the round number is sent.
 - **A local listener, only when a person asks (2.1):** while `link-8004 --browser`, `register-8004 --browser` or
-  `set-8004-wallet --browser` waits, the command serves one page on 127.0.0.1 (random port, one-time token, one
+  `set-8004-wallet --browser` waits, the command serves one page on 127.0.0.1 (port 8765 or the next free one, one-time token, one
   signature or transaction hash, then it stops). The console still opens no port.
 - **One transaction, only when a person asks (2.1):** `register-8004` or `set-8004-wallet` with `--from-agent-wallet
   --max-gas N`, run by a person in their own terminal (never an agent tool, never in an agent's session or an unattended

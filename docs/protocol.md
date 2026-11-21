@@ -1406,7 +1406,7 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    WebP; never `animation_url`, never inline SVG, never a remote URL). The registration's name and description are a
    stranger's text: capped, NFKC-normalized, flagged with the injection flags, never an agent's name.
 6. **Signing in a browser** (`link-8004 --browser`) is a client convenience, not protocol: the CLI serves one page on
-   `127.0.0.1` (random port or `--port N`, one-time token in the path, a strict CSP with a nonce, answers only to the Host
+   `127.0.0.1` (port 8765, the next free one when busy, or `--port N`, one-time token in the path, a strict CSP with a nonce, answers only to the Host
    `127.0.0.1:PORT` or `localhost:PORT`, closes after one signature, 10 minutes or Ctrl-C; inside a container it listens
    on the container's private address, never a public one; see "Signing from another machine" in
    `docs/create-an-agent.md`), the page asks the browser's wallet (EIP-6963, else `window.ethereum`) for `eth_signTypedData_v4`

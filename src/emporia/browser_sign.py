@@ -1,8 +1,8 @@
 """A one-shot local page for signing the ERC-8004 link statement (or sending the registration transaction) with a browser wallet.
 
 Runs only while `emporia agent link-8004 NAME --browser` (or `register-8004 NAME --browser`) waits, and never inside the dashboard (which has no wallet UI).
-The standard library only: `http.server`, one page, one POST. It listens on loopback at a random port by default;
-`--port` fixes the port (for an SSH tunnel) and `--listen` picks the address: inside a container the page listens on the
+The standard library only: `http.server`, one page, one POST. It listens on loopback at port 8765 by default (the next free
+port when that one is busy, said in the output); `--port` fixes the port (for an SSH tunnel; busy is then an error) and `--listen` picks the address: inside a container the page listens on the
 container's own private address so the host can tunnel to it. It never listens on a public interface (`resolve_listen`).
 
 * The address carries a one-time token (`/<token>`). Any other path, or a wrong token, is a plain 404; the Host
@@ -55,12 +55,14 @@ class BrowserSignError(Exception):
 
 # -- where the page listens, and how the person reaches it ------------------------------------------------------
 PORT_MIN, PORT_MAX = 1024, 65535
+DEFAULT_PORT = 8765                  # the port when none is given; if busy, the next free one (DEFAULT_TRIES of them)
+DEFAULT_TRIES = 100
 _PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "fc00::/7", "fe80::/10"))
 
 
 def check_port(port: int | str | None) -> int:
-    """0 (a random port) or a port in 1024-65535; BrowserSignError otherwise."""
+    """0 (the default port: DEFAULT_PORT, or the next free one) or a port in 1024-65535; BrowserSignError otherwise."""
     try:
         n = int(port or 0)
     except (TypeError, ValueError):
@@ -676,14 +678,38 @@ class SigningPage:
         class Server(ThreadingHTTPServer):
             address_family = socket.AF_INET6 if ":" in page.listen else socket.AF_INET
 
+        self.port_note = ""
         try:
-            self._server = Server((self.listen, self.port_wanted), Handler)
+            if self.port_wanted:
+                self._server = Server((self.listen, self.port_wanted), Handler)
+            else:
+                self._server = self._bind_default(Server, Handler)
         except OSError as e:
-            raise BrowserSignError(f"cannot listen on {self.listen}:{self.port_wanted}: {e.strerror or e}"
+            raise BrowserSignError(f"cannot listen on {self.listen}:{self.port_wanted or DEFAULT_PORT}: {e.strerror or e}"
                                    + (" (that port is in use: pick another with --port)" if self.port_wanted else "")) from e
         self._server.daemon_threads = True
         self._server.timeout = 0.2
         return self
+
+    def _bind_default(self, server_cls: Any, handler: Any) -> HTTPServer:
+        """No `--port`: DEFAULT_PORT, else the next free port after it (the output says which); only when none of those
+        is free, any free port."""
+        last: OSError | None = None
+        for n in range(DEFAULT_PORT, min(DEFAULT_PORT + DEFAULT_TRIES, PORT_MAX + 1)):
+            try:
+                srv = server_cls((self.listen, n), handler)
+            except OSError as e:
+                last = e
+                continue
+            if n != DEFAULT_PORT:
+                self.port_note = f"Port {DEFAULT_PORT} is busy; using port {n}."
+            return srv
+        try:
+            srv = server_cls((self.listen, 0), handler)
+        except OSError:
+            raise last or OSError("no free port") from None
+        self.port_note = f"Ports {DEFAULT_PORT}-{DEFAULT_PORT + DEFAULT_TRIES - 1} are busy; using port {srv.server_address[1]}."
+        return srv
 
     def wait(self) -> dict:
         """Serve until one signature arrives (returned) or `timeout` passes (BrowserSignError). Always closes."""

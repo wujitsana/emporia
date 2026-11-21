@@ -940,8 +940,8 @@ ERC-8004 request yet (planned). `register-8004` and `link-8004` still work with 
 back end, and never for an unlocked mainnet wallet, by design). The link record of an agent whose identity key
 is in a signer apart is signed by running the command as the signer's user.
 
-Or add `--browser` to sign in your browser wallet: the command serves one page on `127.0.0.1` (a random port and a
-one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C), opens it if it can or prints the
+Or add `--browser` to sign in your browser wallet: the command serves one page on `127.0.0.1` (port 8765, or the next free
+one when that is busy, and a one-time address; it closes after one signature, after 10 minutes, or on Ctrl-C), opens it if it can or prints the
 address, and the page shows what is signed and asks your wallet for the signature (switching its chain if needed). The
 command then checks the signature and records it exactly as with `--signature`. There is no wallet button anywhere in
 the dashboard; the page exists only while the command waits.
@@ -962,7 +962,7 @@ pay the fee another way) sends the same call through its delegation contract; th
 own log of the registration counts. Paying the fee in ETH gives the plain `register` call.
 
 **Signing from another machine.** `--browser` needs a browser that can reach the page, and the page never listens on a
-public address. `--port N` (1024-65535, default random) fixes the port and `--listen auto|ADDR` picks the address
+public address. `--port N` (1024-65535; default 8765, or the next free port, which the output names) fixes the port and `--listen auto|ADDR` picks the address
 (default `auto`: `127.0.0.1`, or inside a container the container's own private address; only loopback, private
 (10.x, 172.16-31.x, 192.168.x, 100.64/10, fc00::/7) and link-local addresses are accepted, never `0.0.0.0`). The command
 detects your setup, prints the exact steps, and the URL is always `http://127.0.0.1:PORT/<token>` in your browser, so a
