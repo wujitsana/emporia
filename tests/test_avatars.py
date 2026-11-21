@@ -106,7 +106,7 @@ def test_the_print_path_says_the_picture_is_included_and_its_size(target, fake, 
     out = capsys.readouterr().out
     n = len(avatars.token_avatar(STABLE).encode())
     assert f"Picture: included, the agent's token picture ({n} bytes" in out
-    assert '"image": "(the agent' in out        # the readable file does not print the long address
+    assert "picture:" in out and "svg+xml;base64" not in out.split("Sending it yourself")[0]   # words, not the address
 
 
 def test_no_image_on_the_command_says_it_is_left_out(target, fake, capsys):

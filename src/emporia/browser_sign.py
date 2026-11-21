@@ -325,6 +325,10 @@ SCRIPT = r"""
   window.addEventListener("load", () => { setTimeout(() => { if (!found.length && window.ethereum) add(null, window.ethereum); render(); }, 300); });
   const hexChain = (n) => "0x" + n.toString(16);
   const refused = (e) => e && (e.code === 4001 || e.code === "ACTION_REJECTED");
+  // 4100: the wallet has not authorized this page for that account or method (a new site to it, or another account
+  // picked since). The next press asks it again for access before anything else.
+  const unauthorized = (e) => e && (e.code === 4100 || /not been authori[sz]ed/i.test(String(e.message || "")));
+  let askAccess = false;
   async function chainId(p) { return parseInt(await p.request({ method: "eth_chainId" }), 16); }
   // Make the wallet's chain the page's: false (and said why) when it is not.
   async function ensureChain(p) {
@@ -367,9 +371,17 @@ SCRIPT = r"""
     if (!chosen) { say("No wallet found in this browser.", "bad"); return; }
     const p = chosen.provider;
     try {
+      if (askAccess) {
+        say("Asking your wallet to give this page access to an account...");
+        await p.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+        askAccess = false;
+      }
       say("Asking your wallet for the account...");
-      const accounts = (await p.request({ method: "eth_requestAccounts" })).map((a) => String(a).toLowerCase());
-      if (td && !accounts.includes(signer)) {
+      // Keep each address exactly as the wallet gave it (a wallet may match its authorized account by that form);
+      // compare in lowercase only.
+      const accounts = (await p.request({ method: "eth_requestAccounts" })).map((a) => String(a));
+      const lower = accounts.map((a) => a.toLowerCase());
+      if (td && !lower.includes(signer)) {
         say("Your wallet did not offer the account " + td.message.signer + ". Select that account in your wallet, then press Sign again.", "bad");
         $("sign").disabled = false; return;
       }
@@ -377,7 +389,7 @@ SCRIPT = r"""
       if (!(await ensureChain(p))) { $("sign").disabled = false; return; }
       if (td) {
         say("Waiting for your signature in the wallet...");
-        const signature = await p.request({ method: "eth_signTypedData_v4", params: [td.message.signer, JSON.stringify(td)] });
+        const signature = await p.request({ method: "eth_signTypedData_v4", params: [accounts[lower.indexOf(signer)], JSON.stringify(td)] });
         if (!(await post({ signature, account: td.message.signer }))) return;
         say("Signed. The terminal has it: you can close this tab.", "good");
       } else {
@@ -391,6 +403,13 @@ SCRIPT = r"""
         say("Sent. The terminal has the transaction hash: you can close this tab.", "good");
       }
     } catch (e) {
+      if (unauthorized(e)) {
+        askAccess = true;
+        say("Your wallet has not given this page (" + location.host + ") access to that account. Press the button " +
+            "again: your wallet will ask you to connect this page; pick the account you mean to use. Nothing was sent.", "bad");
+        $("sign").disabled = false;
+        return;
+      }
       say(refused(e) ? "You declined. Nothing was sent. Press the button to try again." : "The wallet said: " + ((e && e.message) || e), "bad");
       $("sign").disabled = false;
     }

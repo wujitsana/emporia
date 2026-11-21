@@ -624,7 +624,7 @@ def test_set_wallet_prints_the_call_and_the_deadline_and_sends_nothing(chain, wa
     assert card.set_8004_wallet(target.name, "base-sepolia", str(AID)) == 0
     out = capsys.readouterr().out
     for want in (OWNER, wallet.address, "the registry would accept it from the owner", "valid until", "0x2d1ef5ae",
-                 "chain id:    84532", "--browser", "--tx 0xHASH", "not proof of control"):
+                 "chain id 84532", "--browser", "--tx 0xHASH", "not proof of control"):
         assert want in out, want
     assert chain.sent == [] and wallet.signed_tx == []
     no_key(out)

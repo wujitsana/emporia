@@ -587,7 +587,7 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
     if not out.get("success"):
         print(f"agent register-8004: {out.get('error')}")
         return 1
-    _print_register(name, out)
+    _print_register(name, out, browser)
     if not browser:
         return 0
     return _register_in_browser(t, name, chain, out, yes, wait, port, listen)
@@ -626,10 +626,10 @@ def _register_from_agent_wallet(t: _Target, name: str, chain: str, yes: bool, ma
     if out.get("local_relay"):
         print(f"  Note: the registration points at {out['relay']}, which is this machine. Other people cannot reach "
               "it; set the agent's relay to its public address first if that matters.\n")
-    print("  The registration file that goes on-chain:")
+    print("  What goes on-chain:")
     print(_file_text(out))
     print(f"\n  to:          {out['registry']}  (the ERC-8004 identity registry, chain id {out['chain_id']})")
-    print(f"  function:    register(string agentURI), selector {out['selector']}")
+    print("  function:    register(agentURI)")
     print(f"  checked:     the registry would accept it and mint agent #{out['would_register_id']} "
           "(simulated now; the number can change if someone registers first)")
     for line in chain_send.describe(out["quote"]):
@@ -655,42 +655,49 @@ AGENT_WALLET_EXPLAIN = ("The agent's own Emporia EVM wallet sends the transactio
 
 
 def _file_text(out: dict[str, Any]) -> str:
-    """The registration file as shown: the picture's long address is replaced by a line saying it is included and how
-    large it is (or that it is left out), so the file stays readable. The calldata and agentURI carry the whole file."""
-    shown = dict(out["file"])
+    """What goes on-chain, in words: one line per field of the registration file, the picture as a line saying it is
+    included and how large it is (or that it is left out). The call data carries the same file."""
+    f = out["file"]
+    svc = next((x for x in f.get("services") or [] if isinstance(x, dict)), {})
     n = out.get("picture_bytes") or 0
-    if "image" in shown:
-        shown["image"] = f"(the agent's token picture, an SVG of {n} bytes, on-chain in the data: address)"
-        note = f"\n  Picture: included, the agent's token picture ({n} bytes of SVG, inside the registration)."
-    else:
-        note = "\n  Picture: left out (--no-image); the registration has no image."
-    return json.dumps(shown, indent=2) + note
+    rows = [("name", f.get("name", "")), ("description", f.get("description", "")),
+            ("profile", svc.get("endpoint", "")), ("stable id", svc.get("stableId", "")),
+            ("payments", "accepts x402 payments" if f.get("x402Support") else "does not take payments"),
+            ("picture", f"Picture: included, the agent's token picture ({n} bytes of SVG, inside the registration)"
+             if "image" in f else "Picture: left out (--no-image); the registration has no image")]
+    return "\n".join(f"    {k + ':':<13}{v}" for k, v in rows if v)
 
 
-def _print_register(name: str, out: dict[str, Any]) -> None:
+def _print_register(name: str, out: dict[str, Any], browser: bool = False) -> None:
+    """The registration in words. The call data (for pasting into a wallet by hand) only without --browser, labeled as
+    the technical part; with --browser the page and the wallet carry it."""
     from emporia import networks
     print(f"  Register {name} on ERC-8004, {out['chain_label']}\n")
     print("  " + out["explain"] + "\n")
     if out.get("local_relay"):
         print(f"  Note: the registration points at {out['relay']}, which is this machine. Other people cannot reach "
               "it; set the agent's relay to its public address first if that matters.\n")
-    print("  The registration file that goes on-chain:")
+    print("  What goes on-chain:")
     print(_file_text(out))
-    print("\n  Send this contract call from your own wallet (value 0):")
+    print(f"\n    {'registry:':<13}{out['registry']}  (the ERC-8004 identity registry, chain id {out['chain_id']})")
+    print(f"    {'checked:':<13}the registry would accept it and mint agent #{out['would_register_id']} "
+          "(simulated now; the number can change if someone registers first)")
+    print(f"    {'cost:':<13}about {out['gas_estimate']:,} gas (test ETH, value 0; the wallet shows the price)")
+    if browser:
+        return
+    n = networks.NETWORKS.get(out["chain"])
+    explorer = f"{n.address_explorer}{out['registry']}#writeProxyContract" if n and n.address_explorer else ""
+    print(f"\n  Easiest: let your browser wallet send it from a page that shows all of this: "
+          f"emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --browser")
+    print("\n  Sending it yourself (technical: for a wallet that takes call data):")
     print(f"    chain id:   {out['chain_id']}  ({out['chain_label']})")
-    print(f"    to:         {out['registry']}  (the ERC-8004 identity registry)")
+    print(f"    to:         {out['registry']}")
     print(f"    function:   register(string agentURI), selector {out['selector']}")
     print(f"    calldata:   {out['calldata']}")
     print(f"    agentURI:   {out['agent_uri']}")
-    print(f"    checked:    the registry would accept it and mint agent #{out['would_register_id']} "
-          f"(simulated now; the number can change if someone registers first)")
-    print(f"    gas:        about {out['gas_estimate']:,} (test ETH; the wallet shows the price)")
-    n = networks.NETWORKS.get(out["chain"])
-    explorer = f"{n.address_explorer}{out['registry']}#writeProxyContract" if n and n.address_explorer else ""
-    print("\n  How: in any wallet that can send a contract call with data, paste the chain, `to` and `calldata`. Or "
+    print("  In any wallet that can send a contract call with data, paste the chain, `to` and `calldata`. Or "
           + (f"open {explorer} and use the write-as-proxy tab: register with the agentURI above."
              if explorer else "use the explorer's write-as-proxy tab for the registry: register with the agentURI above."))
-    print(f"  Or let your browser wallet send it: emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --browser")
     print(f"\n  When it is mined: emporia agent register-8004 {name} --chain {_cmd_chain(out['chain'])} --tx 0xHASH")
 
 
@@ -864,7 +871,7 @@ def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: boo
     if not out.get("success"):
         print(f"agent set-8004-wallet: {out.get('error')}")
         return 1
-    if _print_set_wallet(name, out):
+    if _print_set_wallet(name, out, browser):
         return 0
     if not browser:
         print(f"\n  Or let the owner's browser wallet send it: emporia agent set-8004-wallet {name} --chain "
@@ -875,7 +882,7 @@ def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: boo
     return _set_wallet_in_browser(t, name, chain, out, yes, wait, port, listen)
 
 
-def _print_set_wallet(name: str, out: dict[str, Any]) -> bool:
+def _print_set_wallet(name: str, out: dict[str, Any], browser: bool = False) -> bool:
     """The call, in words. True when there is nothing to do (the identity already names the agent's wallet)."""
     import datetime
     print(f"  Set ERC-8004 #{out['agent_id']}'s agent wallet on {out['chain_label']} to {name}'s own wallet\n")
@@ -890,12 +897,13 @@ def _print_set_wallet(name: str, out: dict[str, Any]) -> bool:
     print("    checked:     the registry would accept it from the owner (simulated now)")
     print(f"    valid until: {when}, about {out['valid_seconds'] // 60} minutes: the owner must send it before then "
           "(run this again for a fresh consent)")
-    print(f"    chain id:    {out['chain_id']}  ({out['chain_label']})")
-    print(f"    to:          {out['registry']}  (the ERC-8004 identity registry)")
-    print(f"    function:    setAgentWallet(uint256,address,uint256,bytes), selector {out['selector']}")
-    print(f"    calldata:    {out['calldata']}")
+    print(f"    registry:    {out['registry']}  (the ERC-8004 identity registry, chain id {out['chain_id']})")
     if "gas_estimate" in out:
         print(f"    gas:         about {out['gas_estimate']:,} (test ETH, paid by the owner)")
+    if not browser:
+        print("\n  Sending it yourself (technical: for a wallet that takes call data):")
+        print(f"    function:    setAgentWallet(uint256,address,uint256,bytes), selector {out['selector']}")
+        print(f"    calldata:    {out['calldata']}")
     return False
 
 

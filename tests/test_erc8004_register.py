@@ -372,7 +372,8 @@ def test_the_command_prints_the_call_in_plain_words_and_sends_nothing(target, fa
     out = capsys.readouterr().out
     for want in ("Emporia sends nothing and spends nothing", "chain id:   84532", REGISTRY, "0xf2c298be",
                  "data:application/json;utf8,", "mint agent #10729", "about 523,000", "write-as-proxy",
-                 "--browser", "--tx 0xHASH", '"stableId": "' + STABLE + '"'):
+                 "--browser", "--tx 0xHASH", "stable id:   " + STABLE, "What goes on-chain:",
+                 "Sending it yourself (technical"):
         assert want in out, want
     assert [c[0] for c in fake.calls] == ["simulate", "gas"], "only reads"
 
@@ -568,6 +569,7 @@ def test_browser_sends_then_continues_as_tx(target, fake, monkeypatch, capsys):
     assert seen["status"] == 200 and seen["tx"]["to"] == REGISTRY and seen["tx"]["chain_id"] == 84532
     assert seen["tx"]["data"] == chain_register.build("base-sepolia", stable=STABLE)["calldata"]
     assert f"transaction {TX} from {OWNER}" in out and handed, "it went on to link-8004 for the new agent"
+    assert "What goes on-chain:" in out and "calldata:" not in out and "agentURI:" not in out   # words only
 
 
 def test_the_terminal_guard_blocks_register_for_an_agent():
