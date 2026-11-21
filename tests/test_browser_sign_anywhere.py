@@ -269,6 +269,57 @@ def test_the_send_page_names_the_function_the_registry_and_the_check_to_make():
     assert data["add_chain"]["chainId"] == "0x14a34"
 
 
+SID = "ab" * 32
+
+
+def _register_tx(description="Plays fair, talks plain.", image=True):
+    from emporia import erc8004_register as reg
+    file = reg.registration_file("kestrel", description, "https://relay.example", SID, True,
+                                 image=reg.token_picture(SID) if image else None)
+    return {"chain_id": 84532, "to": REG, "data": "0x" + reg.calldata(reg.data_uri(file)).hex(),
+            "function": "register(string agentURI)"}
+
+
+@needs_lib
+def test_the_send_page_shows_the_registration_decoded_with_its_picture_and_folds_the_raw_call():
+    html = bs.tx_page_html(_register_tx(), chain_label="Base Sepolia (testnet)", agent_name="kestrel",
+                           summary="Sends register.", nonce="n")
+    assert "<h1>Register kestrel on ERC-8004</h1>" in html
+    for shown in ("<th>Name</th><td>kestrel</td>", "Plays fair, talks plain.", "https://relay.example/agents/kestrel",
+                  SID, "<th>Accepts payments (x402)</th><td>yes</td>", "test gas only (no value)",
+                  "Decoded here from the exact bytes your wallet will send"):
+        assert shown in html, shown
+    assert '<img src="data:image/svg+xml;base64,' in html
+    assert "<details><summary>The raw call, as your wallet shows it</summary>" in html
+
+
+@needs_lib
+def test_the_set_wallet_page_names_the_identity_the_wallet_and_how_long_the_consent_holds():
+    from emporia import erc8004_wallet as W
+    wallet = "0x" + "12" * 20
+    tx = {"chain_id": 84532, "to": REG, "data": "0x" + W.set_wallet_calldata(7, wallet, 1_900_000_000, b"\x01" * 65).hex()}
+    html = bs.tx_page_html(tx, chain_label="Base Sepolia (testnet)", agent_name="kestrel", summary="Sends it.", nonce="n")
+    assert "Set where kestrel&rsquo;s ERC-8004 identity is paid" in html and "<title>Set the agent wallet</title>" in html
+    assert "ERC-8004 agent #7" in html and wallet in html.lower() and "2030-03-17" in html
+    assert "who owns the identity, and every balance" in html and "<img" not in html
+
+
+@needs_lib
+def test_what_the_page_decodes_is_escaped_and_an_undecodable_call_is_shown_raw_only():
+    html = bs.tx_page_html(_register_tx("<script>alert(1)</script>", image=False), chain_label="Base Sepolia (testnet)",
+                           agent_name="kestrel", summary="s", nonce="n")
+    assert "<script>alert(1)" not in html and "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "<th>Picture</th><td>none</td>" in html and "<img" not in html
+    raw = bs.tx_page_html({"chain_id": 84532, "to": REG, "data": "0xabcdef"}, chain_label="Base Sepolia (testnet)",
+                          agent_name="kestrel", summary="s", nonce="n")
+    assert "could not be decoded here" in raw and "<th>Name</th>" not in raw
+
+
+def test_only_the_send_page_may_show_an_inline_picture():
+    assert "img-src data:;" in bs.csp("n", data_images=True) and "img-src" not in bs.csp("n")
+    assert bs.SendPage.data_images is True and bs.SigningPage.data_images is False
+
+
 def test_the_sign_page_shows_the_statement_in_words():
     html = bs.page_html(typed(), chain_label="Base Sepolia (testnet)", agent_name="kestrel", nonce="n")
     assert "Link ERC-8004 agent #" in html and "to the Emporia agent kestrel. This moves no funds" in html

@@ -949,26 +949,31 @@ the dashboard; the page exists only while the command waits.
 **What your wallet shows.** The link is EIP-712 typed data whose first two lines are plain words: "Link ERC-8004 agent #12
 on Base Sepolia (testnet) to the Emporia agent alpha. This moves no funds and grants no permission." and the date
 (`2026-11-19 19:30 UTC`), then the registry, the agent number, your address and the agent's key. The registration and
-`setAgentWallet` are transactions, and a wallet shows raw data for a contract it does not know: the page and the command
-print what they do in words (the function, the registry address, value 0, gas in test ETH). In the wallet popup check the
-network and the `to` address against the ones printed. `setAgentWallet` carries the registry's own consent message (a
-format the registry defines), signed by the agent's wallet; your wallet does not show it.
+`setAgentWallet` are transactions, and a wallet shows them as raw data: the registration is long because it carries the
+whole registration file, picture included. The page decodes the call from the exact bytes your wallet will send and shows
+it in words: for `register`, the agent's name, description, profile address, stable id, whether it takes payments and
+its picture; for `setAgentWallet`, the identity number, the wallet it names, until when the consent holds, and that
+ownership and balances do not change; then the network, the registry and the cost (gas only, value 0). The raw call is
+folded below, to compare with the wallet. The command prints the registration file before it asks. In the wallet popup
+check the network and the `to` address against the ones shown. `setAgentWallet` carries the registry's own consent
+message (a format the registry defines), signed by the agent's wallet; the page shows who signed it and until when.
 
 **Signing from another machine.** `--browser` needs a browser that can reach the page, and the page never listens on a
 public address. `--port N` (1024-65535, default random) fixes the port and `--listen auto|ADDR` picks the address
 (default `auto`: `127.0.0.1`, or inside a container the container's own private address; only loopback, private
 (10.x, 172.16-31.x, 192.168.x, 100.64/10, fc00::/7) and link-local addresses are accepted, never `0.0.0.0`). The command
 detects your setup, prints the exact steps, and the URL is always `http://127.0.0.1:PORT/<token>` in your browser, so a
-tunnel's local port must be the same number as `PORT`.
+tunnel's local port must be the same number as `PORT`. The same flags and setups hold for `register-8004 --browser` and
+`set-8004-wallet --browser` (the examples below use `link-8004`).
 
 | Your setup | Run | In your browser |
 | --- | --- | --- |
 | 1. Local machine, Hermes native | `emporia agent link-8004 NAME --chain C --agent-id N --browser` | opens by itself |
 | 2. Remote server, Hermes native, over SSH | add `--port 8765` | on your laptop: `ssh -L 8765:127.0.0.1:8765 you@server`, then open the printed URL |
-| 3. Remote server, Hermes in Docker (bridge network) | add `--port 8765` (it listens on the container's IP, e.g. 172.20.0.2) | on your laptop: `ssh -L 8765:172.20.0.2:8765 you@server` (the server's host can reach the bridge IP), then open the printed URL |
-| 4. Docker Desktop (macOS/Windows) | publish the port on the host's loopback in compose: `ports: ["127.0.0.1:8765:8765"]`, add `--port 8765` | open the printed URL on that machine |
+| 3. Remote server (VPS), Hermes in Docker (bridge network), run with `docker exec` or over SSH | add `--port 8765` (it listens on the container's IP, e.g. 172.20.0.2; `hostname -I` in the container shows it) | on your laptop: `ssh -L 8765:172.20.0.2:8765 you@server` to the server, not the container (the server can reach the bridge IP), then open the printed URL. A forward to the server's `localhost:8765` finds nothing unless the port is published |
+| 4. Docker on the computer your browser is on (Docker Desktop on macOS/Windows, or Docker on your own Linux machine) | publish the port on the host's loopback in compose: `ports: ["127.0.0.1:8765:8765"]`, recreate the container, add `--port 8765` | open the printed URL on that machine |
 | 5. WSL2 | as 1 or 2: `localhost` forwarding usually works | open the printed URL in the Windows browser |
-| 6. No browser that can reach it | skip `--browser`: sign the printed message in any wallet | paste the signature after `--signature 0x...` in the printed command (it also prints what to sign and where) |
+| 6. No browser that can reach it | skip `--browser`: sign the printed message in any wallet (`link-8004`), or send the printed call from any wallet or the explorer's write-as-proxy tab (`register-8004`, `set-8004-wallet`) | paste the signature after `--signature 0x...`, or run the command again with `--tx 0xHASH` |
 
 Security: never publish the port on `0.0.0.0` (bind the host side to `127.0.0.1`); the SSH tunnel is encrypted; the page
 answers only to the Host `127.0.0.1:PORT` or `localhost:PORT`, behind a one-time token, for one signature or transaction;

@@ -714,7 +714,7 @@ def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any
                f"{built['chain_label']}, from the account you pick in your wallet. That account will own the new "
                f"identity. Emporia sends nothing itself; your wallet shows the gas"
                + (" (test ETH, no value)." if "testnet" in built["chain_label"] else ".")
-               + " Your wallet will show raw data for this contract: this summary is what it does.")
+               + " Your wallet shows this call as raw data; this page shows it decoded.")
     try:
         page = browser_sign.SendPage({"chain_id": built["chain_id"], "to": built["registry"], "data": built["calldata"],
                                       "function": "register(string agentURI)"},
@@ -947,7 +947,7 @@ def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, A
                f"#{built['agent_id']}. Pick the account that owns the identity ({built['owner']}) in your wallet; the "
                f"registry refuses any other. It names {name}'s own wallet as where the identity is paid; ownership "
                f"and funds do not change. The call carries the registry's own consent message (a format the registry "
-               f"defines), already signed by {name}'s wallet; your wallet will not show it, only raw data. The consent "
+               f"defines), already signed by {name}'s wallet; your wallet shows the call as raw data, this page shows it decoded. The consent "
                f"is valid for about {built['valid_seconds'] // 60} minutes. Emporia sends nothing itself; your wallet "
                "shows the gas" + (" (test ETH)." if "testnet" in built["chain_label"] else "."))
     try:

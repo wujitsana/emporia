@@ -169,15 +169,20 @@ def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname
     url = page_url(listen, port, token)
     target = "127.0.0.1" if listen in ("127.0.0.1", "::1") else listen
     tunnel = f"ssh -L {port}:{target}:{port} <you>@{hostname or '<this-host>'}"
+    who = ("  (<this-host> is the server that runs this container, not the container; <you> is your login there;\n"
+           "  keep that terminal open)." if container else
+           "  (replace <you> with your login on this host; keep that terminal open).")
     ssh_text = (f"  Your browser is on another machine. On THAT machine, in a new terminal, run:\n\n"
                 f"    {tunnel}\n\n"
-                f"  (replace <you> with your login on this host; keep that terminal open). The local port must be {port},\n"
+                f"{who} The local port must be {port},\n"
                 f"  the same number: the page only answers at 127.0.0.1:{port}. Then open this in your browser:\n\n"
                 f"    {url}\n")
-    desktop_text = (f"\n  Docker Desktop (macOS/Windows) cannot reach a container's own address. There, publish the "
-                    f"port on the host's\n  loopback only and open the URL on that machine. In compose:\n\n"
+    desktop_text = (f"\n  If Docker runs on the computer your browser is on (Docker Desktop on macOS/Windows, or Docker on your own\n"
+                    f"  Linux machine), skip the tunnel: publish the port on that computer's loopback only and open the URL there.\n"
+                    f"  In compose:\n\n"
                     f"    ports: [\"127.0.0.1:{port}:{port}\"]\n\n"
-                    f"  (or docker run -p 127.0.0.1:{port}:{port}); run this command with --port {port}.\n  Never publish it on 0.0.0.0. Then open:\n\n"
+                    f"  (or docker run -p 127.0.0.1:{port}:{port}), then recreate the container and run this command with\n"
+                    f"  --port {port}. Never publish it on 0.0.0.0. Then open:\n\n"
                     f"    {url}\n")
     if ssh:
         text = ssh_text
@@ -189,7 +194,11 @@ def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname
     if registry:
         check += f", and the 'to' address {registry}"
     check += f". This page only asks for this one {what} and closes.\n"
-    return text + "\n" + check, not (ssh or container)
+    fallback = ("  No browser can reach it? Press Ctrl-C (nothing is sent), run the same command without --browser, send the\n"
+                "  call it prints from any wallet, then run it again with --tx 0xHASH.\n" if what == "transaction" else
+                "  No browser can reach it? Press Ctrl-C, run the same command without --browser, sign the message it prints\n"
+                "  in any wallet, then run it again with --signature 0x....\n")
+    return text + "\n" + check + fallback, not (ssh or container)
 
 
 def chain_params(chain_id: int) -> dict | None:
@@ -219,6 +228,9 @@ body{background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;mar
 h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:.5rem 0}.dim{color:var(--dim)}
 pre{background:transparent;border:1px solid var(--line);padding:12px;overflow:auto;font-size:.8rem;white-space:pre-wrap;word-break:break-all}
 button,select{font:inherit;padding:.5rem 1rem;margin:.25rem 0}#status{min-height:1.5rem}.bad{color:var(--bad)}.good{color:var(--good)}
+table{border-collapse:collapse;margin:.75rem 0;width:100%}th,td{text-align:left;vertical-align:top;padding:.3rem .6rem .3rem 0;border-bottom:1px solid var(--line)}
+th{font-weight:600;white-space:nowrap}td{word-break:break-word}details{margin:.75rem 0}summary{cursor:pointer;color:var(--dim)}
+img{border:1px solid var(--line)}
 """
 
 SCRIPT = r"""
@@ -350,37 +362,105 @@ the message below with the signer's wallet some other way and give it to the ter
 """
 
 
+_SEL_REGISTER = "f2c298be"           # register(string)                          (erc8004_register.SEL_REGISTER_URI)
+_SEL_SET_WALLET = "2d1ef5ae"         # setAgentWallet(uint256,address,uint256,bytes) (erc8004_wallet.SEL_SET_AGENT_WALLET)
+_PICTURE = re.compile(r"data:image/(?:svg\+xml|png);base64,[A-Za-z0-9+/=]+")
+
+
+def describe_call(tx: dict) -> dict | None:
+    """The call the wallet will send, decoded from its own bytes for a person to read: `{"kind", "rows": [(label,
+    value)], "image"}`, or None when it is not one of the two ERC-8004 calls this page sends (the page then shows the
+    raw call only). Values are plain text; the page escapes them."""
+    try:
+        from eth_abi import decode
+        raw = bytes.fromhex(str(tx.get("data") or "").removeprefix("0x"))
+    except (ImportError, ValueError):
+        return None
+    sel, body = raw[:4].hex(), raw[4:]
+    try:
+        if sel == _SEL_REGISTER:
+            from emporia.erc8004_register import decode_data_uri
+            (uri,) = decode(["string"], body)
+            doc = decode_data_uri(uri)
+            if doc is None:
+                return {"kind": "register", "rows": [("Registration", "a link, not an on-chain file: " + uri[:200])],
+                        "image": None}
+            svc = next((x for x in doc.get("services") or [] if isinstance(x, dict)), {})
+            image = doc.get("image") if isinstance(doc.get("image"), str) and _PICTURE.fullmatch(doc["image"]) else None
+            rows = [("Name", str(doc.get("name") or "")), ("Description", str(doc.get("description") or "")),
+                    ("Profile", str(svc.get("endpoint") or "")), ("Stable id", str(svc.get("stableId") or "")),
+                    ("Accepts payments (x402)", "yes" if doc.get("x402Support") else "no"),
+                    ("Picture", "below, stored on chain in this registration" if image else "none")]
+            return {"kind": "register", "rows": [(k, v) for k, v in rows if v], "image": image}
+        if sel == _SEL_SET_WALLET:
+            agent_id, wallet, deadline, sig = decode(["uint256", "address", "uint256", "bytes"], body)
+            until = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(deadline)))
+            return {"kind": "set_wallet", "image": None, "rows": [
+                ("Identity", f"ERC-8004 agent #{agent_id}"), ("Paid at (new agent wallet)", str(wallet)),
+                ("Consent valid until", until),
+                ("Consent", f"signed by that wallet ({len(sig)} bytes); the registry checks it"),
+                ("Unchanged", "who owns the identity, and every balance")]}
+    except Exception:  # noqa: BLE001 — undecodable bytes: show the raw call only, never a guess
+        return None
+    return None
+
+
 def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, nonce: str) -> str:
     """The page for sending one transaction from the person's wallet. `tx` is `{chain_id, to, data}`; `summary` is the
-    plain-words account of what it does (the CLI printed it too). Nothing is sent without the wallet's own prompt."""
+    plain-words account of what it does (the CLI printed it too). The call is shown decoded from the exact bytes the
+    wallet will send (`describe_call`), the raw call folded below it. Nothing is sent without the wallet's own prompt."""
     data = _json_for_html({"tx": tx, "chain_label": chain_label, "add_chain": chain_params(int(tx["chain_id"]))})
     shown = html.escape(json.dumps({"function": tx.get("function", "a contract call"), "chain id": tx["chain_id"],
                                     "to (the registry)": tx["to"], "value": "0", "data (raw, as your wallet shows it)":
                                     tx["data"]}, indent=2))
+    call = describe_call(tx)
+    name = html.escape(agent_name)
+    if call and call["kind"] == "set_wallet":
+        title, head, button = "Set the agent wallet", f"Set where {name}&rsquo;s ERC-8004 identity is paid", "Send it"
+    else:
+        title, head, button = "Send the registration", f"Register {name} on ERC-8004", "Send the registration"
+    cost = "test gas only (no value)" if "testnet" in chain_label else "gas only (no value)"
+    rows = list(call["rows"]) if call else []
+    rows += [("Network", f"{chain_label}, chain id {tx['chain_id']}"), ("Sent to", f"{tx['to']} (the ERC-8004 identity registry)"),
+             ("Cost", cost)]
+    table = "".join(f"<tr><th>{html.escape(k)}</th><td>{html.escape(v)}</td></tr>" for k, v in rows)
+    picture = (f'<p><img src="{html.escape(call["image"], quote=True)}" alt="{name}&rsquo;s picture, as registered" '
+               'width="96" height="96"></p>') if call and call.get("image") else ""
+    decoded = (f'<p class="dim">Decoded here from the exact bytes your wallet will send. Your wallet shows the same call as '
+               f'raw data{" (long: it carries the whole registration, picture included)" if call and call["kind"] == "register" else ""}; '
+               'compare it with the raw call below if you like.</p>') if call else \
+        '<p class="dim">This call could not be decoded here: check it against the raw call below.</p>'
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>Send the registration</title>
+<meta name="referrer" content="no-referrer"><title>{title}</title>
 <style nonce="{nonce}">{STYLE}</style></head><body>
-<h1>Register {html.escape(agent_name)} on ERC-8004</h1>
+<h1>{head}</h1>
 <p>{html.escape(summary)}</p>
-<p class="dim">Your wallet will ask you to confirm one transaction on {html.escape(chain_label)}. Check its prompt against
-the call below before you confirm. Check the network ({html.escape(chain_label)}) and the &ldquo;to&rdquo; address
-{html.escape(tx['to'])}. This page only asks for this one transaction and closes.</p>
-<p><select id="wallet" hidden aria-label="wallet"></select> <button id="sign" type="button" disabled>Send the registration</button></p>
+<table>{table}</table>
+{picture}
+{decoded}
+<p class="dim">Your wallet will ask you to confirm one transaction on {html.escape(chain_label)}. Check the network
+({html.escape(chain_label)}) and the &ldquo;to&rdquo; address {html.escape(tx['to'])} in its prompt.
+This page only asks for this one transaction and closes.</p>
+<p><select id="wallet" hidden aria-label="wallet"></select> <button id="sign" type="button" disabled>{button}</button></p>
 <p id="status" role="status"></p>
 <p id="nowallet" class="dim" hidden>No wallet was found in this browser. Open this page where your browser wallet is, or send
 the call below from your wallet some other way and give the transaction hash to the terminal with <code>--tx</code>.</p>
-<p class="dim">The call (a contract call with data, value 0):</p>
+<details><summary>The raw call, as your wallet shows it</summary>
 <pre>{shown}</pre>
+</details>
 <script type="application/json" id="page-data">{data}</script>
 <script nonce="{nonce}">{SCRIPT}</script>
 </body></html>
 """
 
 
-def csp(nonce: str) -> str:
+def csp(nonce: str, data_images: bool = False) -> str:
+    """`data_images`: the send page shows the registration's own picture, an inline `data:image/` URI (never a remote
+    address); an image cannot run script, and nothing else is loosened."""
     return (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
-            "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+            + ("img-src data:; " if data_images else "")
+            + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
 CONN_TIMEOUT = 5.0                  # seconds a connection may sit silent before it is dropped
@@ -389,6 +469,8 @@ CONN_TIMEOUT = 5.0                  # seconds a connection may sit silent before
 class SigningPage:
     """One page, one signature. `start()` binds; `wait()` serves until a signature arrives or the time is up.
     `SendPage` is the same page for sending one transaction: it overrides `render` and `accept` only."""
+
+    data_images = False
 
     def __init__(self, typed_data: dict, *, chain_label: str, agent_name: str, token: str | None = None,
                  timeout: float = TIMEOUT, port: int = 0, listen: str = HOST):
@@ -449,7 +531,7 @@ class SigningPage:
                 self.send_response(code)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
-                self.send_header("Content-Security-Policy", csp(nonce) if nonce else "default-src 'none'")
+                self.send_header("Content-Security-Policy", csp(nonce, page.data_images) if nonce else "default-src 'none'")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("Cache-Control", "no-store")
@@ -543,6 +625,8 @@ class SigningPage:
 class SendPage(SigningPage):
     """One page, one transaction the person's wallet sends. The page returns only the transaction hash (and the account
     that sent it); the CLI then reads the chain itself, trusting nothing the page says. `tx` is `{chain_id, to, data}`."""
+
+    data_images = True          # the registration's own picture, decoded from the call
 
     def __init__(self, tx: dict, *, chain_label: str, agent_name: str, summary: str, token: str | None = None,
                  timeout: float = TIMEOUT, port: int = 0, listen: str = HOST):
