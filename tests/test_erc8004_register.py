@@ -516,7 +516,8 @@ def run_send_page(tmp_path, wallet, post="ok"):
 @needs_node
 def test_the_page_switches_chain_then_has_the_wallet_send_and_posts_only_the_hash(tmp_path):
     log = run_send_page(tmp_path, {"chain": 1, "accounts": [OWNER], "switch": "ok", "send": "ok"})
-    assert log["calls"] == ["eth_requestAccounts", "eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_sendTransaction"]
+    assert log["calls"] == ["eth_chainId",          # read first, asking nothing: the page says the network is wrong
+                            "eth_requestAccounts", "eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_sendTransaction"]
     assert log["sent"] == {"from": OWNER, "to": REGISTRY, "data": TXD["data"], "value": "0x0"}
     (post,) = log["posts"]
     assert post["body"] == {"tx_hash": "0x" + "cd" * 32, "account": OWNER} and log["statusClass"] == "good"

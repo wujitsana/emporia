@@ -227,7 +227,7 @@ def test_the_default_lifetime_is_ten_minutes_and_ctrl_c_closes_it(monkeypatch):
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 
-def run_page(tmp_path, wallet, announce=True, post="ok", signer="0x" + "11" * 20):
+def run_page(tmp_path, wallet, announce=True, post="ok", signer="0x" + "11" * 20, clicks=1):
     td = typed(signer)
     p = page(td)
     t, _ = serve(p)
@@ -239,7 +239,8 @@ def run_page(tmp_path, wallet, announce=True, post="ok", signer="0x" + "11" * 20
     script = re.search(r'<script nonce="[^"]+">(.*)</script>', html, re.S).group(1)
     f = tmp_path / "page.js"
     f.write_text(script)
-    scenario = {"typed_data": td, "chain_label": "Base Sepolia (testnet)", "wallet": wallet, "announce": announce, "post": post}
+    scenario = {"typed_data": td, "chain_label": "Base Sepolia (testnet)", "wallet": wallet, "announce": announce, "post": post,
+                "clicks": clicks}
     out = subprocess.run(["node", str(HARNESS), str(f), json.dumps(scenario)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout.strip().splitlines()[-1]), td
@@ -250,10 +251,13 @@ SIGNER = "0x" + "11" * 20
 
 @needs_node
 def test_on_the_wrong_chain_the_page_asks_the_wallet_to_switch_then_signs_and_posts(tmp_path):
-    log, td = run_page(tmp_path, {"chain": 1, "accounts": [SIGNER.upper().replace("0X", "0x")], "switch": "ok", "sign": "ok"})
-    assert log["calls"] == ["eth_requestAccounts", "eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_signTypedData_v4"]
+    shown = SIGNER.upper().replace("0X", "0x")
+    log, td = run_page(tmp_path, {"chain": 1, "accounts": [shown], "switch": "ok", "sign": "ok"})
+    assert log["calls"][0] == "eth_chainId", "the page reads the network first, asking nothing"
+    assert log["calls"][1:] == ["eth_requestAccounts", "eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_signTypedData_v4"]
     assert log["switched_to"] == 84532
-    assert log["signed"]["account"] == SIGNER and log["signed"]["typed"] == td
+    assert log["signed"]["account"] == shown, "the account exactly as the wallet named it"
+    assert log["signed"]["typed"] == td
     (post,) = log["posts"]
     assert post["url"] == "/TOKEN/sign" and post["method"] == "POST" and post["body"] == {"signature": "0x" + "ab" * 65, "account": SIGNER}
     assert log["statusClass"] == "good" and "Signed" in log["status"]
@@ -455,3 +459,20 @@ def test_a_connection_that_stops_mid_request_is_dropped_after_the_socket_timeout
     finally:
         s.close()
         t.join(6)
+
+
+@needs_node
+def test_before_any_press_the_page_says_the_wallet_is_on_another_network(tmp_path):
+    log, _ = run_page(tmp_path, {"chain": 1, "accounts": [SIGNER], "switch": "ok", "sign": "ok"}, clicks=0)
+    assert "on another network (chain id 1)" in log["statusBeforeClick"] and "chain id 84532" in log["statusBeforeClick"]
+    assert log["calls"] == ["eth_chainId"] and log["posts"] == []
+
+
+@needs_node
+def test_a_wallet_that_has_not_authorized_the_page_is_asked_to_connect_it_on_the_next_press(tmp_path):
+    log, _ = run_page(tmp_path, {"chain": 1, "accounts": [SIGNER], "switch": "unauthorized", "sign": "ok"}, clicks=2)
+    first, second = log["statuses"]
+    assert "has not given this page (emporia.localhost:8765) access" in first and "Switch your wallet to Base Sepolia" in first
+    assert "Nothing was sent" in first
+    assert log["permissions"] == [{"eth_accounts": {}}] and log["switched_to"] == 84532
+    assert len(log["posts"]) == 1 and "Signed" in second

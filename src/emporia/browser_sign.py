@@ -319,6 +319,24 @@ SCRIPT = r"""
     pick.hidden = found.length < 2;
     $("sign").disabled = found.length === 0;
     $("nowallet").hidden = found.length > 0;
+    if (found.length) checkChain(found[Number(pick.value || 0)].provider);
+  }
+  const addHint = () => doc.add_chain ? " (if your wallet does not have it, add it: chain id " + wantChain + ", RPC " +
+    doc.add_chain.rpcUrls[0] + ")" : "";
+  // Before anything is asked: which network the wallet is on (no permission needed to read it), so a person on another
+  // network knows before pressing, also with a wallet that will not switch for a page it has not connected.
+  let chainSaid = false;
+  async function checkChain(p) {
+    if (chainSaid) return;
+    chainSaid = true;          // once: the page renders on each wallet found and again on load
+    try {
+      const now = parseInt(await p.request({ method: "eth_chainId" }), 16);
+      if (now !== wantChain) {
+        say("Your wallet is on another network (chain id " + now + "); this needs " + doc.chain_label + " (chain id " +
+            wantChain + "). Pressing the button asks your wallet to switch. If it does not ask, switch it to " +
+            doc.chain_label + " yourself" + addHint() + ", then press.");
+      }
+    } catch (e) { /* the wallet would not say: the button still asks */ }
   }
   window.addEventListener("eip6963:announceProvider", (e) => { if (e.detail) add(e.detail.info, e.detail.provider); });
   window.dispatchEvent(new Event("eip6963:requestProvider"));
@@ -347,6 +365,7 @@ SCRIPT = r"""
         if (await chainId(p) !== wantChain) await sw();
       }
     } catch (e) {
+      if (unauthorized(e)) throw e;      // not a refusal: the page must be connected first (handled by the caller)
       say("Your wallet did not switch to " + doc.chain_label + " (chain id " + wantChain + ")" +
           (refused(e) ? ": you declined" : e && e.code === 4902 ? ": it does not know that chain" : "") +
           ". Switch it yourself, then press the button again.", "bad");
@@ -405,8 +424,9 @@ SCRIPT = r"""
     } catch (e) {
       if (unauthorized(e)) {
         askAccess = true;
-        say("Your wallet has not given this page (" + location.host + ") access to that account. Press the button " +
-            "again: your wallet will ask you to connect this page; pick the account you mean to use. Nothing was sent.", "bad");
+        say("Your wallet has not given this page (" + location.host + ") access to that account or network. Switch " +
+            "your wallet to " + doc.chain_label + " yourself" + addHint() + ", then press the button again: your " +
+            "wallet will ask you to connect this page; pick the account you mean to use. Nothing was sent.", "bad");
         $("sign").disabled = false;
         return;
       }
@@ -473,7 +493,8 @@ def describe_call(tx: dict) -> dict | None:
                     ("Profile", str(svc.get("endpoint") or "")), ("Stable id", str(svc.get("stableId") or "")),
                     ("Accepts payments (x402)", "yes" if doc.get("x402Support") else "no"),
                     ("Picture", "below, stored on chain in this registration" if image else "none")]
-            return {"kind": "register", "rows": [(k, v) for k, v in rows if v], "image": image}
+            return {"kind": "register", "rows": [(k, v) for k, v in rows if v], "image": image,
+                    "data_bytes": len(raw), "image_bytes": len(image.encode()) if image else 0}
         if sel == _SEL_SET_WALLET:
             agent_id, wallet, deadline, sig = decode(["uint256", "address", "uint256", "bytes"], body)
             until = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(deadline)))
@@ -481,7 +502,7 @@ def describe_call(tx: dict) -> dict | None:
                 ("Identity", f"ERC-8004 agent #{agent_id}"), ("Paid at (new agent wallet)", str(wallet)),
                 ("Consent valid until", until),
                 ("Consent", f"signed by that wallet ({len(sig)} bytes); the registry checks it"),
-                ("Unchanged", "who owns the identity, and every balance")]}
+                ("Unchanged", "who owns the identity, and every balance")], "data_bytes": len(raw)}
     except Exception:  # noqa: BLE001 — undecodable bytes: show the raw call only, never a guess
         return None
     return None
@@ -510,9 +531,16 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
     picture = (f'<div class="pic"><img src="{html.escape(call["image"], quote=True)}" alt="{name}&rsquo;s picture, as '
                f'registered" width="96" height="96"><span class="dim">The picture that goes on chain with this '
                'registration.</span></div>') if call and call.get("image") else ""
+    if call and call["kind"] == "register":
+        inside = (f'{call["data_bytes"]:,} bytes: ' + (f'{call["image_bytes"]:,} of them are {name}&rsquo;s picture '
+                  '(image data, which looks like random letters), ' if call["image_bytes"] else "")
+                  + "the rest is the text above and the call&rsquo;s own framing. It holds no signature.")
+    elif call:
+        inside = (f'{call["data_bytes"]:,} bytes: the identity number, the wallet, the deadline and that wallet&rsquo;s '
+                  "65-byte consent signature, each shown above.")
     decoded = (f'<p class="dim">Read here from the exact bytes your wallet will send. Your wallet names the same call '
-               f'({html.escape(fn_name)}) on the registry, with its fee; the full data sits behind its Data or Hex tab.</p>'
-               ) if call else '<p class="dim">This call could not be read here: check it against the details below.</p>'
+               f'({html.escape(fn_name)}) on the registry, with its fee; the full data sits behind its Data or Hex tab, '
+               f'{inside}</p>') if call else '<p class="dim">This call could not be read here: check it against the details below.</p>'
     return _head(nonce, title) + _masthead(f"one transaction &middot; {html.escape(chain_label)}") + f"""<h1>{head}</h1>
 <p>{html.escape(summary)}</p>
 <dl class="run">{table}</dl>

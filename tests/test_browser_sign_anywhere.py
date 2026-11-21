@@ -293,6 +293,7 @@ def test_the_send_page_shows_the_registration_decoded_with_its_picture_and_folds
                   'class="mark">EMPORIA<svg', 'rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,'):
         assert shown in html, shown
     assert '<img src="data:image/svg+xml;base64,' in html
+    assert "&rsquo;s picture (image data" in html and "It holds no signature." in html
     assert "<details><summary>Technical details: the call data (a wallet shows it under Data or Hex)</summary>" in html
 
 
@@ -305,6 +306,7 @@ def test_the_set_wallet_page_names_the_identity_the_wallet_and_how_long_the_cons
     assert "Set where kestrel&rsquo;s ERC-8004 identity is paid" in html and "<title>Emporia · Set the agent wallet</title>" in html
     assert "ERC-8004 agent #7" in html and wallet in html.lower() and "2030-03-17" in html
     assert "who owns the identity, and every balance" in html and "<img" not in html and "(setAgentWallet)" in html
+    assert "65-byte consent signature" in html
 
 
 @needs_lib
