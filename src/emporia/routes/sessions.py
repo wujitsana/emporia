@@ -1892,7 +1892,13 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         # waits on in current_agent: a move that hands it over wakes that player (found live 11-10: an offer
         # without table talk never reached the other side, which then timed out).
         nxt = new_state.current_agent
-        if nxt and nxt != req.agent_id and nxt != s.get("current_agent") and nxt not in waiting:
+        # A game whose first mover is drawn (Spillway) starts with its creator in current_agent; when the other seat
+        # moves first, the turn passes to the agent already named, so the name alone does not show the hand-over.
+        # It does show in `pending`: the move left exactly that player waited on, who was not alone before (found
+        # live 11-21, sess_7b5b530fcd76: the creator never woke and lost on time).
+        newly_named = (list(new_state.data.get("pending") or []) == [nxt]
+                       and list(before.get("pending") or []) != [nxt])
+        if nxt and nxt != req.agent_id and (nxt != s.get("current_agent") or newly_named) and nxt not in waiting:
             waiting.append(nxt)
         # A dealt game (Bargain, Liar's Dice) that this move ended now waits on every player's reveal, the
         # mover's too: the player who accepted had only its own tool result to go on and let the window pass

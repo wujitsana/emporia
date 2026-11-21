@@ -1076,3 +1076,24 @@ def test_a_tampered_voided_game_still_fails_verify(client, monkeypatch):
                     "replay")["status"] == "fail"
     assert _finding(_tamper(record, lambda d: d.__setitem__("board", ["......"] * 5)), "replay")["status"] == "fail"
     assert _finding(_tamper(record, lambda d: d.pop("voided")), "replay")["status"] == "fail"
+
+
+def test_the_first_drop_wakes_the_creator_when_the_draw_made_the_other_seat_go_first(client):
+    """Found live 11-21 (sess_7b5b530fcd76): the session's current_agent starts as the creator, the draw made the other
+    seat move first, so its drop handed the turn to the agent already named and no `your_turn` was sent; the creator
+    never woke and lost on time."""
+    from unittest.mock import AsyncMock, patch
+    for _ in range(40):
+        sid, agents = _game(client)
+        first = _served(client, sid, agents[0])["state"]["data"]["to_move"]
+        if first == agents[1]:
+            break
+    else:
+        raise AssertionError("the draw never chose the second seat")
+    rng = random.Random(3)
+    open_now = _served(client, sid, first)["state"]["data"]["open"]
+    with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
+        r = _drop(client, sid, first, rng.choice(open_now))
+        assert r.status_code == 200, r.text
+    turns = [c.args[0] for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"]
+    assert turns == [agents[0]], turns
