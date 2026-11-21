@@ -4592,6 +4592,8 @@ def join_session(
         # emporia:rand:v1: this agent's commitment to a secret it keeps, naming a drand round. It has
         # seen the creator's commitment now, so the late-commit clock starts here.
         seat = len((session or {}).get("participants") or [])
+        with _commitments(_rand_file(aid, session_id)) as saved:
+            kept_before = dict(saved)      # restored if the relay does not take this join (nothing else replaces it)
         body["rand_commit"] = _rand_commit(aid, session_id, seat)
         from emporia import rand_client as _rc
         if seat + 1 >= _rc.need_of(session or {}):       # the last to join has seen every commitment now
@@ -4606,9 +4608,23 @@ def join_session(
             _GUIDE_SENT.add(session_id)       # the join carries the game's how_to_play
             _record_reason("join_session", session_id, "joined", reason)
             return {"success": True, **_relay_ok(d), **_counterparties(session, aid)}
+        _restore_rand(aid, session_id, locals().get("kept_before"))
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
+        _restore_rand(aid, session_id, locals().get("kept_before"))
         return {"error": str(e), "success": False}
+
+
+def _restore_rand(aid: str, session_id: str, kept: dict[str, Any] | None) -> None:
+    """A join the relay did not take leaves this game's secret file as it was before the attempt."""
+    if kept is None:
+        return
+    try:
+        with _commitments(_rand_file(aid, session_id)) as saved:
+            saved.clear()
+            saved.update(kept)
+    except Exception:  # noqa: BLE001 — best effort; the join's own error is what the agent sees
+        logger.warning("join %s: could not restore the earlier commitment file", session_id)
 
 
 @_relay_aware

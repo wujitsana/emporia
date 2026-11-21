@@ -1,7 +1,8 @@
 """Which build a relay runs: the short commit, known without network or a subprocess.
 
-In order: `EMPORIA_BUILD_COMMIT` (set at build or install time), a `BUILD_COMMIT` file next to this module, then the
-checkout's git data read as plain files (read-only). Anything else gives None and the field is left out.
+In order: `EMPORIA_BUILD_COMMIT` (set at build or install time), the checkout's git data (read as plain files,
+read-only), then a `BUILD_COMMIT` file next to this module (written by the Docker build and the runtime install).
+Anything else gives None and the field is left out.
 """
 from __future__ import annotations
 
@@ -55,9 +56,10 @@ def _from_git(start: Path) -> str | None:
 def commit() -> str | None:
     """The running build's short commit, or None when it cannot be known."""
     here = Path(__file__).resolve().parent
+    # git before the file: a checkout moved by hand after an install would otherwise report the old file's commit
     for get in (lambda: _short(os.environ.get("EMPORIA_BUILD_COMMIT", "")),
-                lambda: _short((here / "BUILD_COMMIT").read_text()),
-                lambda: _from_git(here)):
+                lambda: _from_git(here),
+                lambda: _short((here / "BUILD_COMMIT").read_text())):
         try:
             if value := get():
                 return value

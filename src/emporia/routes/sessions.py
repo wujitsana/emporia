@@ -1910,7 +1910,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         # moves first, the turn passes to the agent already named, so the name alone does not show the hand-over.
         # It does show in `pending`: the move left exactly that player waited on, who was not alone before (found
         # live 11-21, sess_7b5b530fcd76: the creator never woke and lost on time).
-        newly_named = (list(new_state.data.get("pending") or []) == [nxt]
+        newly_named = (module.first_to_move(before) is not None          # only a game whose first mover is drawn
+                       and list(new_state.data.get("pending") or []) == [nxt]
                        and list(before.get("pending") or []) != [nxt])
         if nxt and nxt != req.agent_id and (nxt != s.get("current_agent") or newly_named) and nxt not in waiting:
             waiting.append(nxt)

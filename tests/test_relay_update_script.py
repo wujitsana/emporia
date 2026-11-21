@@ -25,6 +25,12 @@ case "$*" in
       *os.stat*) echo "42 ['keys']" ;;
     esac ;;
   *inspect*) echo "emporia-data" ;;
+  *"run --rm --network none"*)
+    [ -z "${FAKE_BACKUP_FAIL:-}" ] || exit 1
+    dir=""; prev=""
+    for a in "$@"; do case "$prev" in -v) case "$a" in *:/b) dir="${a%:/b}" ;; esac ;; esac; prev="$a"; done
+    name="$(printf '%s' "$*" | grep -o 'emporia-data-[0-9TZ]*\.tgz' | head -1)"
+    [ -n "$dir" ] && [ -n "$name" ] && echo backup > "$dir/$name" ;;
   *"compose"*os.stat*) if [ -n "${FAKE_OTHER_DATA:-}" ]; then echo "7 ['other']"; else echo "42 ['keys']"; fi ;;
   *"compose"*"--dry-run"*) cat "$FAKE_PLAN"; exit "${FAKE_DRY_RC:-0}" ;;
   *"compose"*" build "*) exit "${FAKE_BUILD_RC:-0}" ;;
@@ -38,6 +44,7 @@ for a in "$@"; do url="$a"; done
 echo "curl $url" >> "$FAKE_LOG"
 case "$url" in
   */commits/*) printf '%s' "${FAKE_COMMIT_REPLY:-}" ;;
+  */compare/*) printf '{"status": "%s"}' "${FAKE_COMPARE:-behind}" ;;
   *relay-update.sh) cat "$FAKE_RAW" ;;
   *) exit 22 ;;
 esac

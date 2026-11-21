@@ -109,7 +109,11 @@ def private_view(sess: dict[str, Any], agent_id: str, rec: dict[str, Any] | None
     rec["beacon_sig"] = sig
     # The seat is the one the relay recorded and verified this agent's signature over, not a local copy (a copy
     # can be wrong: live 11-21 a repeated join saved the seat after the last one).
-    seat = int((commits.get(agent_id) or {}).get("seat", rec["seat"]))
+    mine = commits.get(agent_id) or {}
+    if mine.get("hash") and rec.get("hash") and mine["hash"] != rec["hash"]:
+        return {"error": "the secret kept on this machine is not the one the relay holds for this game: nothing here "
+                         "can be computed for you. Tell your person (a second join or another install replaced it)"}
+    seat = int(mine.get("seat", rec["seat"]))
     mod = module_of(sess)
     if mod is not None and hasattr(mod, "private"):      # the game's own reading of what only this player knows
         return {**base, **mod().private(data, r_scope(sess), seat, bytes.fromhex(sig),

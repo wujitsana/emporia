@@ -689,3 +689,19 @@ def test_the_view_uses_the_seat_the_relay_verified_not_a_local_copy():
                                     fetch=lambda r, base=None: fake_beacon_sig(r))
     hand, _walk = B.draw(sess_id, 1, bytes.fromhex(fake_beacon_sig(rnd)), bytes.fromhex(sb["s"]))
     assert view["values"] == B._as_dict(hand)
+
+
+def test_a_secret_the_relay_does_not_hold_gives_no_hand():
+    """Fable delta-3 #8: the relay's seat is used only when the relay holds this machine's commitment."""
+    from emporia import rand_client
+    sess_id = "sess_mismatch"
+    now = rand.GENESIS + 1_000_000 * rand.PERIOD_S
+    (ca, _sa), (cb, sb) = (rand_client.make_commit(lambda *a: "sig", sess_id, "a", 0, now=now),
+                           rand_client.make_commit(lambda *a: "sig", sess_id, "b", 1, now=now + 5))
+    sess = {"session_id": sess_id, "config": {"rand": {"scope": sess_id, "commits": {"a": {**ca, "seat": 0}, "b": {**cb, "seat": 1}}}},
+            "state": {"data": {"pool": B._as_dict(POOL), "offers": []}}}
+    rnd = B.game_round(sess["config"]["rand"]["commits"])
+    other = dict(sb, hash="0" * 64, seen_all_at=now + 1)      # a secret replaced on this machine
+    view = rand_client.private_view(sess, "b", other, now=rand.round_time(rnd) + 1,
+                                    fetch=lambda r, base=None: fake_beacon_sig(r))
+    assert "values" not in view and "not the one the relay holds" in view["error"]

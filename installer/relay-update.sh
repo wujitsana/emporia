@@ -23,8 +23,10 @@ SERVICE="emporia-relay"
 CONTAINER="emporia-relay"
 BACKUPS="$HOME/emporia-backups"
 PORT=8088
+BACKUP_IMAGE="alpine:3.20"
 CHECK=0
 YES=0
+ANY_BRANCH=0
 SUDO=""
 FILES=""
 NEW=""
@@ -34,6 +36,7 @@ usage() {
 usage: sh relay-update.sh [options] <full 40-character commit sha>
   --check            print every step and command, change nothing
   --yes              answer the database-upgrade question with yes (for automation)
+  --any-branch       accept a commit that is not on the project's main branch
   --sudo             run docker and file changes with sudo
   --dir FOLDER       the relay's install folder (default \$HOME/.emporia): compose.snippet.yaml and .env
   --service NAME     the compose service (default emporia-relay)
@@ -49,6 +52,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK=1 ;;
     --yes) YES=1 ;;
+    --any-branch) ANY_BRANCH=1 ;;
     --sudo) SUDO="sudo" ;;
     --dir) [ $# -ge 2 ] || die "--dir needs a folder"; DIR="$2"; shift ;;
     --service) [ $# -ge 2 ] || die "--service needs a name"; SERVICE="$2"; shift ;;
@@ -72,13 +76,14 @@ if ! printf '%s' "$NEW" | grep -Eq '^[0-9a-f]{40}$'; then
 fi
 [ "$(id -u)" != 0 ] || [ -n "$SUDO" ] || echo "note: running as root"
 
+case "$BACKUPS" in /*) ;; *) BACKUPS="$(pwd)/$BACKUPS" ;; esac   # a relative path would name a Docker volume
 SNIPPET="$DIR/compose.snippet.yaml"
 ENVF="$DIR/.env"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 COMPOSE="$SUDO env HOME=$HOME docker compose$FILES"
 ID_CMD='import json,urllib.request as u; h=json.load(u.urlopen("http://127.0.0.1:'"$PORT"'/health",timeout=5)); print(h.get("relay_id"), h.get("relay_public_key"))'
 BUILD_CMD='import json,urllib.request as u; print(json.load(u.urlopen("http://127.0.0.1:'"$PORT"'/health",timeout=5)).get("build"))'
-DATA_CMD='import os; s=os.stat("/data"); print(s.st_ino, sorted(os.listdir("/data")))'
+DATA_CMD='import os; print(os.stat("/data").st_ino, os.stat("/data/emporia.sqlite3").st_ino)'
 
 step() { echo; echo "== $*"; }
 # Print what a changing step would run; run it unless --check.
@@ -108,7 +113,7 @@ rollback() {
   fi
   [ ! -f "$ENVF.bak-$STAMP" ] || echo "     $SUDO cp -a $ENVF.bak-$STAMP $ENVF"
   echo "  3. only if the database upgrade ran: move the data aside and untar the backup into it:"
-  echo "       $SUDO docker run --rm -v ${VOL:-<data volume or folder>}:/data -v $BACKUPS:/b alpine sh -c 'mkdir /data/_failed-$STAMP && find /data -mindepth 1 -maxdepth 1 ! -name _failed-$STAMP -exec mv {} /data/_failed-$STAMP/ \; && tar xzf /b/emporia-data-$STAMP.tgz -C /data'"
+  echo "       $SUDO docker run --rm -v ${VOL:-<data volume or folder>}:/data -v $BACKUPS:/b $BACKUP_IMAGE sh -c 'mkdir /data/_failed-$STAMP && find /data -mindepth 1 -maxdepth 1 ! -name _failed-$STAMP -exec mv {} /data/_failed-$STAMP/ \; && tar xzf /b/emporia-data-$STAMP.tgz -C /data'"
   echo "  4. $COMPOSE build --build-arg EMPORIA_BUILD_COMMIT=${OLD:-<old sha>} $SERVICE && $COMPOSE up -d --force-recreate $SERVICE"
 }
 
@@ -120,6 +125,15 @@ fi
 GOT="$(fetch "$API/repos/$REPO/commits/$NEW" "application/vnd.github.sha" 2>/dev/null || true)"
 [ "$GOT" = "$NEW" ] || die "GitHub does not know commit $NEW in $REPO (is it pushed? is it the full sha?)"
 echo "   on GitHub: yes"
+# A commit only a fork holds is served under the project's address too: ask whether main contains it.
+CMP="$(fetch "$API/repos/$REPO/compare/main...$NEW" 2>/dev/null || true)"
+if printf '%s' "$CMP" | grep -Eq '"status": *"(behind|identical)"'; then
+  echo "   on $REPO's main branch: yes"
+elif [ "$ANY_BRANCH" = 1 ]; then
+  echo "   on $REPO's main branch: not confirmed (--any-branch: continuing)"
+else
+  die "commit $NEW is not confirmed on $REPO's main branch (a fork's commit, or GitHub's rate limit); release commits are on main. Add --any-branch only if you mean another branch"
+fi
 if [ -r "$0" ] && REMOTE="$(fetch "$RAW/$REPO/$NEW/installer/relay-update.sh" 2>/dev/null)"; then
   if [ "$REMOTE" = "$(cat "$0")" ]; then
     echo "   this script is installer/relay-update.sh at that commit: yes"
@@ -138,20 +152,31 @@ if [ "$CHECK" = 1 ]; then
 else
   BEFORE="$($SUDO docker exec "$CONTAINER" python -c "$ID_CMD")" || die "the relay container $CONTAINER is not answering on /health"
   echo "   identity: $BEFORE"
-  VOL="$($SUDO docker inspect "$CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}{{end}}{{end}}')"
+  VOL="$($SUDO docker inspect "$CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}{{end}}{{end}}')" \
+    || die "could not inspect the relay container $CONTAINER (nothing changed)"
   [ -n "$VOL" ] || die "could not find the relay's /data"
   echo "   data at: $VOL"
-  LIVE_DATA="$($SUDO docker exec "$CONTAINER" python -c "$DATA_CMD")"
-  COMPOSE_DATA="$($COMPOSE run --rm --no-deps "$SERVICE" python -c "$DATA_CMD")"
+  LIVE_DATA="$($SUDO docker exec "$CONTAINER" python -c "$DATA_CMD")" || die "could not read the live relay's /data (nothing changed)"
+  COMPOSE_DATA="$($COMPOSE run --rm --no-deps "$SERVICE" python -c "$DATA_CMD")" \
+    || die "could not start compose's $SERVICE to compare its /data (nothing changed)"
   [ "$LIVE_DATA" = "$COMPOSE_DATA" ] || die "compose's $SERVICE does not see the live relay's /data (nothing changed)"
   echo "   same /data as compose's $SERVICE: yes"
+  # the backup's folder and tool, ready before anything changes (it holds the relay's identity key: owner only)
+  (umask 077 && mkdir -p "$BACKUPS") && chmod 700 "$BACKUPS" && [ -w "$BACKUPS" ] \
+    || die "cannot write the backup folder $BACKUPS (nothing changed); pick one with --backup-dir"
+  $SUDO docker pull -q "$BACKUP_IMAGE" >/dev/null || die "could not fetch $BACKUP_IMAGE for the backup (nothing changed)"
+  echo "   backup folder ready: $BACKUPS"
 fi
 
 step "3. pin the commit and build (the relay keeps serving)"
 [ -f "$SNIPPET" ] || die "no $SNIPPET: this script updates a relay whose image is built from a pinned git commit (emporia relay host --into-compose). Use --dir for another install folder"
 OLD="$($SUDO grep -o 'emporia.git#[0-9a-f]\{7,40\}' "$SNIPPET" | head -1 | cut -d'#' -f2)"
 [ -n "$OLD" ] || die "no pinned commit (emporia.git#<sha>) in $SNIPPET"
-if [ "$OLD" = "$NEW" ]; then echo "   already pinned to $NEW. Nothing to do."; exit 0; fi
+if [ "$OLD" = "$NEW" ]; then
+  RUNNING="$($SUDO docker exec "$CONTAINER" python -c "$BUILD_CMD" 2>/dev/null || true)"
+  if [ "$RUNNING" = "$(printf '%s' "$NEW" | cut -c1-8)" ]; then echo "   already running $NEW. Nothing to do."; exit 0; fi
+  die "the pin already names $NEW but the relay runs build '${RUNNING:-none: not answering}' (an earlier run stopped part way). Restore the snippet from its newest $SNIPPET.bak-* copy and run this again, or finish by hand: $COMPOSE build --build-arg EMPORIA_BUILD_COMMIT=$NEW $SERVICE && $COMPOSE up -d --force-recreate $SERVICE"
+fi
 echo "   pinned now: $OLD"
 if [ "$CHECK" = 1 ]; then
   echo "   would run: $SUDO cp -a $SNIPPET $SNIPPET.bak-$STAMP"
@@ -186,16 +211,16 @@ else
 fi
 
 step "5. stop the relay and take a full backup of its data"
-# shellcheck disable=SC2086  # $COMPOSE is a command line and must split into words
-do_run $COMPOSE stop "$SERVICE"
 if [ "$CHECK" = 1 ]; then
-  echo "   would run: mkdir -p $BACKUPS"
-  echo "   would run: $SUDO docker run --rm -v <data>:/data:ro -v $BACKUPS:/b alpine tar czf /b/emporia-data-$STAMP.tgz -C /data ."
+  echo "   would run: $COMPOSE stop $SERVICE"
+  echo "   would run: $SUDO docker run --rm --network none -v <data>:/data:ro -v $BACKUPS:/b $BACKUP_IMAGE sh -c 'umask 077 && tar czf /b/emporia-data-$STAMP.tgz -C /data .'"
 else
-  mkdir -p "$BACKUPS"
-  $SUDO docker run --rm -v "$VOL":/data:ro -v "$BACKUPS":/b alpine tar czf "/b/emporia-data-$STAMP.tgz" -C /data . \
+  $COMPOSE stop "$SERVICE" || { restore_pin; die "the relay could not be stopped; the pin is restored and nothing else changed"; }
+  $SUDO docker run --rm --network none -v "$VOL":/data:ro -v "$BACKUPS":/b "$BACKUP_IMAGE" \
+      sh -c "umask 077 && tar czf /b/emporia-data-$STAMP.tgz -C /data ." \
+    && $SUDO test -s "$BACKUPS/emporia-data-$STAMP.tgz" \
     || { echo "STOP: the backup failed; starting the old relay again"; restore_pin; $COMPOSE up -d "$SERVICE"; exit 1; }
-  echo "   backup: $BACKUPS/emporia-data-$STAMP.tgz"
+  echo "   backup: $BACKUPS/emporia-data-$STAMP.tgz (owner only)"
 fi
 
 step "6. upgrade the database, only if the schema changes"

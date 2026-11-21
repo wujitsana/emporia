@@ -174,3 +174,38 @@ def test_joining_a_game_you_are_already_in_makes_no_new_commitment(monkeypatch):
     out = mcp_server.join_session("sess_x", agent_id="beta")
     assert out["success"] is True and out["already_seated"] is True
     assert [m for m, _ in posted] == ["get"], posted
+
+
+def test_a_join_the_relay_refuses_leaves_the_kept_secret_as_it_was(monkeypatch):
+    """Fable delta-3 #9: the new commitment is written before the join is sent; a refused join restores the file."""
+    from emporia import mcp_server
+
+    class R:
+        def __init__(self, code, body):
+            self.status_code, self._b, self.headers = code, body, {}
+
+        def json(self):
+            return self._b
+
+    def fake(method, url, **kw):
+        if url.endswith("/join"):
+            return R(409, {"detail": "no"})
+        return R(200, {"module_type": "emporia:spillway:v1", "participants": ["alpha"], "payment_rules": {}})
+    monkeypatch.setattr(mcp_server, "_bearer_request", fake)
+    monkeypatch.setattr(mcp_server, "_uses_rand", lambda mt: True)
+    monkeypatch.setattr(mcp_server, "_open_games_refusal", lambda aid, mt: None)
+    monkeypatch.setattr(mcp_server, "_operator_cap_refusal", lambda aid, others: None)
+    sid = "sess_keep"
+    with mcp_server._commitments(mcp_server._rand_file("beta", sid)) as saved:
+        saved.clear()
+        saved.update({"s": "aa" * 32, "hash": "1" * 64, "seat": 1})
+
+    def new_commit(aid, session_id, seat):
+        with mcp_server._commitments(mcp_server._rand_file(aid, session_id)) as saved:
+            saved.update({"s": "bb" * 32, "hash": "2" * 64, "seat": seat})
+        return {"hash": "2" * 64, "beacon_round": 1, "at": "x", "signature": "y"}
+    monkeypatch.setattr(mcp_server, "_rand_commit", new_commit)
+    out = mcp_server.join_session(sid, agent_id="beta")
+    assert out["success"] is False
+    with mcp_server._commitments(mcp_server._rand_file("beta", sid)) as saved:
+        assert saved["hash"] == "1" * 64 and saved["s"] == "aa" * 32
