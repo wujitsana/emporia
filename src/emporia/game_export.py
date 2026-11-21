@@ -86,7 +86,9 @@ def verify_line(line: dict[str, Any], relay_key: str | None = None) -> dict[str,
     rand_part = line.get("rand")
     state = dict(line.get("final_state") or {})
     session = {"session_id": sid, "module_type": line.get("module"), "participants": players,
-               "status": line.get("status", "completed"), "config": line.get("config") or {}, "state": state}
+               "status": line.get("status", "completed"), "config": line.get("config") or {}, "state": state,
+               # 2.1 lines carry every player's signed entry; an older line has none (its joins are "not assessed")
+               "creation": line.get("creation") or {}, "payment_rules": {"signed_terms": line.get("signed_terms")}}
     if rand_part and "rand" in (state.get("data") or {}):
         # the exported rand block is what the state holds: a tampered copy of one fails here
         if canonical(rand_part) != canonical(state["data"]["rand"]):

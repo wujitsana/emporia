@@ -57,6 +57,11 @@ def _setups(s: dict[str, Any], seats: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def _creation(s: dict[str, Any]) -> dict[str, Any]:
+    from emporia.routes.sessions import _signed_creation
+    return _signed_creation(s)
+
+
 def _talk(session_id: str) -> dict[str, Any]:
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT message_id, agent_id, content, created_at, kind, reply_to, root, step "
@@ -94,6 +99,10 @@ def line_of(s: dict[str, Any]) -> dict[str, Any] | None:
         "ended_at": s["updated_at"],
         "seats": seats,
         "setups": _setups(s, seats),
+        # 2.1, additive: every player's signed entry (the creator's signed creation, each other player's signed join)
+        # and the terms the creator signed with it, so a verifier shows who entered the game, not only who moved
+        "creation": _creation(s),
+        "signed_terms": (s.get("payment_rules") or {}).get("signed_terms"),
         "moves": get_public_log(s["session_id"]),
         "table_talk": _talk(s["session_id"]),
         "rand": rand_part,

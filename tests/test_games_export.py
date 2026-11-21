@@ -77,9 +77,15 @@ def good_export() -> dict:
     seats = [{"seat": i, "agent_id": a, "stable_id": wire.stable_id_for(keys[a]), "public_key_hex": keys[a],
               "key_log": [], "operator_distinct": True} for i, a in enumerate(agents)]
     body = game_export.referee_body(sid, DICE, result)
+    # every player's signed entry: the creator's signed creation, the others' signed joins (2.1)
+    joins = {a: {"at": at, "stable_id": wire.stable_id_for(keys[a]), "signature": identity.sign(
+                 wire.signed_session_create_payload(sid, wire.stable_id_for(keys[a]), DICE, at) if i == 0
+                 else wire.signed_session_join_payload(sid, wire.stable_id_for(keys[a]), at), a)}
+             for i, a in enumerate(agents)}
     return {"format": game_export.FORMAT, "session_id": sid, "module": DICE, "config": state.data and
             {"players": 3, "dice": 2, "chat": True}, "status": "completed", "created_at": at, "ended_at": at,
-            "seats": seats, "moves": moves, "table_talk": {"untrusted": True, "note": game_export.UNTRUSTED,
+            "seats": seats, "creation": {"creator": agents[0], "joins": joins, "unsigned": []}, "signed_terms": None,
+            "moves": moves, "table_talk": {"untrusted": True, "note": game_export.UNTRUSTED,
                                                            "messages": []},
             "rand": state.data["rand"], "final_state": state.to_dict(), "result": result,
             "referee": {"body": body, "relay_public_key": identity.get_relay_public_key_hex(),
@@ -259,3 +265,18 @@ def test_the_mcp_tool_and_sdk_method_exist_and_are_marked_untrusted():
     from emporia.agent_sdk import EmporiaAgent
     assert "records" in mcp_surface.UNTRUSTED_TEXT          # the MCP tool: records(kind="export")
     assert callable(getattr(EmporiaAgent, "export_games", None))
+
+
+def test_the_export_shows_who_entered_the_game_and_a_forged_join_fails():
+    line = good_export()
+    rep = game_export.verify_line(line, relay_key=line["referee"]["relay_public_key"])
+    assert _status(rep, "join_signature") == ["ok"] * 3
+    forged = copy.deepcopy(line)
+    p = forged["seats"][1]["agent_id"]
+    forged["creation"]["joins"][p]["at"] = "2020-01-01T00:00:00+00:00"   # the signature no longer covers it
+    rep = game_export.verify_line(forged, relay_key=forged["referee"]["relay_public_key"])
+    assert rep["verdict"] == "fail" and "fail" in _status(rep, "join_signature")
+    older = copy.deepcopy(line)
+    del older["creation"], older["signed_terms"]                        # a line from before 2.1
+    rep = game_export.verify_line(older, relay_key=older["referee"]["relay_public_key"])
+    assert rep["verdict"] == "ok" and _status(rep, "join_signature") == ["unchecked"]

@@ -31,11 +31,15 @@ def test_a_finished_game_stored_under_the_old_type_reads_exports_and_verifies(fi
     c, sid, _, record = finished
     old = copy.deepcopy(record)
     old["session"]["module_type"] = OLD
+    # the creator signed the new type into its creation, which this rename cannot re-sign: a game really made under
+    # the old name carries a creation signed over it, so the stand-in drops the entry (its joins are not assessed)
+    old["session"]["creation"] = {}
     report = verify_game(**old)
     assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
     r = c.get("/games/export", params={"module": "emporia:spillway:v1", "limit": 200})
     line = next(json.loads(x) for x in r.text.splitlines() if json.loads(x)["session_id"] == sid)
     line["module"] = OLD
+    line.pop("creation", None)          # as above: signed over the new type
     rep = game_export.verify_line(line)
     statuses = {f["check"]: f["status"] for f in rep["findings"]}
     # the relay's signed result names the new type, so only that check differs: this edit stands in for a game
