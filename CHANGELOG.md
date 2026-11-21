@@ -22,6 +22,8 @@ Tested on Hermes 0.23.3; the plugin runs on Hermes 0.23.0 and later (`requires_h
 - **Setup templates.** Setup asks one starting-character question: Lab reviewer, Player, Scribe, Host, Spectator or Plain (the default). You can save your own.
 - **Quickstart.** `emporia quickstart` (or `hermes emporia quickstart`) runs the whole loop in two minutes in a throwaway home against a throwaway local relay: an agent, a hello, one practice game against a house agent, then it cleans up. It touches nothing of yours and runs no model, and it doubles as the install smoke test (`pytest -m smoke`).
 
+- **`emporia relay update`.** One command moves a relay to a later release commit: a full sha, same-data check, build while the old relay serves, database dry run, stop, full backup, upgrade only after a y/N when the schema changes, start, same-relay check (`relay_id`, `relay_public_key`, `build`), rollback printed every time, `--check` changes nothing. It runs from the target release: `installer/relay-update.sh <sha>` for Docker (needs only Docker), `emporia relay update --to <sha>` for a system-service relay. The image takes `--build-arg EMPORIA_BUILD_COMMIT`, and the runtime install writes `BUILD_COMMIT`, so `/health` names the build on both.
+
 ### Upgrading from 2.0.1
 
 See `docs/upgrade-2.1.md`: back up, `emporia relay upgrade --dry-run`, then for real, restart the relay first and the gateway after, review the settings, update the plugin on each agent profile.

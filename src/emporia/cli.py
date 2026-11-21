@@ -525,6 +525,8 @@ def cmd_relay(args: argparse.Namespace) -> int:
                             person=_persons_terminal(), ask=ask)
     if args.action == "upgrade":
         return cmd_relay_upgrade(args)
+    if args.action == "update":
+        return cmd_relay_update(args)
     if args.action == "rotate-sign-in-secret":
         return cmd_relay_rotate_sign_in_secret(args)
     if args.action == "config":
@@ -5249,6 +5251,48 @@ def cmd_relay_upgrade(args: argparse.Namespace) -> int:
     if rc == 0 and (hint := _log_left_off_hint(_relay_env_path(args), getattr(args, "dir", ""))):
         print(hint)
     return rc
+
+
+def cmd_relay_update(args: argparse.Namespace) -> int:
+    """`emporia relay update --to SHA [--dir FOLDER] [--check] [--yes]`: move a relay that runs as a system service to
+    a newer release commit (emporia.relay_update). Run it from the target release. A Docker relay uses
+    installer/relay-update.sh."""
+    import subprocess
+    import time
+    from datetime import UTC, datetime
+
+    from emporia import relay_host, relay_update
+
+    def run(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, cwd=cwd, timeout=1800)
+        except (OSError, subprocess.SubprocessError) as e:
+            return 127, str(e)
+        return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+    def on_github(slug: str, sha: str) -> bool:
+        import httpx
+        try:
+            r = httpx.get(f"https://api.github.com/repos/{slug}/commits/{sha}", timeout=15,
+                          headers={"Accept": "application/vnd.github.sha"})
+        except httpx.HTTPError:
+            return False
+        return r.status_code == 200 and r.text.strip() == sha
+
+    def writable(p: Path) -> bool:
+        return os.access(p, os.R_OK | os.W_OK)
+
+    folder = Path(args.dir or "~/emporia-relay").expanduser().resolve()
+    opts = relay_update.Options(
+        to=(args.to or "").strip().lower(), folder=folder,
+        repo=Path(args.repo).expanduser().resolve() if args.repo else None,
+        service=args.service or relay_update.SERVICE,
+        backup_dir=Path(args.backup_dir).expanduser().resolve() if args.backup_dir else None,
+        url=f"http://127.0.0.1:{relay_host.LOCAL_PORT}", check=bool(args.check), yes=bool(args.yes))
+    io = relay_update.IO(
+        run=run, health=lambda u: health(timeout=5, url=u), ask=lambda q: ask(q, False), on_github=on_github,
+        sleep=time.sleep, stamp=lambda: datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"), writable=writable)
+    return relay_update.update(opts, io)
 
 
 def _log_left_off_hint(env_path: Path | None, folder: str = "") -> str:
@@ -10275,7 +10319,7 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
     r.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "use", "host", "link", "unlink", "links",
-                                      "access", "members", "move", "backup", "db", "upgrade", "rotate-key", "rotate-sign-in-secret",
+                                      "access", "members", "move", "backup", "db", "upgrade", "update", "rotate-key", "rotate-sign-in-secret",
                                       "config", "modules", "overview", "owner-key", "remove", "seed", "watch"])
     r.add_argument("url", nargs="?", default="", help="use, link, unlink: the other relay's URL; modules: add or remove; "
                                                       "seed: the operator agent's profile; watch: the relay whose /health "
@@ -10304,10 +10348,17 @@ def build_parser() -> argparse.ArgumentParser:
                         "--no-escrow is harmless")
     r.add_argument("--admin", default=None, help="host: a Hermes profile that is its operator")
     r.add_argument("--yes", action="store_true", help="move: go ahead even if the old relay is not answering; "
-                        "db restore, upgrade: do not ask (the warning is still printed)")
+                        "db restore, upgrade, update: do not ask (the warning is still printed)")
     r.add_argument("--db", default="", help="upgrade: the database file (default: --dir's emporia.sqlite3, else this "
                         "relay's EMPORIA_DB_PATH)")
     r.add_argument("--dry-run", action="store_true", help="upgrade: print the plan and change nothing")
+    r.add_argument("--to", default="", help="update: the full 40-character commit sha to move the relay to")
+    r.add_argument("--check", action="store_true",
+                   help="update: print every step and command and change nothing")
+    r.add_argument("--service", default="", help="update: the systemd service (default emporia-relay)")
+    r.add_argument("--repo", default="", help="update: the service's code checkout (default: its unit's WorkingDirectory)")
+    r.add_argument("--backup-dir", default="", help="update: where the data backup goes (default: emporia-backups "
+                                                    "beside the relay's folder)")
     r.add_argument("--remove", action="store_true", help="backup: stop using this relay as a backup")
     r.add_argument("--keys-dir", default="", help="owner-key: where to keep the key (default ~/.emporia-owner/keys)")
     r.add_argument("--access", choices=["open", "read-only", "closed"], default="",

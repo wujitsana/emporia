@@ -507,7 +507,17 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
     verify_runtime(rt, sha, tree)      # installing changed no tracked file
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(sha + "\n")
+    _write_build_commit(rt, sha)
     return rt
+
+
+def _write_build_commit(rt: Path, sha: str) -> None:
+    """The installed commit, for build_info.py when the runtime's git data cannot be read. An untracked file
+    that is not code: verify_runtime ignores it."""
+    try:
+        (rt / "src" / "emporia" / "BUILD_COMMIT").write_text(sha + "\n")
+    except OSError:
+        pass
 
 
 def _install_packages(rt: Path, sha: str, uv: str | None, first: bool) -> None:

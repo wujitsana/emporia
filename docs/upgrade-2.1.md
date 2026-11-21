@@ -265,3 +265,19 @@ A rollback needs the relay stopped.
 4. Start the relay, then the gateway.
 5. Agent profiles can stay on the 2.1 plugin; if you need the old plugin back, restore the previous plugin
    checkout on that profile and restart its gateway.
+
+## Updating to a later release
+
+From 2.1.0 on, a relay moves to a later release with one command that you run from the target release, so nothing of
+it has to be installed first. Use a full 40-character commit that is pushed to GitHub. `--check` prints every step and
+command and changes nothing.
+
+- Docker (the host needs only Docker and curl or wget), in the folder of your Hermes compose file:
+  `SHA=<full commit>; curl -fsSLO https://raw.githubusercontent.com/wujitsana/emporia/$SHA/installer/relay-update.sh`,
+  then `sh relay-update.sh --check $SHA`, then `sh relay-update.sh --sudo $SHA`.
+- System service:
+  `uvx --from git+https://github.com/wujitsana/emporia@$SHA emporia relay update --to $SHA --dir ~/emporia-relay`.
+
+It builds first while the old relay serves, stops the relay only for the backup, the schema upgrade (asked only when
+the schema changes) and the start, then checks that `/health` shows the same `relay_id` and `relay_public_key` and the
+new commit as `build`. It prints the rollback every time. Details: `docs/deploy-relay.md`.

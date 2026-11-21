@@ -397,7 +397,35 @@ short one), already pushed to GitHub; then, from the folder of your Hermes compo
 `sudo docker compose up -d --build emporia-relay`. The relay's identity and database live in `"$D/data"` and
 stay as they are: check that `/health` names the same `relay_id` and `relay_public_key` before and after. Keep a
 copy of the snippet before editing it (`sudo cp -a "$D/compose.snippet.yaml" "$D/compose.snippet.yaml.bak"`).
-Or let the wizard do the re-pin: run `emporia relay host --into-compose` again (it rewrites the staged snippet with the runtime pin's commit; re-run the install lines; your `.env`, `secrets/` and `data/` in `~/.emporia` stay), then the same `sudo docker compose up -d --build emporia-relay`. A single command, `emporia relay update`, is on the roadmap; it is not built.
+Or let the wizard do the re-pin: run `emporia relay host --into-compose` again (it rewrites the staged snippet with the runtime pin's commit; re-run the install lines; your `.env`, `secrets/` and `data/` in `~/.emporia` stay), then the same `sudo docker compose up -d --build emporia-relay`.
+
+**One command for all of this: `emporia relay update`.** Run it from the release you are moving to, so nothing of it
+has to be installed first. It takes a full 40-character commit (pushed to GitHub) and refuses anything else. It
+checks that the compose service sees the same `/data` as the live relay, pins the commit and builds while the old
+relay keeps serving, dry-runs `emporia relay upgrade` with the new code, then stops the relay, copies the whole data
+folder to a timestamped backup, asks y/N only if the schema changes (`--yes` answers it; N puts the old pin back and
+starts the old relay), starts the new one and checks that `/health` shows the same `relay_id` and
+`relay_public_key` and the new commit as `build`. It prints the rollback every time, and `--check` prints every step
+and command and changes nothing. Settings are never rewritten, except one existing `EMPORIA_BUILD_COMMIT=` line.
+
+- **Docker (the `--into-compose` layout above; the host needs only Docker, and curl or wget):** fetch the script at
+  the target commit and run it from the folder of your Hermes compose file. The script checks that it is the file at
+  that commit.
+  ```
+  SHA=<full 40-character commit>
+  curl -fsSLO https://raw.githubusercontent.com/wujitsana/emporia/$SHA/installer/relay-update.sh
+  sh relay-update.sh --check $SHA     # look first
+  sh relay-update.sh --sudo $SHA      # drop --sudo if your user runs docker; add --yes to skip the schema question
+  ```
+  Options: `--dir` (install folder, default `~/.emporia`), `--service`, `--container`, `--backup-dir` (default
+  `~/emporia-backups`), `-f FILE` (extra compose files).
+- **System service (`emporia relay host --run service`):**
+  `uvx --from git+https://github.com/wujitsana/emporia@$SHA emporia relay update --to $SHA --dir ~/emporia-relay`
+  (add `--check` first). The new code is fetched into the service's checkout while the old relay serves; the
+  checkout switches and its packages install while it is stopped. Needs `sudo` for the service, and a service
+  checkout with no changes of its own. If you pass `--dir` for a Docker relay it prints the Docker command instead.
+- A relay built from a local checkout (`emporia relay host --run docker`, `build: <folder>`) has no pinned commit:
+  check out the new commit in that folder and run `docker compose up -d --build`, as above, after a backup.
 After a release with a newer database schema, run `emporia relay upgrade` too (section 5, and docs/upgrade-2.1.md): stop the relay, then run it in its container, as in section 5 but with this stack's service name, `emporia-relay`, and `sudo`.
 
 **Front door, pick one** (asked as "Front door"):

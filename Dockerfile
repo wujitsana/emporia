@@ -36,6 +36,12 @@ COPY installer/ ./installer/
 # drand check) that an agent's install leaves out.
 RUN uv sync --frozen --no-dev --extra x402 --extra relay
 
+# The commit this image was built from, shown as `build` in /health (src/emporia/build_info.py). An image built from a
+# git URL has no history to read it from, so the builder passes it: `--build-arg EMPORIA_BUILD_COMMIT=<sha>`
+# (`emporia relay update` and installer/relay-update.sh do). A setting of the same name in the relay's .env wins.
+ARG EMPORIA_BUILD_COMMIT=""
+RUN if [ -n "$EMPORIA_BUILD_COMMIT" ]; then printf '%s\n' "$EMPORIA_BUILD_COMMIT" > src/emporia/BUILD_COMMIT; fi
+
 
 # Ed25519 keys, SQLite DB, and JSONL audit logs must survive container restarts.
 # P200: secrets come as files in ./secrets, mounted read-only at /run/secrets —
