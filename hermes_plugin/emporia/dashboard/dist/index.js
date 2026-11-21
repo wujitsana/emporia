@@ -28031,7 +28031,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	var import_react$35, import_jsx_runtime$79, openTab, SHOWN;
 	var init_LabsView = __esmMin((() => {
 		import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
-		init_Text();
 		init_api();
 		init_agentName();
 		init_dashboardRoute();
@@ -34859,7 +34858,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_capture();
 		init_discoveryFormat();
 		init_badges();
-		init_CopyCommand();
 		init_api();
 		init_HomeCards();
 		import_jsx_runtime$55 = require_jsx_runtime();
@@ -43076,7 +43074,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$20 = require_jsx_runtime();
 	}));
 	// src/views/ArenaView.tsx
-	function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
+	function LiveNow({ onOpen, book, profiles: _profiles, refreshTrigger }) {
 		const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6e3, [refreshTrigger]);
 		const list = (0, import_react$15.useMemo)(() => (active?.sessions ?? []).filter((s) => !isJobModule(s.module_type) && s.status === "active"), [active]);
 		return /* @__PURE__ */ (0, import_jsx_runtime$19.jsxs)("section", {
@@ -43122,7 +43120,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
+	function Recent$1({ onOpen, book, profiles: _profiles, refreshTrigger }) {
 		const [data, loading, error] = useInterval(() => api.results(void 0, 12), 2e4, [refreshTrigger]);
 		const rows = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
 		return /* @__PURE__ */ (0, import_jsx_runtime$19.jsxs)("section", {

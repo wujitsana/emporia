@@ -44,12 +44,12 @@ import json
 import os
 import re
 import shutil
-import sys
 import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 try:
     from . import relay_turn

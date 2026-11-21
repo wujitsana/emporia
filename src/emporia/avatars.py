@@ -188,7 +188,7 @@ def isqrt(v):
 
 def strata_at(y, kind, s, v, a, X2):
     if kind == 1:
-        return 4096 * (y if X2 < 2 * [10, 16, 22][(v >> 1) % 3] else y + a * s)
+        return 4096 * (y if 2 * [10, 16, 22][(v >> 1) % 3] > X2 else y + a * s)
     if kind == 2:
         return 4096 * y + 64 * a * s * X2
     if kind == 3:

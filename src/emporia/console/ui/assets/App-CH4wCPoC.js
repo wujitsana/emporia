@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-CVF9sudR.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DBZFoEX1.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -30507,7 +30507,7 @@ function WaitingGames({ onOpen }) {
 	});
 }
 // src/views/ArenaView.tsx
-function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
+function LiveNow({ onOpen, book, profiles: _profiles, refreshTrigger }) {
 	const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6e3, [refreshTrigger]);
 	const list = (0, import_react.useMemo)(() => (active?.sessions ?? []).filter((s) => !isJobModule(s.module_type) && s.status === "active"), [active]);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -30553,7 +30553,7 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 		]
 	});
 }
-function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
+function Recent$1({ onOpen, book, profiles: _profiles, refreshTrigger }) {
 	const [data, loading, error] = useInterval(() => api.results(void 0, 12), 2e4, [refreshTrigger]);
 	const rows = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {

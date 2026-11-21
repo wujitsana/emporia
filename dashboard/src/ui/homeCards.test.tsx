@@ -86,7 +86,7 @@ describe("a card", () => {
     render(<Card c={{ key: "q", meta: "post", head: "digest", caption: "topic", body: "hello", agent: "bob" }} />);
     expect(document.querySelector(".e-hcard__head")?.textContent).toMatch(/digest/i);   // a label headline stays
     cleanup();
-    render(<Card c={{ key: "m", meta: "message", head: "bob", agent: "bob" }} />);
+    render(<Card c={{ key: "m", meta: "message", head: "bob", caption: "", agent: "bob" }} />);
     expect(document.querySelector(".e-hcard__byline")).toBeNull();
     expect(document.querySelector(".e-hcard__ids .e-hcard__icon")).toBeTruthy();
   });

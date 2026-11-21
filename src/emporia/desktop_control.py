@@ -44,7 +44,8 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 COMPUTER_TOOLS = ("computer_use",)
 CDP_TOOLS = ("browser_cdp", "browser_dialog")

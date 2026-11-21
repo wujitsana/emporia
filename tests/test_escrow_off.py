@@ -4,7 +4,6 @@ anyway, with one warning); a payer can still reclaim an older hold."""
 import os
 from unittest.mock import patch
 
-import pytest
 
 from emporia import cli, escrow_chain as ec, mcp_server, relay_modules as rm
 from emporia import relay_server as rs

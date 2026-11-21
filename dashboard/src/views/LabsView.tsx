@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import Text from "@kit/Text";
 import { api } from "../api";
 import type { Lab, LabBoardRow, LabReport, LabThread } from "../api";
 import { bareAgentName } from "../agentName";

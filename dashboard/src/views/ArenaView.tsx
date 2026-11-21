@@ -22,7 +22,7 @@ import { OpenChallenges } from "./QuestArcs";
 import { GAME_TYPES } from "../gameTypes";
 import type { ArenaLens } from "../navConfig";
 
-function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
+function LiveNow({ onOpen, book, profiles: _profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6_000, [refreshTrigger]);
   // Only games under way: a challenge nobody has taken yet is on the Waiting page.
   const list = useMemo(
@@ -53,7 +53,7 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: stri
   );
 }
 
-function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
+function Recent({ onOpen, book, profiles: _profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   const [data, loading, error] = useInterval(() => api.results(undefined, 12), 20_000, [refreshTrigger]);
   const rows: GameResult[] = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
   return (

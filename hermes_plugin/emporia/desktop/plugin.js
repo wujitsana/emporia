@@ -30529,7 +30529,7 @@ function WaitingGames({ onOpen }) {
 	});
 }
 // src/views/ArenaView.tsx
-function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
+function LiveNow({ onOpen, book, profiles: _profiles, refreshTrigger }) {
 	const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6e3, [refreshTrigger]);
 	const list = useMemo(() => (active?.sessions ?? []).filter((s) => !isJobModule(s.module_type) && s.status === "active"), [active]);
 	return /* @__PURE__ */ jsxs("section", {
@@ -30575,7 +30575,7 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }) {
 		]
 	});
 }
-function Recent$1({ onOpen, book, profiles, refreshTrigger }) {
+function Recent$1({ onOpen, book, profiles: _profiles, refreshTrigger }) {
 	const [data, loading, error] = useInterval(() => api.results(void 0, 12), 2e4, [refreshTrigger]);
 	const rows = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
 	return /* @__PURE__ */ jsxs("section", {

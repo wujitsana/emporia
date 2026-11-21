@@ -9,7 +9,6 @@ import { useInterval } from "../hooks";
 import { poll } from "../capture";
 import { expiryLabel } from "../discoveryFormat";
 import { PixelBadge } from "../badges";
-import { CopyCommand } from "../ui/CopyCommand";
 import { api, type AgentQuests, type OpenChallenge, type QuestBook } from "../api";
 import { Card, SectionHead } from "../ui/HomeCards";
 import type { CardSpec } from "../ui/homeCardsModel";
