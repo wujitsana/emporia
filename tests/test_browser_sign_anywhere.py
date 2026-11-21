@@ -163,7 +163,8 @@ def test_ssh_on_a_native_host_prints_the_exact_tunnel_line_to_loopback():
     text, opens = say(ssh=True)
     assert opens is False
     assert "ssh -L 8765:127.0.0.1:8765 <you>@vps" in text
-    assert "http://127.0.0.1:8765/TOKEN" in text and "must be 8765" in text and "Docker Desktop" not in text
+    assert "http://emporia.localhost:8765/TOKEN" in text and "http://127.0.0.1:8765/TOKEN" in text
+    assert "must stay 8765" in text and "Publish the port" not in text
 
 
 def test_setup_three_docker_on_a_server_over_ssh_targets_the_container_ip():
@@ -177,16 +178,16 @@ def test_a_container_without_ssh_gets_the_tunnel_and_the_docker_desktop_note():
     text, opens = say(container=True, listen="172.20.0.2", hostname="")
     assert opens is False
     assert "ssh -L 8765:172.20.0.2:8765" in text
-    assert 'ports: ["127.0.0.1:8765:8765"]' in text and "--port 8765" in text and "Never publish it on 0.0.0.0" in text
+    assert 'ports: ["127.0.0.1:8765:8765"]' in text and "--port 8765" in text and "never 0.0.0.0" in text
+    assert "is the server that runs this container" in text
 
 
 @pytest.mark.parametrize("kw", [{}, {"ssh": True}, {"container": True, "listen": "172.20.0.2"}])
 def test_every_setup_ends_with_the_wallet_check_text(kw):
     text, _ = say(**kw)
-    assert "Check the wallet popup: network Base Sepolia (testnet)" in text and f"'to' address {REG}" in text
-    assert "only asks for this one signature and closes" in text
+    assert f"In your wallet, check: network Base Sepolia (testnet), to {REG}." in text and "--signature" in text
     tx, _ = say(what="transaction", **kw)
-    assert "only asks for this one transaction and closes" in tx
+    assert f"to {REG}, value 0." in tx and "--tx 0xHASH" in tx
 
 
 def test_the_url_is_always_the_browser_side_loopback_named_emporia_with_the_numeric_fallback():

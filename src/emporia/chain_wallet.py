@@ -147,7 +147,7 @@ def confirm(chain: str, agent_id: Any, tx_hash: str, *, read: Any = None, signer
             behind = got['block_number'] - number
             raise LinkError(f"mined in block {got['block_number']}, but the chain's safe block is {number}, {behind} blocks "
                             "behind (a testnet's safe block can lag from a few minutes to an hour): run it again later, "
-                            "or add --wait to keep reading until it is ready")
+                            "or add --wait (it then checks every 15 seconds, up to 30 minutes, and goes on when it is final)")
         if reader.block_hash_at(got["block_number"]).lower() != got["block_hash"]:
             raise LinkError("the receipt's block is not the chain's block at that height: not trusting it")
         _, current = _read_owner(reader, registry, int(aid))

@@ -425,7 +425,9 @@ def test_tx_reads_the_receipt_and_hands_on_to_link_8004_once_the_chain_is_final(
     assert card.register_8004(target.name, "base-sepolia", TX) == 0
     out = capsys.readouterr().out
     assert "ERC-8004 #10727" in out and "Two-way" in out
-    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False, False)]
+    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False, False, False, 0, "auto")]
+    assert "Done." in out and "https://sepolia.basescan.org/tx/" + TX in out          # the closing summary
+    assert f"https://sepolia.basescan.org/nft/{REGISTRY}/10727" in out
 
 
 def test_tx_before_the_chain_is_final_prints_the_link_command_instead(target, fake, monkeypatch, capsys):
@@ -604,4 +606,40 @@ def test_tx_wait_polls_until_final_then_links_with_wait(target, fake, monkeypatc
     assert card.register_8004(target.name, "base-sepolia", TX, wait=True) == 0
     out = capsys.readouterr().out
     assert sleeps == [15.0] and "waiting for the transaction" in out
-    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False, True)]
+    assert handed == [(target.name, "base-sepolia", "10727", "", "", 0, False, False, True, False, 0, "auto")]
+
+
+def test_while_it_waits_the_number_is_said_at_once_with_minutes_to_go(target, fake, monkeypatch, capsys):
+    minted(fake)
+    blk = int(REAL["receipt"]["blockNumber"], 16)
+    fake.block_number = blk - 300                                    # the safe block lags 300 blocks (~10 min)
+    def tick(s):
+        fake.block_number = blk + 1
+    monkeypatch.setattr(card.time, "sleep", tick)
+    monkeypatch.setattr(card, "link_8004", lambda *a, **k: 0)
+    assert card.register_8004(target.name, "base-sepolia", TX, wait=True) == 0
+    out = capsys.readouterr().out
+    assert f"{target.name} is ERC-8004 #10727" in out and "from the receipt: mined, not final yet" in out
+    assert "about 10 min" in out and "about 10 min to go (300 blocks)" in out
+
+
+def test_a_person_who_sent_from_the_page_is_offered_the_wallet_step_next(target, fake, monkeypatch, capsys):
+    minted(fake)
+    fake.block_number = int(REAL["receipt"]["blockNumber"], 16) + 5
+    monkeypatch.setattr(card, "link_8004", lambda *a, **k: 0)
+    cli = card._cli()
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda q, d="": "y")
+    asked = []
+    monkeypatch.setattr(card, "set_8004_wallet", lambda *a, **k: asked.append((a, k)) or 0)
+    assert card._register_after(card._Target(target.name), target.name, "base-sepolia", TX, False, browser=True) == 0
+    (a, k), = asked
+    assert a[2] == "10727" and k["browser"] is True and k["wait"] is True
+    assert "paid at:" in capsys.readouterr().out
+
+
+def test_the_not_final_yet_message_says_what_wait_does(target, fake, monkeypatch):
+    minted(fake)
+    fake.block_number = int(REAL["receipt"]["blockNumber"], 16) - 50
+    with pytest.raises(chain_link.LinkError, match="checks every 15 seconds, up to 30 minutes"):
+        chain_register.confirm("base-sepolia", TX, read=fake, stable=STABLE)

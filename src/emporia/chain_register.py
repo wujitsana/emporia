@@ -182,6 +182,30 @@ def _is_local(url: str) -> bool:
     return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".local")
 
 
+def peek(chain: str, tx_hash: str, *, read: Any = None) -> dict[str, Any]:
+    """What the receipt says as soon as the transaction is mined: the agent number, the owner and how many blocks the
+    chain's safe block still lags behind it. For the person to see at once; nothing is linked or trusted on it
+    (`confirm` reads again at the safe block before anything is recorded)."""
+    caip2 = _chain(chain)
+    if why := reg.tx_problem(tx_hash):
+        raise LinkError(why)
+    tx_hash = tx_hash.strip().lower()
+    registry = networks.ERC8004_REGISTRIES[caip2]
+    reader = _reader(caip2, read, "safe")
+    try:
+        safe = reader.block_number
+        receipt = reader.receipt(tx_hash)
+        if receipt is None:
+            raise LinkError("that transaction is not mined yet (or the hash is wrong); try again in a minute")
+        found = reg.agent_from_receipt(receipt, registry, tx_hash)
+    except reg.RegisterError as e:
+        raise LinkError(str(e)) from None
+    except ChainUnknown as e:
+        raise LinkError(f"the chain could not be read ({e}); nothing changed") from None
+    return {"chain": caip2, "chain_label": networks.label(caip2), "agent_id": found["agent_id"], "owner": found["owner"],
+            "block_number": found["block_number"], "safe_block": safe, "behind": max(0, found["block_number"] - safe)}
+
+
 def confirm(chain: str, tx_hash: str, *, read: Any = None, finalized: Any = None,
             stable: str | None = None) -> dict[str, Any]:
     """Read the receipt of the person's transaction at the `safe` block, find the agent number in the registry's own
@@ -207,7 +231,7 @@ def confirm(chain: str, tx_hash: str, *, read: Any = None, finalized: Any = None
             behind = found['block_number'] - number
             raise LinkError(f"mined in block {found['block_number']}, but the chain's safe block is {number}, {behind} blocks "
                             "behind (a testnet's safe block can lag from a few minutes to an hour): run it again later, "
-                            "or add --wait to keep reading until it is ready")
+                            "or add --wait (it then checks every 15 seconds, up to 30 minutes, and goes on when it is final)")
         if reader.block_hash_at(found["block_number"]).lower() != found["block_hash"]:
             raise LinkError("the receipt's block is not the chain's block at that height: not trusting it")
         agent_id = int(found["agent_id"])

@@ -435,8 +435,8 @@ def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: s
         print(f"agent link-8004: {e}")
         return 1
     _announce_page(page, chain_label=out["chain_label"], registry=str(out["agent_registry"]).split(":")[2],
-                   what="signature", lead=f"Open this page in the browser that has your wallet (it only exists while "
-                   f"this command waits; closes after one signature or {int(page.timeout // 60)} minutes; Ctrl-C cancels).")
+                   what="signature", lead=f"Open this page in the browser that has your wallet. It works while this "
+                   f"command runs (up to {int(page.timeout // 60)} min); Ctrl-C cancels.")
     try:
         got = page.wait()
     except browser_sign.BrowserSignError as e:
@@ -510,6 +510,19 @@ def _not_yet(out: dict[str, Any]) -> bool:
     return not out.get("success") and any(w in err for w in _NOT_YET)
 
 
+_BEHIND = re.compile(r"(\d+) blocks behind")
+
+
+def _blocks_left(out: dict[str, Any]) -> int | None:
+    """How many blocks the chain still has to go, from a not-yet answer or a confirmed one waiting on finality."""
+    if (m := _BEHIND.search(str(out.get("error") or ""))):
+        return int(m.group(1))
+    fin, blk = out.get("finalized_block"), out.get("block_number")
+    if isinstance(fin, int) and isinstance(blk, int) and fin < blk:
+        return blk - fin
+    return None
+
+
 def _wait_for(call: Any, ready: Any, what: str, resume: str) -> dict[str, Any] | None:
     """`--wait`: run `call()` every WAIT_EVERY seconds, up to WAIT_LIMIT, until `ready(answer)`; one short progress line
     per try. Returns the answer, or None when it ran out of time or the person pressed Ctrl-C (it then prints the exact
@@ -524,8 +537,10 @@ def _wait_for(call: Any, ready: Any, what: str, resume: str) -> dict[str, Any] |
             if waited >= WAIT_LIMIT:
                 print(f"  gave up waiting for {what} after {waited // 60} minutes. Pick up from here:\n\n    {resume}")
                 return None
-            print(f"  waiting for {what} ({waited // 60}m{waited % 60:02d}s; checking every {int(WAIT_EVERY)}s; "
-                  "Ctrl-C stops)")
+            left = _blocks_left(out)
+            togo = (f"about {max(1, left * 2 // 60)} min to go ({left} blocks); " if left else "")
+            print(f"  waiting for {what} ({togo}{waited // 60}m{waited % 60:02d}s so far; checking every "
+                  f"{int(WAIT_EVERY)}s; Ctrl-C stops and prints how to pick up)")
             time.sleep(WAIT_EVERY)
     except KeyboardInterrupt:
         print(f"\n  stopped waiting; nothing was changed. Pick up from here:\n\n    {resume}")
@@ -579,6 +594,8 @@ def register_8004(name: str, chain: str, tx: str = "", sender: str = "", yes: bo
         print("agent register-8004: --wait goes with --tx (a transaction already sent), --browser or "
               "--from-agent-wallet (which send it)")
         return 1
+    if browser or from_agent_wallet:
+        wait = True             # a person is at the terminal and just sent it: keep reading until it is final
     if from_agent_wallet:
         return _register_from_agent_wallet(t, name, chain, yes, max_gas, wait, no_image)
     if tx:
@@ -731,8 +748,8 @@ def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any
         print(f"agent register-8004: {e}")
         return 1
     _announce_page(page, chain_label=built["chain_label"], registry=built["registry"], what="transaction",
-                   lead=f"Open this page in the browser that has your wallet (it only exists while this command "
-                   f"waits; closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels).")
+                   lead=f"Open this page in the browser that has your wallet. It works while this command runs "
+                   f"(up to {int(page.timeout // 60)} min); Ctrl-C cancels.")
     try:
         got = page.wait()
     except browser_sign.BrowserSignError as e:
@@ -743,17 +760,24 @@ def _register_in_browser(t: _Target, name: str, chain: str, built: dict[str, Any
         print("\n  cancelled; nothing sent (if your wallet already sent it, use --tx with its hash).")
         return 1
     print(f"  Your wallet sent transaction {got['tx_hash']} from {got['account']}.")
-    return _register_after(t, name, chain, got["tx_hash"], yes, waiting=True, wait=wait)
+    return _register_after(t, name, chain, got["tx_hash"], yes, waiting=True, wait=wait, browser=True, port=port,
+                           listen=listen)
 
 
 def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, waiting: bool = False,
-                    wait: bool = False) -> int:
+                    wait: bool = False, browser: bool = False, port: int = 0, listen: str = "auto") -> int:
     """Read the receipt, say what was registered, and go on to link-8004 for that agent. With `wait`, reads again every
     15 seconds until the receipt is at the safe block and that block is finalized (what the link reads at)."""
     def ask() -> dict[str, Any]:
         return _chain_run(t, "confirm", chain, tx, mod="chain_register")
 
     if wait:
+        early = _chain_run(t, "peek", chain, tx, mod="chain_register")
+        if early.get("success") and early.get("behind"):
+            print(f"\n  {name} is ERC-8004 #{early['agent_id']} on {early['chain_label']}, owned by {early['owner']} "
+                  f"(from the receipt: mined, not final yet). The chain makes it final in about "
+                  f"{max(1, early['behind'] * 2 // 60)} min; this waits, then links it.\n")
+
         def done(o: dict[str, Any]) -> bool:
             if not o.get("success"):
                 return not _not_yet(o)
@@ -784,10 +808,38 @@ def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, wa
               f"Run this when it has:\n\n    "
               + (f"{cmd} --from-agent-wallet --wait" if own else f"{cmd}   (add --browser to sign in your browser wallet)"))
         return 0
-    print(f"\n  Next: linking it to {name}'s card (the same as `{cmd}{' --from-agent-wallet' if own else ''}`).\n")
+    print(f"\n  Next: linking it to {name}'s card (the same as `{cmd}{' --from-agent-wallet' if own else ''}"
+          f"{' --browser' if browser and not own else ''}`).\n")
     if own:
-        return _link_own_wallet(t, name, chain, out["agent_id"], yes, wait)
-    return link_8004(name, chain, out["agent_id"], "", "", 0, yes, False, wait)
+        rc = _link_own_wallet(t, name, chain, out["agent_id"], yes, wait)
+    else:
+        rc = link_8004(name, chain, out["agent_id"], "", "", 0, yes, browser, wait, False, port, listen)
+    paid = ""
+    if rc == 0 and not own and _cli()._persons_terminal() and _cli().prompt(
+            f"Also set {name}'s own wallet as where #{out['agent_id']} is paid (one more transaction from your wallet)? "
+            "[Y/n]", "y").lower() in ("y", "yes", ""):
+        if set_8004_wallet(name, chain, out["agent_id"], yes=yes, browser=browser, wait=True, port=port,
+                           listen=listen) == 0:
+            paid = "set"
+    _summary(name, out, rc == 0, paid, own)
+    return rc
+
+
+def _summary(name: str, out: dict[str, Any], linked: bool, paid: str, own: bool) -> None:
+    """The closing lines: what now exists, with explorer links (public pages; nothing is fetched here)."""
+    from emporia import networks
+    n = networks.NETWORKS.get(out["chain"])
+    reg_addr = networks.ERC8004_REGISTRIES.get(out["chain"], "")
+    lines = [f"  {name} ↔ ERC-8004 #{out['agent_id']} on {out['chain_label']}"
+             + ("" if linked else " (registered; not linked to the card yet)"),
+             f"    {'owner:':<14}{out['owner']}" + (f" ({name}'s own wallet)" if own else "")]
+    if paid:
+        lines.append(f"    {'paid at:':<14}{name}'s own wallet")
+    if n and n.explorer:
+        lines.append(f"    {'registration:':<14}{n.explorer}{out['tx']}")
+    if n and n.token_explorer and reg_addr:
+        lines.append(f"    {'identity:':<14}{n.token_explorer.format(addr=reg_addr, id=out['agent_id'])}")
+    print("\n  Done.\n" + "\n".join(lines))
 
 
 def _link_own_wallet(t: _Target, name: str, chain: str, agent_id: str, yes: bool, wait: bool) -> int:
@@ -865,6 +917,8 @@ def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: boo
         return 1
     if tx:
         return _wallet_after(t, name, chain, agent_id, tx, wait=wait)
+    if browser or from_agent_wallet:
+        wait = True             # a person is at the terminal and just sent it: keep reading until it is safe
     if from_agent_wallet:
         return _set_wallet_from_agent_wallet(t, name, chain, agent_id, yes, max_gas, wait)
     out = _chain_run(t, "build", chain, agent_id, mod="chain_wallet")
@@ -968,9 +1022,8 @@ def _set_wallet_in_browser(t: _Target, name: str, chain: str, built: dict[str, A
         print(f"agent set-8004-wallet: {e}")
         return 1
     _announce_page(page, chain_label=built["chain_label"], registry=built["registry"], what="transaction",
-                   lead=f"Open this page in the browser that has your wallet (it only exists while this command "
-                   f"waits; closes after one transaction or {int(page.timeout // 60)} minutes; Ctrl-C cancels). The "
-                   f"consent in it is valid for about {built['valid_seconds'] // 60} minutes.")
+                   lead=f"Open this page in the browser that has your wallet. It works while this command runs "
+                   f"(up to {int(page.timeout // 60)} min, as long as the consent in it holds); Ctrl-C cancels.")
     try:
         got = page.wait()
     except browser_sign.BrowserSignError as e:
@@ -1009,6 +1062,10 @@ def _wallet_after(t: _Target, name: str, chain: str, agent_id: str, tx: str, *, 
     if out["is_own_wallet"]:
         print(f"  That is {name}'s own wallet: the identity is paid at its own wallet. (This says where it is paid; it "
               "is not proof of control.)")
+        from emporia import networks
+        n = networks.NETWORKS.get(str(out.get("chain") or ""))
+        if n and n.explorer:
+            print(f"  Transaction: {n.explorer}{tx}")
         return 0
     print(f"  That is not {name}'s own wallet ({out['own_wallet'] or 'none here'}).")
     return 1

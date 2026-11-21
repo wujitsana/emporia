@@ -364,7 +364,7 @@ def test_browser_flow_prints_the_url_opens_it_verifies_the_signature_and_records
     sent = _post_recorder(monkeypatch)
     assert card.link_8004(target.name, "base-sepolia", str(AGENT), yes=True, browser=True) == 0
     out = capsys.readouterr().out
-    assert re.search(r"http://emporia\.localhost:\d+/[\w-]{30,}", out) and "Ctrl-C" in out and "10 minutes" in out
+    assert re.search(r"http://emporia\.localhost:\d+/[\w-]{30,}", out) and "Ctrl-C" in out and "up to 10 min" in out
     assert "Checked here at block 123: owner" in out and "On " in out
     assert seen["status"] == 200 and seen["signer"].lower() == addr.lower()
     body = sent["body"]

@@ -180,38 +180,27 @@ def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname
     alt = fallback_url(listen, port, token)
     target = "127.0.0.1" if listen in ("127.0.0.1", "::1") else listen
     tunnel = f"ssh -L {port}:{target}:{port} <you>@{hostname or '<this-host>'}"
-    who = ("  (<this-host> is the server that runs this container, not the container; <you> is your login there;\n"
-           "  keep that terminal open)." if container else
-           "  (replace <you> with your login on this host; keep that terminal open).")
-    ssh_text = (f"  Your browser is on another machine. On THAT machine, in a new terminal, run:\n\n"
+    other = (f"\n  If that name does not open (some Safari versions): {alt}\n" if alt != url else "")
+    if ssh or container:
+        where = ("<this-host> is the server that runs this container, not the container" if container
+                 else "<you>@<host> is your login on this machine")
+        text = (f"  Your browser is on another computer. There, run this and keep it open:\n\n"
                 f"    {tunnel}\n\n"
-                f"{who} The local port must be {port},\n"
-                f"  the same number: the page only answers on this computer's port {port}. Then open this in your browser:\n\n"
-                f"    {url}\n")
-    desktop_text = (f"\n  If Docker runs on the computer your browser is on (Docker Desktop on macOS/Windows, or Docker on your own\n"
-                    f"  Linux machine), skip the tunnel: publish the port on that computer's loopback only and open the URL there.\n"
-                    f"  In compose:\n\n"
-                    f"    ports: [\"127.0.0.1:{port}:{port}\"]\n\n"
-                    f"  (or docker run -p 127.0.0.1:{port}:{port}), then recreate the container and run this command with\n"
-                    f"  --port {port}. Never publish it on 0.0.0.0. Then open:\n\n"
-                    f"    {url}\n")
-    if ssh:
-        text = ssh_text
-    elif container:
-        text = ssh_text + desktop_text
+                f"  ({where}; the local port must stay {port}.) Then open:\n\n"
+                f"    {url}\n{other}")
+        if container and not ssh:
+            text += (f"\n  Docker on the same computer as your browser? Publish the port on its loopback instead\n"
+                     f"  (compose: ports: [\"127.0.0.1:{port}:{port}\"]; never 0.0.0.0), recreate the container, and run\n"
+                     f"  this with --port {port}.\n")
     else:
-        text = f"  Opening your browser at this address (it works on this machine only):\n\n    {url}\n"
-    if alt != url:
-        text += (f"\n  If your browser cannot open that name (some Safari versions), use the same page at\n    {alt}\n"
-                 f"  (your wallet then names the site 127.0.0.1).\n")
-    check = f"  Check the wallet popup: network {chain_label}" if chain_label else "  Check the wallet popup"
-    if registry:
-        check += f", and the 'to' address {registry}"
-    check += f". This page only asks for this one {what} and closes.\n"
-    fallback = ("  No browser can reach it? Press Ctrl-C (nothing is sent), run the same command without --browser, send the\n"
-                "  call it prints from any wallet, then run it again with --tx 0xHASH.\n" if what == "transaction" else
-                "  No browser can reach it? Press Ctrl-C, run the same command without --browser, sign the message it prints\n"
-                "  in any wallet, then run it again with --signature 0x....\n")
+        text = f"  Opening your browser at:\n\n    {url}\n{other}"
+    check = "  In your wallet, check: " + ", ".join(x for x in (
+        f"network {chain_label}" if chain_label else "", f"to {registry}" if registry else "",
+        "value 0" if what == "transaction" else "") if x) + ".\n" if (chain_label or registry) else ""
+    fallback = ("  No browser that can reach it? Ctrl-C (nothing is sent), run the command without --browser and send the\n"
+                "  printed call from any wallet, then run it with --tx 0xHASH.\n" if what == "transaction" else
+                "  No browser that can reach it? Ctrl-C, run the command without --browser, sign the printed message in\n"
+                "  any wallet, then run it with --signature 0x....\n")
     return text + "\n" + check + fallback, not (ssh or container)
 
 
@@ -403,7 +392,8 @@ SCRIPT = r"""
           say("The transaction was sent (hash " + hash + ") but the terminal did not take the hash. Give it to the terminal with --tx.", "bad");
           return;
         }
-        say("Sent. The terminal has the transaction hash: you can close this tab.", "good");
+        say("Sent. The terminal is confirming it on the chain; you can close this tab." +
+            (doc.explorer ? " See it: " + doc.explorer + hash : ""), "good");
       }
     } catch (e) {
       if (unauthorized(e)) {
@@ -496,7 +486,10 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
     """The page for sending one transaction from the person's wallet. `tx` is `{chain_id, to, data}`; `summary` is the
     plain-words account of what it does (the CLI printed it too). The call is shown decoded from the exact bytes the
     wallet will send (`describe_call`), the raw call folded below it. Nothing is sent without the wallet's own prompt."""
-    data = _json_for_html({"tx": tx, "chain_label": chain_label, "add_chain": chain_params(int(tx["chain_id"]))})
+    from emporia.networks import NETWORKS
+    net = NETWORKS.get(f"eip155:{int(tx['chain_id'])}")
+    data = _json_for_html({"tx": tx, "chain_label": chain_label, "add_chain": chain_params(int(tx["chain_id"])),
+                           "explorer": net.explorer if net and net.explorer else ""})
     shown = html.escape(json.dumps({"function": tx.get("function", "a contract call"), "chain id": tx["chain_id"],
                                     "to (the registry)": tx["to"], "value": "0", "data (raw, as your wallet shows it)":
                                     tx["data"]}, indent=2))
