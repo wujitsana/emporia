@@ -24283,7 +24283,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var pending, opensIdentity;
 	var init_agentTabIntent = __esmMin((() => {
 		pending = null;
-		opensIdentity = (target) => target instanceof Element && target.closest("[data-testid=\"chain-mark\"]") !== null;
+		opensIdentity = (target) => target instanceof Element && target.closest("[data-emporia-mark]") !== null;
 	}));
 	// src/ui/UnderlineTabs.tsx
 	/**
@@ -24451,6 +24451,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-quiet-chip",
 			style: { marginLeft: 6 },
 			"data-testid": "chain-mark",
+			"data-emporia-mark": "8004",
 			"data-link-status": l.status,
 			title: `${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)\nClick: its identity card`,
 			children: [

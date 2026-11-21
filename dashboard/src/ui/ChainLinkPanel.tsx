@@ -30,7 +30,7 @@ export function ChainMark({ agent }: { agent: Pick<AgentProfile, "links"> }) {
   if (!live.length) return null;
   const l = live[0];
   return (
-    <span className="e-quiet-chip" style={{ marginLeft: 6 }} data-testid="chain-mark" data-link-status={l.status}
+    <span className="e-quiet-chip" style={{ marginLeft: 6 }} data-testid="chain-mark" data-emporia-mark="8004" data-link-status={l.status}
       title={`${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)\nClick: its identity card`}>
       8004 #{l.agent_id}{l.status === "stale" ? " · stale" : ""}
     </span>

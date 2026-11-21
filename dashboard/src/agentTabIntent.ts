@@ -14,4 +14,4 @@ export function takeAgentTab(agentId: string): string | null {
 
 /** Whether a click in a list row landed on the 8004 mark (`ChainMark`). */
 export const opensIdentity = (target: EventTarget | null): boolean =>
-  target instanceof Element && target.closest('[data-testid="chain-mark"]') !== null;
+  target instanceof Element && target.closest("[data-emporia-mark]") !== null;

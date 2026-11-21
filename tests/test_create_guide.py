@@ -153,8 +153,8 @@ def test_the_pages_keep_the_rules_every_page_keeps():
     rivals = tuple(codecs.decode(w, "rot13") for w in ("abfge", "ohmm", "frenv", "avafrv", "atvg", "rzcbevhz"))
     forbidden = (*rivals, "wujitsana", "mainnet reward", "stake of", "bounty")
     for page in [*PAGES, REPO / "docs" / "deploy-relay.md"]:
-        text = page.read_text().lower().replace("github.com/wujitsana/emporia", "").replace(
-            "emporia.wujitsana.net", "")                    # the repository's and the public relay's own addresses
+        text = page.read_text().lower().replace("raw.githubusercontent.com/wujitsana/emporia", "").replace(
+            "github.com/wujitsana/emporia", "").replace("emporia.wujitsana.net", "")                    # the repository's and the public relay's own addresses
         for word in forbidden:
             if word == "mainnet reward" and page.name == "deploy-relay.md":
                 continue                    # that page already says "no mainnet rewards", a denial

@@ -958,7 +958,7 @@ def test_the_browser_page_ends_with_the_consent(chain, wallet, target, monkeypat
 
     class Page:
         url, timeout = "http://127.0.0.1:1/x", 0
-        port, listen, token = 1, "127.0.0.1", "x"
+        port, listen, token, code = 1, "127.0.0.1", "x", "K7Q2"
 
         def __init__(self, tx, **kw):
             seen.update(kw)

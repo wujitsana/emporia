@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-D7qiILLJ.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DFHCZzAv.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -12854,7 +12854,7 @@ function takeAgentTab(agentId) {
 	return p && p.agentId === agentId ? p.tab : null;
 }
 /** Whether a click in a list row landed on the 8004 mark (`ChainMark`). */
-var opensIdentity = (target) => target instanceof Element && target.closest("[data-testid=\"chain-mark\"]") !== null;
+var opensIdentity = (target) => target instanceof Element && target.closest("[data-emporia-mark]") !== null;
 // src/ui/UnderlineTabs.tsx
 /**
 * Underline tabs inside a page, the look of the sub-row under the header: the active one marked by its rule, the
@@ -13013,6 +13013,7 @@ function ChainMark({ agent }) {
 		className: "e-quiet-chip",
 		style: { marginLeft: 6 },
 		"data-testid": "chain-mark",
+		"data-emporia-mark": "8004",
 		"data-link-status": l.status,
 		title: `${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)\nClick: its identity card`,
 		children: [

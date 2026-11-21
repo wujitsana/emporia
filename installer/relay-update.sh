@@ -186,6 +186,7 @@ else
 fi
 
 step "5. stop the relay and take a full backup of its data"
+# shellcheck disable=SC2086  # $COMPOSE is a command line and must split into words
 do_run $COMPOSE stop "$SERVICE"
 if [ "$CHECK" = 1 ]; then
   echo "   would run: mkdir -p $BACKUPS"
@@ -233,6 +234,7 @@ else
 fi
 
 step "8. start the new relay"
+# shellcheck disable=SC2086  # $COMPOSE is a command line and must split into words
 do_run $COMPOSE up -d --force-recreate "$SERVICE"
 
 step "9. same relay?"
