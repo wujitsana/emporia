@@ -57,14 +57,14 @@ def test_without_a_signature_it_prints_owner_tier_privacy_and_the_typed_message(
     key, addr = _owned_by_eoa(chain)
     assert card.link_8004(target.name, "base-sepolia", str(AGENT)) == 0
     out = capsys.readouterr().out
-    assert addr.lower() in out.lower() and "tier:    owner" in out and "publishes this wallet address" in out
+    assert addr.lower() in out.lower() and "card says:  owner (testnet)" in out and "publishes this wallet address" in out and "--browser" in out
     assert "block 123" in out and "--issued-at" in out
     typed = json.loads(out[out.index("{\n"): out.index("\n}\n") + 2])
     assert typed["domain"] == {"name": "Emporia agent link", "version": "1", "chainId": 84532}
     assert typed["message"]["emporiaAgentKey"] == "0x" + STABLE and typed["message"]["agentId"] == str(AGENT)
     assert typed["message"]["statement"] == (f"Link ERC-8004 agent #{AGENT} on Base Sepolia (testnet) to the Emporia agent "
                                              f"{target.name}. This moves no funds and grants no permission.")
-    assert f"What you sign: \"{typed['message']['statement']}\"" in out and "--signature 0x..." in out
+    assert f"\"{typed['message']['statement']}\"" in out and "--signature 0x..." in out
     # the printed message is the one a wallet signs: the same digest the verifier rebuilds
     td = erc8004.typed_data_from_json(typed)
     assert erc8004.agent_link_digest(td) == erc8004.agent_link_digest(
@@ -344,9 +344,12 @@ def test_at_the_terminal_the_signature_is_taken_at_once_pasted_or_from_a_file(ta
     def answer_with_signature(q, d=""):
         if q.startswith("Paste the signature"):
             out = capsys.readouterr().out
-            typed = json.loads(out[out.index("{\n"): out.index("\n}\n") + 2])
+            import re as _re
+            path = _re.search(r"The message is in (\S+)\.", out).group(1)
+            typed = json.loads(open(path).read())
             captured["issued"], captured["sig"] = _sign(key, addr, issued=int(typed["message"]["issuedAt"]))
-            assert "The message is saved in" in out and "cast wallet sign --data --from-file" in out
+            assert "cast wallet sign --data --from-file " + path in out and '"types"' not in out   # the JSON is in the file
+            assert "Easiest:" in out and "--browser" in out
             if how == "file":
                 f = tmp_path / "sig.txt"
                 f.write_text(captured["sig"] + "\n")

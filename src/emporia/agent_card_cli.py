@@ -345,22 +345,21 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
         if not out.get("success"):
             print(f"agent link-8004: {out.get('error')}")
             return 1
-        _print_ask(name, out)
-        if not out.get("tier") or not _cli()._persons_terminal():
+        here = bool(out.get("tier")) and _cli()._persons_terminal()
+        path = _save_link_message(out["typed_data"]) if here else ""
+        _print_ask(name, out, path)
+        if not here:
             return 0
         # A person is here: take the signature now (pasted, or read from a file), instead of a second command.
-        path = _save_link_message(out["typed_data"])
         if path:
-            print(f"\n  The message is saved in {path}; with a command line: "
-                  f"cast wallet sign --data --from-file {path} --private-key ... > sig.txt")
-        got = _cli().prompt("Paste the signature (0x...), or the path to a file holding it (Enter stops; you can "
-                            "record it later with the command above)", "").strip()
+            print(f"  With a command line: cast wallet sign --data --from-file {path} --private-key ... > sig.txt\n")
+        got = _cli().prompt("Paste the signature (0x...), or the path to a file holding it (Enter stops)", "").strip()
         if not got:
             return 0
         sig = _signature_from(got)
         if not sig:
             print("agent link-8004: that is neither a signature (hex, 65 bytes or more) nor a readable file holding one; nothing "
-                  "recorded. Run the command above with --signature when you have it.")
+                  "recorded. Run this again when you have it.")
             return 1
         return link_8004(name, chain, agent_id, out["signer"], sig, int(out["issued_at"]), yes, False, False, False,
                          port, listen)
@@ -527,26 +526,34 @@ def _save_link_message(typed_data: dict) -> str:
         return ""
 
 
-def _print_ask(name: str, out: dict[str, Any]) -> None:
-    print(f"  ERC-8004 #{out['agent_id']} on {out['chain_label']}, read at block {out['block_number']}")
-    print(f"    owner:   {out['owner']}")
+def _print_ask(name: str, out: dict[str, Any], saved: str = "") -> None:
+    """The link in words: what it is, the facts, the easy way (--browser), then how to sign elsewhere. With `saved`
+    (a person at the terminal) the typed message is in that file rather than printed."""
+    cmd = f"emporia agent link-8004 {name} --chain {_short(out['chain'])} --agent-id {out['agent_id']}"
+    print(f"  Link ERC-8004 #{out['agent_id']} to {name}'s card: one signature from the wallet that controls it. "
+          "Nothing goes on-chain and no money moves.\n")
+    print(f"    {'identity:':<12}#{out['agent_id']} on {out['chain_label']} (read at block {out['block_number']})")
+    print(f"    {'owner:':<12}{out['owner']}")
     if out.get("binding"):
-        print(f"    binding: {json.dumps(out['binding'], sort_keys=True)}")
-    print(f"    signer:  {out['signer']}")
+        b = out["binding"]
+        print(f"    {'bound to:':<12}{b.get('standard', '')} {b.get('address', '')}"
+              + (f" token {b['token_id']}" if b.get("token_id") else ""))
+    print(f"    {'signer:':<12}{out['signer']}")
     if out["tier"]:
-        print(f"    tier:    {out['tier']} ({out['tier_wording']}): what the card will say once you sign")
+        print(f"    {'card says:':<12}{out['tier_wording']}" + (" (testnet)" if "testnet" in out["chain_label"] else ""))
     else:
-        print(f"    tier:    not proven: {out.get('reason') or 'the chain does not back this signer'}")
+        print(f"    {'card says:':<12}nothing: {out.get('reason') or 'the chain does not back this signer'}")
     print(f"\n  {out['privacy']}\n")
-    print(f"  What you sign: \"{out['typed_data']['message']['statement']}\"")
-    print(f"  Where: in the wallet of the signer {out['signer']}, as EIP-712 typed data (the message below). A wallet that\n"
-          "  signs typed data shows these same words; with a command line, save the message as msg.json and run\n"
-          "  `cast wallet sign --data --from-file msg.json --private-key ...`. Nothing goes on-chain; it moves no funds\n"
-          "  and grants no permission:\n")
+    print(f"  Easiest: {cmd} --browser   (your browser wallet signs on a local page)")
+    print(f"\n  Signing elsewhere: the wallet {out['signer']} signs EIP-712 typed data whose first words are\n"
+          f"  \"{out['typed_data']['message']['statement']}\"")
+    if saved:
+        print(f"  The message is in {saved}.")
+        return
+    print("  With a command line, save the message below as msg.json and run "
+          "`cast wallet sign --data --from-file msg.json --private-key ...`:\n")
     print(json.dumps(out["typed_data"], indent=2))
-    print(f"\n  Where the signature goes: paste it (0x...) after --signature in this command, which records it:\n\n"
-          f"    emporia agent link-8004 {name} --chain {_short(out['chain'])} --agent-id {out['agent_id']} "
-          f"--signer {out['signer']} --issued-at {out['issued_at']} --signature 0x...")
+    print(f"\n  Then record it:\n\n    {cmd} --signer {out['signer']} --issued-at {out['issued_at']} --signature 0x...")
 
 
 WAIT_EVERY = 15.0                 # seconds between reads while --wait waits for the chain
