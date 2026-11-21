@@ -94,3 +94,19 @@ def test_each_counts_against_the_turn_and_is_logged(monkeypatch, tmp_path, tool)
         assert again and "at most" in again["error"], "the sixth write of the turn is refused"
     rows = autonomy.recent_actions(5, None)
     assert any(r["tool"] == tool for r in rows)
+
+
+@pytest.mark.parametrize("tool", ["tesseract_push", "tesseract_open", "lore_write", "lore_vote", "lore_reveal",
+                                  "submit_action"])
+def test_a_due_move_is_never_refused_by_the_posting_budget(monkeypatch, tmp_path, tool):
+    """Found live 11-21: two posts used an unattended turn's budget and a due Tesseract move was refused; the game's
+    own rules bound a move (one per turn or window) and its clock runs, so moves are logged, never counted."""
+    monkeypatch.setattr(autonomy, "store_dir", lambda: tmp_path)
+    monkeypatch.setattr(autonomy, "data_dir", lambda: tmp_path)
+    monkeypatch.delenv("EMPORIA_UNTRACKED_TURNS", raising=False)
+    (tmp_path / "autonomy.json").write_text(json.dumps({"turns": {"t": {
+        "origin": "relay", "sender": "emporia:relay", "at": time.time(), "writes": autonomy.MAX_WRITES_PER_TURN,
+        "new_dms": []}}}))
+    assert tool in autonomy.GAME_MOVE_TOOLS and tool not in autonomy.WRITE_TOOLS
+    assert autonomy.guard(tool, {"session_id": "sess_x"}, "me") is None
+    assert autonomy.guard("post", {"content": "x"}, "me")["refused_by"] == "emporia-autonomy", "posts still count"

@@ -27,7 +27,7 @@ from writing it) and its calls count as a person's.
   is a testnet and 0 otherwise; a person's value, 0 included, wins), and then every payment is also counted against
   that per-day total where it is signed (agent_wallet._charge_daily), on top of the per-payment cap.
   Emporia has no card path: every payment is a wallet payment, capped as above.
-* *A write budget per turn:* 5 writes, 2 DMs to agents it never DMed before; 3 new rooms or topics a day.
+* *A write budget per turn:* 5 writes (game moves, the Lore's included, are logged but never counted), 2 DMs to agents it never DMed before; 3 new rooms or topics a day.
   Game moves, and ``say`` with a move, are not writes (games have their own limits).
 * Settings tools (``set_cross_relay_dms``) are a person's.
 
@@ -65,10 +65,6 @@ WRITE_TOOLS = frozenset({
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "close_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
-    # The Lore: sealing and opening are writes (a view is a read; joining is the agent's own, once)
-    "lore_write", "lore_vote", "lore_reveal",
-    # Tesseract: sealing and opening are moves (a view is a read)
-    "tesseract_push", "tesseract_open",
     # State changes that are not posts but still change what others see or what the agent holds: counted and logged
     # like a write (block_dm_sender with list=true only reads and is let through in `guard`).
     "decline_challenge", "dispute_delivery", "leave_session", "leave_room", "block_dm_sender",
@@ -92,15 +88,19 @@ MONEY_TOOLS = frozenset({
 })
 #: Tools only a person uses: a setting of the agent's own.
 SETTINGS_TOOLS = frozenset({"set_cross_relay_dms"})
-#: Moves in a game: logged when autonomous, never counted as writes.
-GAME_MOVE_TOOLS = frozenset({"submit_action", "commit_move", "reveal_move"})
+#: Moves in a game: logged when autonomous, never counted as writes. A move that is due must never wait on the
+#: posting budget: the game's own rules bound it (one move per turn or window), and its clock runs (found live 11-21:
+#: two posts used an unattended turn's budget and a due Tesseract move was refused). The Lore's seals and opens are
+#: moves of the same kind, one per chapter window.
+GAME_MOVE_TOOLS = frozenset({"submit_action", "commit_move", "reveal_move", "tesseract_push", "tesseract_open",
+                             "lore_write", "lore_vote", "lore_reveal"})
 LOGGED_TOOLS = WRITE_TOOLS | MONEY_TOOLS | SETTINGS_TOOLS | GAME_MOVE_TOOLS | RELAY_REFUSED_TOOLS
 #: Tools whose arguments are text other agents will read (checked for the agent's own secrets).
 OUTBOUND_TEXT_TOOLS = frozenset({
     "post", "send_room_message", "send_dm", "submit_action", "commit_move", "reveal_move",
     "make_pledge", "attest_pledge", "challenge", "create_room", "create_agora_topic", "open_room_from_post",
     "lab_report", "react", "dispute_delivery", "confirm_delivery", "decline_challenge",
-    "lore_write", "lore_vote", "tesseract_push",
+    "lore_write", "lore_vote", "tesseract_push", "tesseract_open",
 })
 _PAYMENT_ARGS = ("pay_with_x402", "pay_with_tempo")
 _lock = threading.Lock()
