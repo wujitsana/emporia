@@ -1,9 +1,9 @@
 # Emporia and the Hermes plugin catalog
 
-An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 admission
+An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 20 admission
 rules in Hermes's `plugin-catalog/README.md` and its submission guide, with evidence, the
 validator's output, and how each rule is met. Re-derived on 2026-11-10 and its evidence checked against the 2.1.0 code on 2026-11-18, against the catalog README
-as installed with Hermes v0.23.2 (the first derivation was 2026-11-06, see
+as installed with Hermes v0.23.2, and checked again on 2026-11-21 against Hermes v0.23.3, whose catalog lists 20 rules: 19 and 20 are new since the derivation above (they were already in the v0.23.2 tag; the 0.23.2 build installed here was older), and both pass (plugin pages also moved to `/marketplace/<name>`) (the first derivation was 2026-11-06, see
 the review-pass-2026-11-06-release note (kept outside the repo)). Every rule is treated as a hard requirement: nothing below is
 a "defensible risk".
 
@@ -49,6 +49,8 @@ runtime it installs.
 | 16 | One listing per lineage | pass | Original work. |
 | 17 | No unscannable payloads | pass | A header scan of all 1,210 tracked files at the frozen 2.1.0 commit (all regular files; none is a link) found no ELF, Mach-O, PE, wasm, archive or bytecode. The tab, Desktop and console bundles are all unminified source. |
 | 18 | Password managers from vendor | pass (n/a) | No `register_login_backend`. |
+| 19 | No plugins built to reach infringing content | pass (n/a) | Not a media or download tool; no content sources built in. |
+| 20 | No coin or token promotion | pass | Payments are testnet USDC over x402, both named as fine by the rule; Emporia has no token, NFT collection, airdrop or launch of its own. ERC-8004 is an optional identity link through the public identity registry, testnet only; nothing promotes or trades it. |
 
 ## Validator
 
@@ -183,7 +185,7 @@ scans only the plugin directory, so none of the runtime findings reaches an inst
 ### 9. No core overrides — pass
 - No core overrides. The plugin and the runtime import only Hermes modules that are on Hermes's published plugin API
   (`hermes_cli/data/plugin_api.json`, which the validator reads), all inside `try` or a deferred import so a missing one
-  fails closed. `hermes plugins validate` (v0.23.2) reports `no core override` as passed and no private-import warning
+  fails closed. `hermes plugins validate` (v0.23.2, and v0.23.3 on 2026-11-21) reports `no core override` as passed and no private-import warning
   (the 2.1 build warned about `notices.py:145 hermes_cli.plugin_catalog`; that look is gone: Hermes's own update flow
   and the relay's update note tell a person about a new version).
   - In the plugin: `gateway.platforms.base`, `.event`, `.helpers`, `.config` (`Platform`, `load_gateway_config`),
@@ -426,11 +428,16 @@ terminal, which the key guard blocks from the agent; the README says so.
   (Vite's default); `dashboard/vite.config.ts` now sets `build.minify: false` like the tab and Desktop builds.
 - No source map is needed, because the output is not minified.
 
-### 1, 4, 5, 8, 15, 16, 18 — pass
+### 1, 4, 5, 8, 15, 16, 18, 19, 20 — pass
 - **1, 4, 5:** process rules. The owner submits, and a re-pin is a new PR.
 - **8:** see the summary row: SDK imports only, checked by `desktop surface` and by hand.
 - **18:** does not apply. There is no login backend.
 - **15, 16:** Emporia is not a bundled plugin, and not a fork.
+- **19:** does not apply. Emporia finds, streams and downloads no media; it ships no content sources.
+- **20:** passes. The only money is testnet USDC paid agent to agent over x402 (the rule's own examples of what is
+  fine). There is no Emporia token, coin, NFT collection, airdrop, mint or holder reward, and nothing tells a user to
+  buy anything. ERC-8004 (`register-8004`, `link-8004`, `set-8004-wallet`) is an agent identity in the public
+  identity registry, optional, testnet only for registration, run by a person, and promotes no collection.
 
 ## What a release still needs
 1. Push the release branch (after review) and run `scripts/pin_plugin_runtime.py`: one commit

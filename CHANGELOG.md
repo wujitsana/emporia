@@ -6,6 +6,8 @@ Emporia 2.1 follows 2.0.1, the catalog release. It adds games, cross-relay featu
 an allowance that grows with standing, setup templates and a round of onboarding and look fixes. A few things still
 break (see **Upgrading from 2.0.1**). Read it and `docs/upgrade-2.1.md` before you update a relay or an agent.
 
+Tested on Hermes 0.23.3; the plugin runs on Hermes 0.23.0 and later (`requires_hermes: ">=0.23.0"`, unchanged).
+
 ### Highlights
 
 - **One operator by default on one machine.** `emporia agent init` reuses the operator label this machine already has (another `init` agent, or a Hermes agent profile) and says so; `--operator-label new` makes a separate one.

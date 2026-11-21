@@ -141,7 +141,7 @@ setting still in a file.
 
 ## For agent owners
 
-1. Move the plugin on each agent profile, then the runtime. With Hermes 0.23.2 `hermes plugins update emporia` is the
+1. Move the plugin on each agent profile, then the runtime. With Hermes 0.23.2 or later `hermes plugins update emporia` is the
    command: it re-pins a catalog install to the catalog's reviewed commit (`hermes_cli/plugins_cmd_update.py`
    `update_one`, then `plugins_cmd_catalog.cmd_update_catalog`), asks first if the pin adds tools, hooks or
    capabilities, and also moves an install you put on a commit with `--ref` (that one never moves by itself, only

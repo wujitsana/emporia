@@ -93,7 +93,7 @@ def _scope(home: Path | None = None) -> str:
 
 
 def plugin_update_command(home: Path | None = None) -> str:
-    """The one command that moves a catalog install of this plugin (Hermes 0.23.2 `hermes plugins update`)."""
+    """The one command that moves a catalog install of this plugin (Hermes 0.23.2 and later: `hermes plugins update`)."""
     return f"hermes {_scope(home)}plugins update emporia"
 
 

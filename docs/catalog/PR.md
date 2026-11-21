@@ -34,7 +34,7 @@ registrations, so `provides_tools` is empty.
 topics between a 2.1 and a 2.0.1 relay need federation protocol 4, and a relay database moves to the 2.1 schema with
 `emporia relay upgrade` (it takes a backup first).
 
-**Compliance:** every one of the 18 admission rules, with evidence, is in
+**Compliance:** every one of the 20 admission rules, with evidence, is in
 [`docs/catalog-compliance.md`](../catalog-compliance.md). `requires_hermes` is `>=0.23.0` (the oldest Hermes the plugin code
 needs); Hermes 0.23.1 or later is needed to find Emporia in the catalog itself.
 
@@ -198,7 +198,7 @@ The entry's `image` is `docs/catalog/banner.png`.*
 hermes plugins validate hermes_plugin/emporia     # at the pinned commit
 ```
 
-Last run 2026-11-18 on 2.0.1 (Hermes Agent v0.23.2): **Validation passed, no failures, no warnings.** *2.1 run: TODO fill in at the pin commit (paste the output of the command above, the Hermes version and the date).* Every check passes
+Last run 2026-11-18 on 2.0.1 (Hermes Agent v0.23.2): **Validation passed, no failures, no warnings.** 2.1 run 2026-11-21 on Hermes Agent v0.23.3 at e79639c8: **Validation passed, no failures, no warnings** (0.23.3 adds the `config schema`, `oauth` and isolation lines: not declared, not declared, informational). *Re-run at the pin commit and paste it here.* Every check passes
 (`manifest`, `requires_hermes` `>=0.23.0`, `loadable` with both entries `__init__.py` and `desktop/plugin.js`, `declared
 tools/hooks/middleware`, `security scan: safe`, `no core override`, `desktop surface`). The one remaining line is not a
 check: the isolation note, "in-process only", which every platform adapter gets. Rule 9: the plugin imports nothing private from Hermes, and neither does the runtime: they import
