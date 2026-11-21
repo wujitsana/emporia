@@ -77,7 +77,8 @@ def decode_address(data: bytes) -> str:
 
 def wallet_from_receipt(receipt: dict | None, registry: str, tx_hash: str, agent_id: int | str) -> dict:
     """`{wallet, block_number, block_hash}` from the receipt of a successful `setAgentWallet` on `registry`: the
-    registry's own `MetadataSet` log for this agent with the key `agentWallet`. Raises WalletError."""
+    registry's own `MetadataSet` log for this agent with the key `agentWallet` (sent to the registry or through a
+    wallet's smart account: the registry's own log is the evidence). Raises WalletError."""
     from eth_abi import decode
     from eth_utils import keccak
     if not isinstance(receipt, dict):
@@ -86,8 +87,6 @@ def wallet_from_receipt(receipt: dict | None, registry: str, tx_hash: str, agent
         raise WalletError("the receipt is for another transaction")
     if str(receipt.get("status", "")).lower() not in ("0x1", "1"):
         raise WalletError("that transaction failed on-chain: the agent wallet was not changed")
-    if str(receipt.get("to") or "").lower() != registry.lower():
-        raise WalletError("that transaction was not sent to this chain's ERC-8004 registry")
     want_key = "0x" + keccak(text="agentWallet").hex()
     found: list[str] = []
     for log in receipt.get("logs") or []:

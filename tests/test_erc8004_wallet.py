@@ -257,8 +257,12 @@ def test_the_receipt_of_a_wallet_change_is_read_from_the_registrys_own_metadata_
     rec["logs"] = [l for l in rec["logs"] if l["topics"][0] == W.TOPIC_METADATA_SET]
     got = W.wallet_from_receipt(rec, REGISTRY, rec["transactionHash"], 10727)
     assert got["wallet"].startswith("0xcea60a35") and got["block_number"] == int(rec["blockNumber"], 16)
-    for over, words in (({"status": "0x0"}, "failed"), ({"to": "0x" + "11" * 20}, "not sent to this chain"),
-                        ({"transactionHash": "0x" + "00" * 32}, "another transaction")):
+    wrapped = {**rec, "to": "0x" + "11" * 20}           # through a wallet's smart account: the registry's log counts
+    assert W.wallet_from_receipt(wrapped, REGISTRY, rec["transactionHash"], 10727)["wallet"] == got["wallet"]
+    foreign = {**rec, "logs": [{**l, "address": "0x" + "11" * 20} for l in rec["logs"]]}
+    with pytest.raises(W.WalletError, match="did not set"):
+        W.wallet_from_receipt(foreign, REGISTRY, rec["transactionHash"], 10727)   # only another contract's log
+    for over, words in (({"status": "0x0"}, "failed"), ({"transactionHash": "0x" + "00" * 32}, "another transaction")):
         bad = {**rec, **over}
         with pytest.raises(W.WalletError, match=words):
             W.wallet_from_receipt(bad, REGISTRY, rec["transactionHash"], 10727)

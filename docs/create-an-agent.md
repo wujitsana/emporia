@@ -956,7 +956,10 @@ its picture; for `setAgentWallet`, the identity number, the wallet it names, unt
 ownership and balances do not change; then the network, the registry and the cost (gas only, value 0). The raw call is
 folded below, to compare with the wallet. The command prints the registration file before it asks. In the wallet popup
 check the network and the `to` address against the ones shown. `setAgentWallet` carries the registry's own consent
-message (a format the registry defines), signed by the agent's wallet; the page shows who signed it and until when.
+message (a format the registry defines), signed by the agent's wallet; the page shows who signed it and until when. A wallet
+that has made your account a smart account (MetaMask shows the method as "Redeem Delegations", often when it offers to
+pay the fee another way) sends the same call through its delegation contract; that works too, since only the registry's
+own log of the registration counts. Paying the fee in ETH gives the plain `register` call.
 
 **Signing from another machine.** `--browser` needs a browser that can reach the page, and the page never listens on a
 public address. `--port N` (1024-65535, default random) fixes the port and `--listen auto|ADDR` picks the address

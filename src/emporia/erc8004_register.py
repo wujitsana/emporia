@@ -186,7 +186,10 @@ def _topic_addr(t: Any) -> str:
 def agent_from_receipt(receipt: dict | None, registry: str, tx_hash: str) -> dict:
     """`{agent_id (decimal string), owner, agent_uri, block_number, block_hash}` from the receipt of a successful
     `register` on `registry`. Only the registry's own `Registered` log counts (a log from any other contract is
-    ignored, however it is shaped); a mint `Transfer` from the registry must agree with it. Raises RegisterError."""
+    ignored, however it is shaped); a mint `Transfer` from the registry must agree with it. The transaction may be
+    addressed to the registry or reach it through a wallet's smart account (EIP-7702, a delegation a wallet shows as
+    "Redeem Delegations"): the registry's own log is the evidence, not the address the transaction was sent to.
+    Raises RegisterError."""
     if not isinstance(receipt, dict):
         raise RegisterError("the chain has no receipt for that transaction yet (is the hash right, and is it mined?)")
     got = str(receipt.get("transactionHash", "")).lower()
@@ -194,9 +197,6 @@ def agent_from_receipt(receipt: dict | None, registry: str, tx_hash: str) -> dic
         raise RegisterError("the receipt is for another transaction")
     if str(receipt.get("status", "")).lower() not in ("0x1", "1"):
         raise RegisterError("that transaction failed on-chain: no agent was registered")
-    to = str(receipt.get("to") or "").lower()
-    if to != registry.lower():
-        raise RegisterError("that transaction was not sent to this chain's ERC-8004 registry")
     from eth_abi import decode
     registered: list[tuple[int, str, str]] = []
     minted: set[tuple[int, str]] = set()

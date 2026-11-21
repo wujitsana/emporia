@@ -127,7 +127,6 @@ def test_a_receipt_without_the_registered_event_still_needs_it():
 
 @pytest.mark.parametrize("over,words", [
     ({"status": "0x0"}, "failed on-chain"),
-    ({"to": "0x" + "22" * 20}, "not sent to this chain's ERC-8004 registry"),
     ({"transactionHash": "0x" + "33" * 32}, "another transaction"),
 ])
 def test_a_failed_misdirected_or_foreign_receipt_is_refused(over, words):
@@ -343,11 +342,17 @@ def test_a_receipt_whose_block_is_not_the_chains_is_not_trusted(target, fake):
         chain_register.confirm("base-sepolia", TX, read=fake, stable=STABLE)
 
 
-def test_a_receipt_from_another_contract_is_refused(target, fake):
+def test_a_registration_through_a_smart_account_counts_by_the_registrys_own_log(target, fake):
+    # a wallet's smart account (EIP-7702, "Redeem Delegations") sends to its delegation contract, which calls register
     minted(fake)
     fake.receipts[TX] = receipt(to="0x" + "66" * 20)
-    with pytest.raises(chain_link.LinkError, match="not sent to this chain's ERC-8004 registry"):
-        chain_register.confirm("base-sepolia", TX, read=fake, stable=STABLE)
+    assert chain_register.confirm("base-sepolia", TX, read=fake, stable=STABLE)["agent_id"]
+
+
+def test_a_transaction_where_only_another_contract_logged_a_registration_is_refused():
+    shaped = [{**l, "address": "0x" + "66" * 20} for l in REAL["receipt"]["logs"]]
+    with pytest.raises(R.RegisterError, match="registered no agent"):
+        R.agent_from_receipt(receipt(to="0x" + "66" * 20, logs=shaped), REGISTRY, TX)
 
 
 def test_a_token_that_has_moved_since_is_not_followed(target, fake):
