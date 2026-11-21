@@ -189,10 +189,11 @@ def test_every_setup_ends_with_the_wallet_check_text(kw):
     assert "only asks for this one transaction and closes" in tx
 
 
-def test_the_url_is_always_the_browser_side_loopback():
+def test_the_url_is_always_the_browser_side_loopback_named_emporia_with_the_numeric_fallback():
     for listen in ("127.0.0.1", "172.20.0.2", "10.0.0.5"):
-        assert bs.page_url(listen, 9000, "T") == "http://127.0.0.1:9000/T"
-    assert bs.page_url("::1", 9000, "T") == "http://[::1]:9000/T"
+        assert bs.page_url(listen, 9000, "T") == "http://emporia.localhost:9000/T"     # the wallet names the site
+        assert bs.fallback_url(listen, 9000, "T") == "http://127.0.0.1:9000/T"
+    assert bs.page_url("::1", 9000, "T") == bs.fallback_url("::1", 9000, "T") == "http://[::1]:9000/T"
 
 
 # -- Host and Origin ---------------------------------------------------------------------------------------------
@@ -202,10 +203,11 @@ def test_host_and_origin_are_accepted_only_for_the_browser_side_names():
     t, _ = serve(p)
     try:
         assert p.port == port
-        assert p.own_hosts() == {f"127.0.0.1:{port}", f"localhost:{port}"}
-        for ok in (f"127.0.0.1:{port}", f"localhost:{port}"):
+        assert p.own_hosts() == {f"emporia.localhost:{port}", f"127.0.0.1:{port}", f"localhost:{port}"}
+        for ok in (f"emporia.localhost:{port}", f"127.0.0.1:{port}", f"localhost:{port}"):
             assert request(p, "GET", "/" + p.token, host=ok)[0] == 200, ok
         for bad in ("evil.example", f"evil.example:{port}", f"127.0.0.1.evil.example:{port}", f"localhost.evil:{port}",
+                    f"emporia.localhost.evil.example:{port}", f"evil.localhost:{port}", f"emporia.localhost:{port + 1}",
                     "127.0.0.1", f"127.0.0.1:{port + 1}", f"[::1]:{port}", f"0.0.0.0:{port}", f"192.168.1.2:{port}"):
             assert request(p, "GET", "/" + p.token, host=bad)[0] == 404, bad       # a rebinding page gets nothing
         body = {"signature": "0x" + "ab" * 65, "account": "0x" + "11" * 20}
@@ -285,12 +287,13 @@ def test_the_send_page_shows_the_registration_decoded_with_its_picture_and_folds
     html = bs.tx_page_html(_register_tx(), chain_label="Base Sepolia (testnet)", agent_name="kestrel",
                            summary="Sends register.", nonce="n")
     assert "<h1>Register kestrel on ERC-8004</h1>" in html
-    for shown in ("<th>Name</th><td>kestrel</td>", "Plays fair, talks plain.", "https://relay.example/agents/kestrel",
-                  SID, "<th>Accepts payments (x402)</th><td>yes</td>", "test gas only (no value)",
-                  "Decoded here from the exact bytes your wallet will send"):
+    for shown in ("<dt>Name</dt><dd>kestrel</dd>", "Plays fair, talks plain.", "https://relay.example/agents/kestrel",
+                  SID, "<dt>Accepts payments (x402)</dt><dd>yes</dd>", "test gas only (no value)",
+                  "Read here from the exact bytes your wallet will send", "names the same call (register)",
+                  'class="mark">EMPORIA<svg', 'rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,'):
         assert shown in html, shown
     assert '<img src="data:image/svg+xml;base64,' in html
-    assert "<details><summary>The raw call, as your wallet shows it</summary>" in html
+    assert "<details><summary>Technical details: the call data (a wallet shows it under Data or Hex)</summary>" in html
 
 
 @needs_lib
@@ -299,9 +302,9 @@ def test_the_set_wallet_page_names_the_identity_the_wallet_and_how_long_the_cons
     wallet = "0x" + "12" * 20
     tx = {"chain_id": 84532, "to": REG, "data": "0x" + W.set_wallet_calldata(7, wallet, 1_900_000_000, b"\x01" * 65).hex()}
     html = bs.tx_page_html(tx, chain_label="Base Sepolia (testnet)", agent_name="kestrel", summary="Sends it.", nonce="n")
-    assert "Set where kestrel&rsquo;s ERC-8004 identity is paid" in html and "<title>Set the agent wallet</title>" in html
+    assert "Set where kestrel&rsquo;s ERC-8004 identity is paid" in html and "<title>Emporia · Set the agent wallet</title>" in html
     assert "ERC-8004 agent #7" in html and wallet in html.lower() and "2030-03-17" in html
-    assert "who owns the identity, and every balance" in html and "<img" not in html
+    assert "who owns the identity, and every balance" in html and "<img" not in html and "(setAgentWallet)" in html
 
 
 @needs_lib
@@ -309,15 +312,22 @@ def test_what_the_page_decodes_is_escaped_and_an_undecodable_call_is_shown_raw_o
     html = bs.tx_page_html(_register_tx("<script>alert(1)</script>", image=False), chain_label="Base Sepolia (testnet)",
                            agent_name="kestrel", summary="s", nonce="n")
     assert "<script>alert(1)" not in html and "&lt;script&gt;alert(1)&lt;/script&gt;" in html
-    assert "<th>Picture</th><td>none</td>" in html and "<img" not in html
+    assert "<dt>Picture</dt><dd>none</dd>" in html and "<img" not in html
     raw = bs.tx_page_html({"chain_id": 84532, "to": REG, "data": "0xabcdef"}, chain_label="Base Sepolia (testnet)",
                           agent_name="kestrel", summary="s", nonce="n")
-    assert "could not be decoded here" in raw and "<th>Name</th>" not in raw
+    assert "could not be read here" in raw and "<dt>Name</dt>" not in raw
 
 
-def test_only_the_send_page_may_show_an_inline_picture():
-    assert "img-src data:;" in bs.csp("n", data_images=True) and "img-src" not in bs.csp("n")
-    assert bs.SendPage.data_images is True and bs.SigningPage.data_images is False
+def test_the_printed_steps_give_the_emporia_name_and_the_numeric_fallback():
+    text, _ = bs.instructions(8765, "172.20.0.2", container=True, ssh=False, token="TOKEN", what="transaction")
+    assert "http://emporia.localhost:8765/TOKEN" in text and "http://127.0.0.1:8765/TOKEN" in text
+    assert "some Safari versions" in text
+
+
+def test_the_pages_allow_inline_images_and_the_inline_face_and_nothing_remote():
+    c = bs.csp("n")
+    assert "img-src data:;" in c and "font-src data:;" in c and "default-src 'none'" in c
+    assert "http" not in c and "*" not in c and "unsafe" not in c
 
 
 def test_the_sign_page_shows_the_statement_in_words():
@@ -422,7 +432,7 @@ def run_through_tunnel(signer_key, owner_addr):
     fwd = Forwarder(("127.0.0.1", port), ("127.0.0.2", port))
     t, box = serve(page)
     try:
-        assert page.url == f"http://127.0.0.1:{port}/{page.token}"
+        assert page.url == f"http://emporia.localhost:{port}/{page.token}"
         got_page = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         got_page.request("GET", "/" + page.token)
         assert got_page.getresponse().status == 200               # the page itself comes through the tunnel

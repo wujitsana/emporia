@@ -6,7 +6,8 @@ here sends a transaction or holds a key.
 
 * `registration_file` is the agent's registration (the same field names the registry's real agents use): an
   Emporia name, its bio, the agent's token picture (`token_picture`, left out by `--no-image`), one `services` entry named `Emporia` that carries the agent's stable id, and
-  `active: true`. `data_uri` makes it an on-chain `data:application/json;base64,...` URI, so nothing is hosted.
+  `active: true`. `data_uri` makes it an on-chain `data:application/json;utf8,{...}` URI (plain JSON, so a wallet that decodes the
+  call shows the agent's name and description as text), so nothing is hosted. Base64 registrations are read too.
 * `calldata` is `register(string)`: the overload that takes only the URI.
 * `agent_from_receipt` finds the new agent's number in the receipt's `Registered` event (and cross-checks the
   mint's ERC-721 `Transfer`), only from a log the canonical registry itself emitted.
@@ -27,7 +28,8 @@ from emporia.networks import ERC8004_REGISTRIES, NETWORKS
 
 SERVICE_NAME = "Emporia"
 REG_TYPE = "https://eips.ethereum.org/EIPS/eip-8004#registration-v1"
-DATA_PREFIX = "data:application/json;base64,"
+DATA_PREFIX = "data:application/json;base64,"       # read (older registrations)
+UTF8_PREFIX = "data:application/json;utf8,"          # written: plain JSON a wallet shows as text
 MAX_URI_BYTES = 8 * 1024            # a registration file this size costs a few hundred thousand gas at most
 
 # register(string): the first four bytes of keccak256 of the signature text (a test recomputes each).
@@ -105,9 +107,11 @@ def token_picture(stable_id: str) -> str:
 
 
 def data_uri(file: dict) -> str:
-    raw = json.dumps(file, separators=(",", ":"), ensure_ascii=False, sort_keys=True).encode()
-    uri = DATA_PREFIX + base64.b64encode(raw).decode()
-    if len(uri) > MAX_URI_BYTES:
+    """The registration as plain JSON in a `data:` URI. Only `%` and `#` are escaped (a `data:` URI's escape and
+    fragment characters), so the rest reads as text in a wallet; `decode_data_uri` and the console undo it."""
+    raw = json.dumps(file, separators=(",", ":"), ensure_ascii=False, sort_keys=True)
+    uri = UTF8_PREFIX + raw.replace("%", "%25").replace("#", "%23")
+    if len(uri.encode()) > MAX_URI_BYTES:
         raise RegisterError(f"the registration is {len(uri)} bytes; at most {MAX_URI_BYTES} (shorten the bio)")
     return uri
 
@@ -116,11 +120,12 @@ def decode_data_uri(uri: str) -> dict | None:
     """The JSON of an on-chain `data:application/json` URI (base64 or plain), else None."""
     if not isinstance(uri, str) or len(uri) > 4 * MAX_URI_BYTES:
         return None
-    for prefix in (DATA_PREFIX, "data:application/json;utf8,", "data:application/json,"):
+    from urllib.parse import unquote
+    for prefix in (DATA_PREFIX, UTF8_PREFIX, "data:application/json,"):
         if uri.startswith(prefix):
             body = uri[len(prefix):]
             try:
-                raw = base64.b64decode(body, validate=True) if prefix == DATA_PREFIX else body.encode()
+                raw = base64.b64decode(body, validate=True) if prefix == DATA_PREFIX else unquote(body).encode()
                 out = json.loads(raw)
             except (ValueError, TypeError):
                 return None

@@ -1418,7 +1418,7 @@ gated). The badge carries no protocol weight: no XP, quest, trust or gate uses i
    (`type` `https://eips.ethereum.org/EIPS/eip-8004#registration-v1`, `name`, `description` from the bio, `image` the agent's token picture (a flat SVG made from its stable id by `emporia.avatars.token_avatar`, 229-544 bytes, as an on-chain `data:image/svg+xml;base64,...` of under 800 characters, inside the seam's 2048-character limit; `--no-image` leaves it out; the printed summary says it is included and its size),
    `services: [{name: "Emporia", endpoint: "<home relay>/agents/<name>", stableId}]`, `x402Support` from whether the
    agent has an EVM wallet, `active: true`, `registrations: []`) and stores it as an on-chain
-   `data:application/json;base64,...` URI, so nothing is hosted. The call is `register(string agentURI)` (selector
+   `data:application/json;utf8,{...}` URI (plain JSON with only `%` and `#` escaped, so a wallet that decodes the call shows it as text; base64 registrations are read too), so nothing is hosted. The call is `register(string agentURI)` (selector
    `0xf2c298be`) on the canonical registry; the CLI simulates it with `eth_call`, estimates gas, and prints chain id,
    `to`, calldata and the URI for the person's wallet. Emporia sends nothing and holds no key. With `--browser` the
    same one-shot local page as §3.20 item 6 asks the person's wallet for `eth_sendTransaction` and returns only the

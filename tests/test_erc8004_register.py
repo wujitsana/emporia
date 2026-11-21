@@ -75,11 +75,24 @@ def test_no_stable_id_or_relay_means_no_registration(sid, relay):
 def test_data_uri_round_trips_and_is_deterministic():
     f = R.registration_file("kestrel", "Wanders.", relay_url, STABLE, True)
     uri = R.data_uri(f)
-    assert uri.startswith("data:application/json;base64,") and R.data_uri(f) == uri
+    assert uri.startswith("data:application/json;utf8,{") and R.data_uri(f) == uri
+    assert '"name":"kestrel"' in uri and '"description":"Wanders."' in uri       # text a wallet can show
     assert R.decode_data_uri(uri) == f
     assert R.decode_data_uri("https://example.org/a.json") is None
     assert R.decode_data_uri("data:application/json;base64,!!!") is None
     assert R.decode_data_uri("data:application/json;base64," + "W10=") is None      # a JSON list is not a registration
+
+
+def test_percent_and_hash_are_escaped_and_read_back_and_base64_registrations_are_still_read():
+    import base64
+    f = R.registration_file("kestrel", "100% fair, room #3", relay_url, STABLE, True)
+    uri = R.data_uri(f)
+    assert "100%25 fair, room %233" in uri and "#" not in uri
+    assert R.decode_data_uri(uri) == f
+    from emporia.console.chain import parse_data_uri
+    assert json.loads(parse_data_uri(uri, 65536)[1]) == f                          # the console reads it the same
+    old = "data:application/json;base64," + base64.b64encode(json.dumps(f).encode()).decode()
+    assert R.decode_data_uri(old) == f and R.names_agent(old, STABLE)
 
 
 def test_a_registration_over_the_size_cap_is_refused():
@@ -358,7 +371,7 @@ def test_the_command_prints_the_call_in_plain_words_and_sends_nothing(target, fa
     assert card.register_8004(target.name, "base-sepolia") == 0
     out = capsys.readouterr().out
     for want in ("Emporia sends nothing and spends nothing", "chain id:   84532", REGISTRY, "0xf2c298be",
-                 "data:application/json;base64,", "mint agent #10729", "about 523,000", "write-as-proxy",
+                 "data:application/json;utf8,", "mint agent #10729", "about 523,000", "write-as-proxy",
                  "--browser", "--tx 0xHASH", '"stableId": "' + STABLE + '"'):
         assert want in out, want
     assert [c[0] for c in fake.calls] == ["simulate", "gas"], "only reads"
@@ -535,7 +548,7 @@ def test_browser_sends_then_continues_as_tx(target, fake, monkeypatch, capsys):
 
     def opener(url):
         def go():
-            m = re.match(r"http://127\.0\.0\.1:(\d+)(/.+)", url)
+            m = re.match(r"http://(?:127\.0\.0\.1|emporia\.localhost):(\d+)(/.+)", url)
             port, path = int(m.group(1)), m.group(2)
             c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
             c.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})

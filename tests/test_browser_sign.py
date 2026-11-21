@@ -65,7 +65,7 @@ SIG = "0x" + "ab" * 65
 def test_it_listens_on_loopback_only_at_a_random_port_with_the_token_in_the_path():
     a, b = page(), page()
     try:
-        assert a.url.startswith("http://127.0.0.1:") and a.url.endswith("/" + a.token)
+        assert a.url.startswith("http://emporia.localhost:") and a.url.endswith("/" + a.token)
         assert a._server.server_address[0] == "127.0.0.1"
         assert a.token != b.token and len(a.token) >= 30
     finally:
@@ -111,8 +111,8 @@ def test_the_page_carries_a_strict_csp_with_its_nonce_and_the_other_headers():
         html = body.decode()
         nonce = re.search(r"script-src 'nonce-([^']+)'", h["content-security-policy"]).group(1)
         assert h["content-security-policy"] == (
-            f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
-            "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+            f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; img-src data:; font-src data:; "
+            "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
         assert html.count(f'nonce="{nonce}"') == 2, "the one script and the one style"
         assert "<script>" not in html and "<style>" not in html and "onclick" not in html
         assert h["x-content-type-options"] == "nosniff" and h["referrer-policy"] == "no-referrer"
@@ -318,7 +318,7 @@ def _wallet(monkeypatch, key, sign_with=None):
 
     def opener(url):
         def go():
-            u = re.match(r"http://127\.0\.0\.1:(\d+)(/.+)", url)
+            u = re.match(r"http://(?:127\.0\.0\.1|emporia\.localhost):(\d+)(/.+)", url)
             port, path = int(u.group(1)), u.group(2)
             c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
             c.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})
@@ -361,7 +361,7 @@ def test_browser_flow_prints_the_url_opens_it_verifies_the_signature_and_records
     sent = _post_recorder(monkeypatch)
     assert card.link_8004(target.name, "base-sepolia", str(AGENT), yes=True, browser=True) == 0
     out = capsys.readouterr().out
-    assert re.search(r"http://127\.0\.0\.1:\d+/[\w-]{30,}", out) and "Ctrl-C" in out and "10 minutes" in out
+    assert re.search(r"http://emporia\.localhost:\d+/[\w-]{30,}", out) and "Ctrl-C" in out and "10 minutes" in out
     assert "Checked here at block 123: owner" in out and "On " in out
     assert seen["status"] == 200 and seen["signer"].lower() == addr.lower()
     body = sent["body"]

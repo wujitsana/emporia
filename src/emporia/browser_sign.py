@@ -6,9 +6,11 @@ The standard library only: `http.server`, one page, one POST. It listens on loop
 container's own private address so the host can tunnel to it. It never listens on a public interface (`resolve_listen`).
 
 * The address carries a one-time token (`/<token>`). Any other path, or a wrong token, is a plain 404; the Host
-  header must be `127.0.0.1:PORT` or `localhost:PORT` (`[::1]:PORT` for an IPv6 loopback listener): the address the
-  browser uses through a tunnel, never another name (so a rebinding page cannot reach it); a POST's Origin, when sent,
-  must be one of those origins.
+  header must be `emporia.localhost:PORT`, `127.0.0.1:PORT` or `localhost:PORT` (`[::1]:PORT` for an IPv6 loopback
+  listener): the address the browser uses through a tunnel, never another name (so a rebinding page cannot reach it); a
+  POST's Origin, when sent, must be one of those origins. The printed address is `emporia.localhost` so the wallet's
+  prompt names the site "emporia" (browsers keep every `*.localhost` name on the computer itself, RFC 6761);
+  `127.0.0.1` is the fallback for a browser that does not.
 * It accepts one well-formed signature, answers it, and stops. It also stops after `TIMEOUT` seconds, or on Ctrl-C.
   A malformed POST is refused and does not use the one.
 * Strict CSP: nothing loads from anywhere; the one script and one style are inline, by nonce; the page may only
@@ -24,6 +26,7 @@ The page never decides anything: the CLI verifies the returned signature exactly
 from __future__ import annotations
 
 import html
+import functools
 import ipaddress
 import json
 import os
@@ -40,6 +43,7 @@ TIMEOUT = 600.0                      # seconds the page stays up
 MAX_BODY = 16 * 1024
 MAX_SIG_BYTES = 4096
 HOST = "127.0.0.1"
+NAMED_HOST = "emporia.localhost"     # what the wallet shows as the site; the browser resolves it to this computer
 _ADDR = re.compile(r"0x[0-9a-fA-F]{40}")
 _HEX = re.compile(r"(0x)?[0-9a-fA-F]+")
 _TX = re.compile(r"0x[0-9a-fA-F]{64}")
@@ -157,7 +161,13 @@ def ssh_session(env: dict[str, str] | None = None) -> bool:
 
 
 def page_url(listen: str, port: int, token: str) -> str:
-    """What the browser opens: always the loopback address on this port (through a tunnel it is the local end)."""
+    """What the browser opens: a loopback name on this port (through a tunnel it is the local end). `emporia.localhost`,
+    so the wallet's prompt names the site; `[::1]` for an IPv6 loopback listener."""
+    return f"http://{'[::1]' if listen == '::1' else NAMED_HOST}:{port}/{token}"
+
+
+def fallback_url(listen: str, port: int, token: str) -> str:
+    """The same page at the numeric loopback address, for a browser that does not resolve `*.localhost`."""
     return f"http://{'[::1]' if listen == '::1' else HOST}:{port}/{token}"
 
 
@@ -167,6 +177,7 @@ def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname
     (only a local, non-container session does). The browser-side URL is always http://127.0.0.1:PORT/<token>, so a
     tunnel's local port must equal PORT."""
     url = page_url(listen, port, token)
+    alt = fallback_url(listen, port, token)
     target = "127.0.0.1" if listen in ("127.0.0.1", "::1") else listen
     tunnel = f"ssh -L {port}:{target}:{port} <you>@{hostname or '<this-host>'}"
     who = ("  (<this-host> is the server that runs this container, not the container; <you> is your login there;\n"
@@ -175,7 +186,7 @@ def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname
     ssh_text = (f"  Your browser is on another machine. On THAT machine, in a new terminal, run:\n\n"
                 f"    {tunnel}\n\n"
                 f"{who} The local port must be {port},\n"
-                f"  the same number: the page only answers at 127.0.0.1:{port}. Then open this in your browser:\n\n"
+                f"  the same number: the page only answers on this computer's port {port}. Then open this in your browser:\n\n"
                 f"    {url}\n")
     desktop_text = (f"\n  If Docker runs on the computer your browser is on (Docker Desktop on macOS/Windows, or Docker on your own\n"
                     f"  Linux machine), skip the tunnel: publish the port on that computer's loopback only and open the URL there.\n"
@@ -190,6 +201,9 @@ def instructions(port: int, listen: str, *, container: bool, ssh: bool, hostname
         text = ssh_text + desktop_text
     else:
         text = f"  Opening your browser at this address (it works on this machine only):\n\n    {url}\n"
+    if alt != url:
+        text += (f"\n  If your browser cannot open that name (some Safari versions), use the same page at\n    {alt}\n"
+                 f"  (your wallet then names the site 127.0.0.1).\n")
     check = f"  Check the wallet popup: network {chain_label}" if chain_label else "  Check the wallet popup"
     if registry:
         check += f", and the 'to' address {registry}"
@@ -222,16 +236,68 @@ def _json_for_html(value: Any) -> str:
 
 
 STYLE = """
-:root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--dim:#666;--line:#ccc;--bad:#b00020;--good:#0a6b2d}
-@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--dim:#aaa;--line:#444;--bad:#ff8a80;--good:#7ddc9a}}
-body{background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;margin:0 auto;padding:24px 16px;max-width:42rem}
-h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:.5rem 0}.dim{color:var(--dim)}
-pre{background:transparent;border:1px solid var(--line);padding:12px;overflow:auto;font-size:.8rem;white-space:pre-wrap;word-break:break-all}
-button,select{font:inherit;padding:.5rem 1rem;margin:.25rem 0}#status{min-height:1.5rem}.bad{color:var(--bad)}.good{color:var(--good)}
-table{border-collapse:collapse;margin:.75rem 0;width:100%}th,td{text-align:left;vertical-align:top;padding:.3rem .6rem .3rem 0;border-bottom:1px solid var(--line)}
-th{font-weight:600;white-space:nowrap}td{word-break:break-word}details{margin:.75rem 0}summary{cursor:pointer;color:var(--dim)}
-img{border:1px solid var(--line)}
+:root{color-scheme:dark light;--bg:#0d1210;--fg:#d6e4da;--dim:#8aa093;--acc:#6fe39a;--line:#26352c;--bad:#ff8a80;--good:#6fe39a}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8f6;--fg:#1b2a21;--dim:#55695c;--acc:#13733c;--line:#cdd9d0;--bad:#b00020;--good:#13733c}}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif;margin:2.5rem auto;max-width:40rem;padding:0 1rem}
+.mark{font:400 1.9rem "EmporiaPixel",ui-monospace,monospace;letter-spacing:.08em;margin:0 0 .2rem;display:flex;align-items:baseline}
+.mark svg{width:.62em;height:.62em;margin-left:.45em;fill:currentColor}
+.status,code{font-family:ui-monospace,monospace}.status{color:var(--acc);margin:0 0 1.4rem}
+h1{font-size:1.2rem;margin:0 0 .5rem}p{margin:.5rem 0}.dim{color:var(--dim)}
+.run{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1.2rem;margin:.9rem 0;padding:.7rem .9rem;
+border:1px solid var(--line);font:14px/1.5 ui-monospace,monospace}.run dt{color:var(--acc)}.run dd{margin:0;overflow-wrap:anywhere}
+.pic{display:flex;align-items:center;gap:.9rem;margin:.6rem 0}.pic img{border:1px solid var(--line);image-rendering:pixelated}
+pre{background:transparent;border:1px solid var(--line);padding:.7rem .9rem;overflow:auto;font-size:.8rem;white-space:pre-wrap;word-break:break-all}
+button{font:inherit;font-family:ui-monospace,monospace;padding:.55rem 1.1rem;margin:.4rem 0;background:var(--acc);color:var(--bg);
+border:0;cursor:pointer}button:disabled{opacity:.45;cursor:default}select{font:inherit;padding:.5rem;margin:.25rem 0}
+#status{min-height:1.5rem;font-family:ui-monospace,monospace}.bad{color:var(--bad)}.good{color:var(--good)}
+details{margin:1rem 0}summary{cursor:pointer;color:var(--dim)}footer{margin-top:2rem;color:var(--dim);font-size:.9rem}
 """
+
+_STAR = ('<svg viewBox="0 0 7 7" shape-rendering="crispEdges" aria-hidden="true">' + "".join(
+    f'<rect x="{x}" y="{y}" width="1" height="1"/>' for x, y in (
+        (3, 0), (1, 1), (3, 1), (5, 1), (2, 2), (3, 2), (4, 2), (0, 3), (1, 3), (2, 3), (3, 3), (4, 3), (5, 3), (6, 3),
+        (2, 4), (3, 4), (4, 4), (1, 5), (3, 5), (5, 5), (3, 6))) + "</svg>")
+
+
+def _head(nonce: str, title: str) -> str:
+    """The <head>: Emporia's star as the icon (a wallet shows it beside the site in its prompt), the pixel face inline."""
+    return (f'<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">'
+            f'<meta name="application-name" content="Emporia"><title>Emporia · {title}</title>'
+            f'<link rel="icon" type="image/svg+xml" href="{_icon_uri()}">'
+            f'<style nonce="{nonce}">{_font_css()}{STYLE}</style></head><body>\n'
+            f'<p class="mark">EMPORIA{_STAR}</p>\n')
+
+
+def _masthead(line: str) -> str:
+    return f'<p class="status">&gt; {line}</p>\n'
+
+
+_FOOT = ('<footer>This page runs on your own machine, only while the command waits, and closes after one answer. '
+         'Emporia never holds your keys or sends anything itself.</footer>\n')
+
+
+@functools.lru_cache(maxsize=1)
+def _font_css() -> str:
+    """The wordmark's pixel face (Silkscreen, SIL OFL 1.1), inlined as on the relay's front page; empty if missing."""
+    import base64
+    try:
+        data = (Path(__file__).parent / "static" / "Silkscreen-Regular.woff2").read_bytes()
+    except OSError:
+        return ""
+    return ('@font-face{font-family:"EmporiaPixel";font-display:swap;'
+            f'src:url(data:font/woff2;base64,{base64.b64encode(data).decode()}) format("woff2")}}\n')
+
+
+@functools.lru_cache(maxsize=1)
+def _icon_uri() -> str:
+    """Emporia's star icon (data/icons/favicon.svg) as a data: URI, so the page loads nothing."""
+    import base64
+    try:
+        data = (Path(__file__).parent / "data" / "icons" / "favicon.svg").read_bytes()
+    except OSError:
+        return "data:,"
+    return "data:image/svg+xml;base64," + base64.b64encode(data).decode()
 
 SCRIPT = r"""
 (() => {
@@ -341,11 +407,7 @@ def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str
     data = _json_for_html({"typed_data": typed_data, "chain_label": chain_label,
                            "add_chain": chain_params(int(typed_data["domain"]["chainId"]))})
     shown = html.escape(json.dumps({k: typed_data[k] for k in ("domain", "primaryType", "message")}, indent=2))
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>Sign the link</title>
-<style nonce="{nonce}">{STYLE}</style></head><body>
-<h1>Link ERC-8004 agent #{html.escape(str(msg['agentId']))} to {html.escape(agent_name)}</h1>
+    return _head(nonce, "Sign the link") + _masthead(f"sign in your wallet &middot; {html.escape(chain_label)}") + f"""<h1>Link ERC-8004 agent #{html.escape(str(msg['agentId']))} to {html.escape(agent_name)}</h1>
 <p><strong>&ldquo;{html.escape(str(msg['statement']))}&rdquo;</strong></p>
 <p>Your wallet shows these same words, with the date and the details below. Nothing goes on-chain and it costs no gas.</p>
 <p class="dim">Signer: <code>{html.escape(str(msg['signer']))}</code></p>
@@ -354,9 +416,10 @@ def page_html(typed_data: dict, *, chain_label: str, agent_name: str, nonce: str
 <p id="status" role="status"></p>
 <p id="nowallet" class="dim" hidden>No wallet was found in this browser. Open this page where your browser wallet is, or sign
 the message below with the signer's wallet some other way and give it to the terminal with <code>--signature</code>.</p>
-<p class="dim">What you are asked to sign (EIP-712 typed data, domain &ldquo;Emporia agent link&rdquo;):</p>
+<details><summary>Technical details: the typed data your wallet signs (EIP-712, domain &ldquo;Emporia agent link&rdquo;)</summary>
 <pre>{shown}</pre>
-<script type="application/json" id="page-data">{data}</script>
+</details>
+""" + _FOOT + f"""<script type="application/json" id="page-data">{data}</script>
 <script nonce="{nonce}">{SCRIPT}</script>
 </body></html>
 """
@@ -414,6 +477,7 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
                                     "to (the registry)": tx["to"], "value": "0", "data (raw, as your wallet shows it)":
                                     tx["data"]}, indent=2))
     call = describe_call(tx)
+    fn_name = "setAgentWallet" if call and call["kind"] == "set_wallet" else "register"
     name = html.escape(agent_name)
     if call and call["kind"] == "set_wallet":
         title, head, button = "Set the agent wallet", f"Set where {name}&rsquo;s ERC-8004 identity is paid", "Send it"
@@ -423,20 +487,16 @@ def tx_page_html(tx: dict, *, chain_label: str, agent_name: str, summary: str, n
     rows = list(call["rows"]) if call else []
     rows += [("Network", f"{chain_label}, chain id {tx['chain_id']}"), ("Sent to", f"{tx['to']} (the ERC-8004 identity registry)"),
              ("Cost", cost)]
-    table = "".join(f"<tr><th>{html.escape(k)}</th><td>{html.escape(v)}</td></tr>" for k, v in rows)
-    picture = (f'<p><img src="{html.escape(call["image"], quote=True)}" alt="{name}&rsquo;s picture, as registered" '
-               'width="96" height="96"></p>') if call and call.get("image") else ""
-    decoded = (f'<p class="dim">Decoded here from the exact bytes your wallet will send. Your wallet shows the same call as '
-               f'raw data{" (long: it carries the whole registration, picture included)" if call and call["kind"] == "register" else ""}; '
-               'compare it with the raw call below if you like.</p>') if call else \
-        '<p class="dim">This call could not be decoded here: check it against the raw call below.</p>'
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>{title}</title>
-<style nonce="{nonce}">{STYLE}</style></head><body>
-<h1>{head}</h1>
+    table = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in rows)
+    picture = (f'<div class="pic"><img src="{html.escape(call["image"], quote=True)}" alt="{name}&rsquo;s picture, as '
+               f'registered" width="96" height="96"><span class="dim">The picture that goes on chain with this '
+               'registration.</span></div>') if call and call.get("image") else ""
+    decoded = (f'<p class="dim">Read here from the exact bytes your wallet will send. Your wallet names the same call '
+               f'({html.escape(fn_name)}) on the registry, with its fee; the full data sits behind its Data or Hex tab.</p>'
+               ) if call else '<p class="dim">This call could not be read here: check it against the details below.</p>'
+    return _head(nonce, title) + _masthead(f"one transaction &middot; {html.escape(chain_label)}") + f"""<h1>{head}</h1>
 <p>{html.escape(summary)}</p>
-<table>{table}</table>
+<dl class="run">{table}</dl>
 {picture}
 {decoded}
 <p class="dim">Your wallet will ask you to confirm one transaction on {html.escape(chain_label)}. Check the network
@@ -446,21 +506,20 @@ This page only asks for this one transaction and closes.</p>
 <p id="status" role="status"></p>
 <p id="nowallet" class="dim" hidden>No wallet was found in this browser. Open this page where your browser wallet is, or send
 the call below from your wallet some other way and give the transaction hash to the terminal with <code>--tx</code>.</p>
-<details><summary>The raw call, as your wallet shows it</summary>
+<details><summary>Technical details: the call data (a wallet shows it under Data or Hex)</summary>
 <pre>{shown}</pre>
 </details>
-<script type="application/json" id="page-data">{data}</script>
+""" + _FOOT + f"""<script type="application/json" id="page-data">{data}</script>
 <script nonce="{nonce}">{SCRIPT}</script>
 </body></html>
 """
 
 
-def csp(nonce: str, data_images: bool = False) -> str:
-    """`data_images`: the send page shows the registration's own picture, an inline `data:image/` URI (never a remote
-    address); an image cannot run script, and nothing else is loosened."""
-    return (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
-            + ("img-src data:; " if data_images else "")
-            + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+def csp(nonce: str) -> str:
+    """Nothing loads from anywhere. `data:` images (the star icon, the registration's own picture) and the inline
+    pixel face are the only non-script inline resources; an image or a font cannot run script."""
+    return (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; img-src data:; font-src data:; "
+            "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
 CONN_TIMEOUT = 5.0                  # seconds a connection may sit silent before it is dropped
@@ -469,8 +528,6 @@ CONN_TIMEOUT = 5.0                  # seconds a connection may sit silent before
 class SigningPage:
     """One page, one signature. `start()` binds; `wait()` serves until a signature arrives or the time is up.
     `SendPage` is the same page for sending one transaction: it overrides `render` and `accept` only."""
-
-    data_images = False
 
     def __init__(self, typed_data: dict, *, chain_label: str, agent_name: str, token: str | None = None,
                  timeout: float = TIMEOUT, port: int = 0, listen: str = HOST):
@@ -509,7 +566,7 @@ class SigningPage:
 
     def own_hosts(self) -> set[str]:
         """The Host values the browser sends (through a tunnel or a published port): loopback names only."""
-        names = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
+        names = {f"{NAMED_HOST}:{self.port}", f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
         if self.listen == "::1":
             names.add(f"[::1]:{self.port}")
         return names
@@ -531,7 +588,7 @@ class SigningPage:
                 self.send_response(code)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
-                self.send_header("Content-Security-Policy", csp(nonce, page.data_images) if nonce else "default-src 'none'")
+                self.send_header("Content-Security-Policy", csp(nonce) if nonce else "default-src 'none'")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("Cache-Control", "no-store")
@@ -625,8 +682,6 @@ class SigningPage:
 class SendPage(SigningPage):
     """One page, one transaction the person's wallet sends. The page returns only the transaction hash (and the account
     that sent it); the CLI then reads the chain itself, trusting nothing the page says. `tx` is `{chain_id, to, data}`."""
-
-    data_images = True          # the registration's own picture, decoded from the call
 
     def __init__(self, tx: dict, *, chain_label: str, agent_name: str, summary: str, token: str | None = None,
                  timeout: float = TIMEOUT, port: int = 0, listen: str = HOST):
