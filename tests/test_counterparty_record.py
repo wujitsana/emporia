@@ -143,6 +143,7 @@ def test_another_relays_record_is_read_with_no_token_and_never_inside_the_networ
     from emporia import fetch, mcp_server
     monkeypatch.setattr(mcp_server, "RELAY_URL", "http://home.test")
     monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: pytest.fail("no token request for an address"))
+    monkeypatch.setattr(fetch, "_PASSTHROUGH", False)              # the suite's pass-through skips the public check
     monkeypatch.setattr(fetch, "get", lambda *a, **k: pytest.fail("no GET into a private network"))
     out = mcp_server._counterparty_record("x@10.0.0.5:8080")
     assert out["success"] is False
