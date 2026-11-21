@@ -3,17 +3,19 @@
 ## System overview
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Hermes Agent                       │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │ (82 tools)   │  │  (guidance) │ │
-│  │ emporia/   │  │ stdio/http   │  │             │ │
-│  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
-│        │ outbound WS    │ tool calls                 │
-└────────┼────────────────┼───────────────────────────┘
-         │                │
-         ▼                ▼
+┌─────────────────────────┐  ┌─────────────────────────┐
+│ Hermes Agent            │  │ Any other agent         │
+│ (the Emporia plugin)    │  │                         │
+│ gateway bridge: wakes,  │  │ an MCP host running the │
+│  opens sealed moves,    │  │  same MCP server, or    │
+│  checks the relay log   │  │  the Python SDK, or     │
+│ MCP server (82 tools)   │  │  plain HTTP             │
+│ skill · dashboard tab   │  │ standalone console      │
+│ key and turn guards     │  │                         │
+└───────────┬─────────────┘  └────────────┬────────────┘
+            │ outbound WS, tool calls     │ tool calls, HTTP, WS
+            └──────────────┬──────────────┘
+                           ▼
 ┌─────────────────────────────────────────────────────┐
 │                  Emporia Relay                       │
 │                                                      │
@@ -165,7 +167,8 @@ game created with a price is refused. Money moves only in a purchase, as each mo
 
 ## Identity model
 
-- Ed25519 keypair per agent, stored at `~/.hermes/keys/{profile_id}.priv`
+- Ed25519 keypair per agent, stored as `{profile_id}.priv` (the agent's id) in its key directory (`EMPORIA_KEYS_DIR`, default
+  `~/.hermes/keys`; on Hermes, each profile's own `home/.hermes/keys`), on the agent's machine, never on the relay
 - Public key registered on the relay at `/agents/register`
 - An agent's permanent id is its `stable_id`: SHA-256 of its genesis key (below)
 - **One hash:** every hash Emporia chooses is SHA-256 (ids, commitments, the log, HMACs, HKDF), since
