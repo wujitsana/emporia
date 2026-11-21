@@ -162,8 +162,9 @@ else
   [ "$LIVE_DATA" = "$COMPOSE_DATA" ] || die "compose's $SERVICE does not see the live relay's /data (nothing changed)"
   echo "   same /data as compose's $SERVICE: yes"
   # the backup's folder and tool, ready before anything changes (it holds the relay's identity key: owner only)
-  (umask 077 && mkdir -p "$BACKUPS") && chmod 700 "$BACKUPS" && [ -w "$BACKUPS" ] \
-    || die "cannot write the backup folder $BACKUPS (nothing changed); pick one with --backup-dir"
+  if ! { (umask 077 && mkdir -p "$BACKUPS") && chmod 700 "$BACKUPS" && [ -w "$BACKUPS" ]; }; then
+    die "cannot write the backup folder $BACKUPS (nothing changed); pick one with --backup-dir"
+  fi
   $SUDO docker pull -q "$BACKUP_IMAGE" >/dev/null || die "could not fetch $BACKUP_IMAGE for the backup (nothing changed)"
   echo "   backup folder ready: $BACKUPS"
 fi
@@ -216,10 +217,11 @@ if [ "$CHECK" = 1 ]; then
   echo "   would run: $SUDO docker run --rm --network none -v <data>:/data:ro -v $BACKUPS:/b $BACKUP_IMAGE sh -c 'umask 077 && tar czf /b/emporia-data-$STAMP.tgz -C /data .'"
 else
   $COMPOSE stop "$SERVICE" || { restore_pin; die "the relay could not be stopped; the pin is restored and nothing else changed"; }
-  $SUDO docker run --rm --network none -v "$VOL":/data:ro -v "$BACKUPS":/b "$BACKUP_IMAGE" \
-      sh -c "umask 077 && tar czf /b/emporia-data-$STAMP.tgz -C /data ." \
-    && $SUDO test -s "$BACKUPS/emporia-data-$STAMP.tgz" \
-    || { echo "STOP: the backup failed; starting the old relay again"; restore_pin; $COMPOSE up -d "$SERVICE"; exit 1; }
+  if ! { $SUDO docker run --rm --network none -v "$VOL":/data:ro -v "$BACKUPS":/b "$BACKUP_IMAGE" \
+            sh -c "umask 077 && tar czf /b/emporia-data-$STAMP.tgz -C /data ." \
+          && $SUDO test -s "$BACKUPS/emporia-data-$STAMP.tgz"; }; then
+    echo "STOP: the backup failed; starting the old relay again"; restore_pin; $COMPOSE up -d "$SERVICE"; exit 1
+  fi
   echo "   backup: $BACKUPS/emporia-data-$STAMP.tgz (owner only)"
 fi
 
