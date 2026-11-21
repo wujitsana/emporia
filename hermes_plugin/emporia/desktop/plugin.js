@@ -12993,9 +12993,9 @@ function relayStatus(l) {
 	}
 }
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
-function localStatus(v) {
+function localStatus(v, bare = false) {
 	if (v.status === "checked") {
-		const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
+		const two = bare ? "" : (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
 		return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}` : `checked by you at block ${v.block_number}${two}`;
 	}
 	if (v.status === "not-proven") return `your read does not show it${v.reason ? `: ${v.reason}` : ""}`;
@@ -13054,6 +13054,24 @@ function ChainBadge({ link }) {
 				"aria-label": "this identity on the chain's explorer",
 				children: "↗"
 			})] }) : null
+		]
+	});
+}
+/** A compact mark for lists: `8004 #N` for the agent's first live link, the full badge line on hover. */
+function ChainMark({ agent }) {
+	const live = chainLinks(agent).filter((l) => l.status !== "superseded");
+	if (!live.length) return null;
+	const l = live[0];
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-quiet-chip",
+		style: { marginLeft: 6 },
+		"data-testid": "chain-mark",
+		"data-link-status": l.status,
+		title: `${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)`,
+		children: [
+			"8004 #",
+			l.agent_id,
+			l.status === "stale" ? " · stale" : ""
 		]
 	});
 }
@@ -13134,11 +13152,14 @@ function Registration({ view }) {
 		]
 	});
 }
-function ChainLinkRow({ link, stable, payTo }) {
+var shortAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a) ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+/** One live ERC-8004 identity as a card: what is proven, this machine's own read, owner, where it is paid, the
+*  picture, the registration's words (secondary, someone else's text) and the explorer link. Read-only. */
+function IdentityCard({ link, stable, payTo }) {
 	const [view, setView] = useState(null);
 	useEffect(() => {
 		let live = true;
-		if (VIEWER_ID && link.status !== "superseded") fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
+		if (VIEWER_ID) fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => {
 			refreshChainPictures();
 			if (live) setView(v);
 		});
@@ -13150,7 +13171,25 @@ function ChainLinkRow({ link, stable, payTo }) {
 		stable,
 		payTo
 	]);
-	return /* @__PURE__ */ jsxs("div", {
+	const url = tokenUrl(link) || explorerUrl(link);
+	const checked = view?.status === "checked";
+	const state = link.status === "stale" ? "Stale: no longer proven" : !view ? "Linked" : checked ? view.two_way ? "Linked and checked here, two-way" : "Linked and checked here" : "Linked, not checked here";
+	const facts = [];
+	if (view?.owner) facts.push(/* @__PURE__ */ jsxs("span", {
+		"data-testid": "chain-owner",
+		title: view.owner,
+		children: ["owner ", shortAddr(view.owner)]
+	}));
+	if (view?.agent_wallet) facts.push(/* @__PURE__ */ jsxs("span", {
+		"data-testid": "chain-paid-to",
+		title: view.agent_wallet,
+		children: [
+			"paid at ",
+			shortAddr(view.agent_wallet),
+			view.paid_at_own_wallet === true ? " (this agent's own wallet)" : view.paid_at_own_wallet === false ? " (not this agent's own wallet)" : ""
+		]
+	}));
+	const extra = /* @__PURE__ */ jsxs("span", {
 		className: "e-chain-link",
 		"data-testid": "chain-link-row",
 		style: {
@@ -13158,7 +13197,6 @@ function ChainLinkRow({ link, stable, payTo }) {
 			gap: 4
 		},
 		children: [
-			/* @__PURE__ */ jsx(ChainBadge, { link }),
 			/* @__PURE__ */ jsxs(Text, {
 				className: "e-faint",
 				style: { fontSize: "0.68rem" },
@@ -13167,49 +13205,87 @@ function ChainLinkRow({ link, stable, payTo }) {
 					children: relayStatus(link)
 				}), view ? /* @__PURE__ */ jsxs(Fragment, { children: [" · ", /* @__PURE__ */ jsx("span", {
 					"data-testid": "chain-local-status",
-					children: localStatus(view)
+					children: localStatus(view, true)
 				})] }) : null]
 			}),
-			view ? /* @__PURE__ */ jsx(Registration, { view }) : null,
+			facts.length ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: "0.68rem" },
+				children: facts.map((f, i) => /* @__PURE__ */ jsxs("span", { children: [i ? " · " : "", f] }, i))
+			}) : null,
 			view?.image.available ? /* @__PURE__ */ jsx(ChainImage, {
 				link,
 				stable
 			}) : null,
-			view && !view.image.available && view.status === "checked" && view.image.note ? /* @__PURE__ */ jsx(Text, {
+			view && !view.image.available && checked && view.image.note ? /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
 				style: { fontSize: "0.66rem" },
 				children: view.image.note
+			}) : null,
+			view ? /* @__PURE__ */ jsx(Registration, { view }) : null,
+			url ? /* @__PURE__ */ jsx("a", {
+				className: "e-hcard__caption",
+				href: url,
+				target: "_blank",
+				rel: "noopener noreferrer",
+				"data-testid": "identity-explorer",
+				children: "this identity on the explorer ↗"
 			}) : null
 		]
 	});
+	return /* @__PURE__ */ jsx("span", {
+		"data-testid": "identity-card",
+		"data-link-status": link.status,
+		style: { display: "contents" },
+		children: /* @__PURE__ */ jsx(Card, { c: {
+			key: `${link.agent_registry}/${link.agent_id}`,
+			meta: chainLabel(link),
+			chip: "ERC-8004",
+			head: `#${link.agent_id}`,
+			detail: `${state} · ${tierWording(link)}${link.testnet ? " (testnet)" : ""}`,
+			caption: "",
+			extra
+		} })
+	});
 }
-/** The profile's ERC-8004 section: each link, the relay's status beside this machine's own read, the registration
-*  text (secondary) and the on-chain image. For the viewer's own agent with none, the command that starts one. */
+/** The profile's Identity section: a card per live ERC-8004 link; for the viewer's own agent with none, one card
+*  with the two commands (register, link). Another agent's profile with no link shows nothing. */
 function ChainLinkPanel({ agent }) {
-	const links = chainLinks(agent);
+	const links = chainLinks(agent).filter((l) => l.status !== "superseded");
 	const own = VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
 	if (!links.length && !own) return null;
-	return /* @__PURE__ */ jsx("div", {
+	return /* @__PURE__ */ jsxs("div", {
 		className: "e-xlink",
 		"data-testid": "chain-link-panel",
-		children: links.length ? /* @__PURE__ */ jsx(MetaGrid, { rows: links.map((l) => ["ERC-8004", /* @__PURE__ */ jsx(ChainLinkRow, {
-			link: l,
-			stable: agent.stable_id,
-			payTo: agent.x402_pay_to?.evm
-		}, `${l.agent_registry}/${l.agent_id}`)]) }) : /* @__PURE__ */ jsxs("div", {
-			style: {
-				marginTop: 10,
-				marginBottom: 14
-			},
-			children: [/* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				style: { fontSize: "0.68rem" },
-				children: "No ERC-8004 identity linked. To link one you already have (nothing goes on-chain, no money moves), run in a terminal:"
-			}), /* @__PURE__ */ jsx("div", {
-				className: "e-op-cmds",
-				children: /* @__PURE__ */ jsx(CopyCommand, { command: `emporia agent link-8004 ${agent.agent_id} --chain base --agent-id N` })
-			})]
-		})
+		children: [/* @__PURE__ */ jsx(SectionHead, { title: "Identity" }), /* @__PURE__ */ jsx("div", {
+			className: "e-cardrow",
+			role: "list",
+			"aria-label": "ERC-8004 identity",
+			children: links.length ? links.map((l) => /* @__PURE__ */ jsx(IdentityCard, {
+				link: l,
+				stable: agent.stable_id,
+				payTo: agent.x402_pay_to?.evm
+			}, `${l.agent_registry}/${l.agent_id}`)) : /* @__PURE__ */ jsx("span", {
+				"data-testid": "identity-card",
+				style: { display: "contents" },
+				children: /* @__PURE__ */ jsx(Card, { c: {
+					key: "none",
+					meta: "",
+					chip: "ERC-8004",
+					head: "No identity yet",
+					detail: "An optional on-chain identity for this agent (testnet registration); nothing needs it.",
+					caption: "",
+					extra: /* @__PURE__ */ jsxs("span", {
+						className: "e-op-cmds",
+						style: {
+							display: "grid",
+							gap: 6
+						},
+						children: [/* @__PURE__ */ jsx(CopyCommand, { command: `emporia agent register-8004 ${agent.agent_id} --chain base-sepolia --browser` }), /* @__PURE__ */ jsx(CopyCommand, { command: `emporia agent link-8004 ${agent.agent_id} --chain base --agent-id N` })]
+					})
+				} })
+			})
+		})]
 	});
 }
 // src/useProvenLinkCheck.ts
@@ -18949,6 +19025,7 @@ function DirectoryEntry({ a, level: boardLevel, onOpen }) {
 				style: { marginLeft: 6 },
 				children: "you"
 			}) : null,
+			/* @__PURE__ */ jsx(ChainMark, { agent: a }),
 			visit ? /* @__PURE__ */ jsx("span", {
 				className: "e-quiet-chip",
 				style: { marginLeft: 6 },
