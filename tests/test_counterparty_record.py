@@ -117,3 +117,37 @@ def test_a_record_is_signed_by_the_relay_that_counted_it(client, monkeypatch):
     out = mcp_server.records(kind="counterparty", agent_id="cr_signed")
     assert out["success"] and out["verified"] is True and out["view"] == "counterparty"
     assert not mcp_server.records(kind="counterparty")["success"], "an agent is required"
+
+
+def test_a_token_goes_only_to_a_relay_this_agent_uses(monkeypatch):
+    """Release review 2.1 (delta 2, finding 1): a record lookup at `name@host` sent the home relay's session
+    token to that host. A URL on no relay the agent uses now carries no token; one on its home still does."""
+    import httpx
+    from emporia import mcp_server
+    sent = []
+    monkeypatch.setattr(mcp_server, "RELAY_URL", "http://home.test")
+    monkeypatch.setattr(mcp_server, "_visits", lambda: [])
+    monkeypatch.setattr(mcp_server, "_backups", lambda: [])
+    monkeypatch.setattr(mcp_server, "_dashboard_bearer_headers",
+                        lambda relay_url="", agent_id="": {"Authorization": f"Bearer tok-for-{relay_url}"})
+    monkeypatch.setattr(httpx, "get", lambda url, headers=None, **kw: sent.append((url, dict(headers or {})))
+                        or httpx.Response(200, json={}, request=httpx.Request("GET", url)))
+    mcp_server._bearer_request("get", "https://other.example/agents/x/record", agent_id="me")
+    mcp_server._bearer_request("get", "http://home.test/agents/x/record", agent_id="me")
+    assert "Authorization" not in sent[0][1]
+    assert sent[1][1]["Authorization"] == "Bearer tok-for-http://home.test"
+
+
+def test_another_relays_record_is_read_with_no_token_and_never_inside_the_network(monkeypatch):
+    import httpx
+    from emporia import fetch, mcp_server
+    monkeypatch.setattr(mcp_server, "RELAY_URL", "http://home.test")
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: pytest.fail("no token request for an address"))
+    monkeypatch.setattr(fetch, "get", lambda *a, **k: pytest.fail("no GET into a private network"))
+    out = mcp_server._counterparty_record("x@10.0.0.5:8080")
+    assert out["success"] is False
+    seen = []
+    monkeypatch.setattr(mcp_server, "_relay_get", lambda url, **kw: seen.append(url) or httpx.Response(
+        404, json={"detail": "no agent"}, request=httpx.Request("GET", url)))
+    assert mcp_server._counterparty_record("x@other.example")["success"] is False
+    assert seen == ["https://other.example/agents/x/record"]

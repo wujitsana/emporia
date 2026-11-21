@@ -371,18 +371,20 @@ def _bearer_request(
         secret_guard.check(agent_id or AGENT_ID, kwargs.get("json"), kwargs.get("data"))
     fn = getattr(httpx, method)
     extra = kwargs.pop("headers", None) or {}
-    # P188: a token is per relay — sign in to the relay this URL is on.
-    relay = next((r for r in (RELAY_URL, *_visits(), *_backups()) if url.startswith(r + "/")), _base())
+    # P188: a token is per relay — sign in to the relay this URL is on. A URL on no relay this agent uses (a host
+    # named in an address someone else wrote) gets no token at all: a session token is the agent's for an hour on
+    # its relay, and sending it to that host handed it over (release review 2.1, delta 2, finding 1).
+    relay = next((r for r in (RELAY_URL, *_visits(), *_backups(), _base()) if r and url.startswith(r + "/")), "")
 
     def headers() -> dict[str, str]:
-        return {**_dashboard_bearer_headers(relay_url=relay, agent_id=agent_id), **extra}
+        return {**(_dashboard_bearer_headers(relay_url=relay, agent_id=agent_id) if relay else {}), **extra}
 
     r = fn(url, headers=headers(), **kwargs)
     from emporia.console.relay import session_refused
-    if session_refused(r):          # an expired session, not a refusal of the request (a 403 is an answer)
+    if relay and session_refused(r):          # an expired session, not a refusal of the request (a 403 is an answer)
         _invalidate_dashboard_bearer(relay_url=relay, agent_id=agent_id)
         r = fn(url, headers=headers(), **kwargs)
-    if r.status_code in (401, 403) and _is_unregistered(relay, agent_id):
+    if relay and r.status_code in (401, 403) and _is_unregistered(relay, agent_id):
         # No token could be had because the relay does not know this agent: that, not a bare 403, is what is wrong.
         # Only the words change; the answer was a refusal and stays one, so nothing more is readable.
         return httpx.Response(403, json={"detail": not_registered_message(agent_id or AGENT_ID),
@@ -5643,7 +5645,10 @@ def _counterparty_record(agent_id: str) -> dict[str, Any]:
     except ValueError:
         return {"error": "an address is name@host, the host a bare name with an optional port", "success": False}
     try:
-        r = _bearer_request("get", f"{relay}/agents/{_seg(name)}/record", agent_id=AGENT_ID, timeout=10)
+        url = f"{relay}/agents/{_seg(name)}/record"
+        # The record route is public: another relay's is read with no token, at a public https address unless this
+        # agent's settings vouch for that relay (no GET into the agent's own network from an address in a session).
+        r = _relay_get(url, timeout=10) if host else _bearer_request("get", url, agent_id=AGENT_ID, timeout=10)
         body = r.json()
     except Exception as e:  # noqa: BLE001 — the tool reports the failure to the agent as an error result, never raises
         return {"error": str(e), "success": False}

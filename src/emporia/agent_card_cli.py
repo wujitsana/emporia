@@ -300,6 +300,22 @@ def _refuse_with_desktop_control(cmd: str, what: str, t: _Target) -> bool:
     return False
 
 
+
+# (name, agent id) pairs this process recorded a link for: `register-8004 --link` says "linked" only for one of these,
+# since link-8004 also returns 0 when the person declined and nothing was recorded (release review 2.1, delta 2).
+_RECORDED: set[tuple[str, str]] = set()
+
+
+def _say_recorded(name: str, agent_id: str, rec: dict[str, Any]) -> int:
+    link = rec.get("link") or {}
+    checked = rec.get("checked_here") or {}
+    _RECORDED.add((name, str(agent_id)))
+    print(f"  Checked here at block {checked.get('block_number')}: {checked.get('tier')}. "
+          f"On {name}'s card as {link.get('status', 'claimed')}"
+          + (" (testnet)." if rec.get("testnet") else "."))
+    return 0
+
+
 def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature: str = "",
               issued_at: int = 0, yes: bool = False, browser: bool = False, wait: bool = False,
               from_agent_wallet: bool = False, port: int = 0, listen: str = "auto") -> int:
@@ -382,12 +398,7 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
     if not out.get("success"):
         print(f"agent link-8004: {out.get('error')}")
         return 1
-    link = out.get("link") or {}
-    got = out.get("checked_here") or {}
-    print(f"  Checked here at block {got.get('block_number')}: {got.get('tier')}. "
-          f"On {name}'s card as {link.get('status', 'claimed')}"
-          + (" (testnet)." if out.get("testnet") else "."))
-    return 0
+    return _say_recorded(name, agent_id, out)
 
 
 def _browser_listen(cmd: str, port: int, listen: str) -> str | None:
@@ -472,12 +483,7 @@ def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: s
     if not rec.get("success"):
         print(f"agent link-8004: {rec.get('error')}")
         return 1
-    link = rec.get("link") or {}
-    checked = rec.get("checked_here") or {}
-    print(f"  Checked here at block {checked.get('block_number')}: {checked.get('tier')}. "
-          f"On {name}'s card as {link.get('status', 'claimed')}"
-          + (" (testnet)." if rec.get("testnet") else "."))
-    return 0
+    return _say_recorded(name, agent_id, rec)
 
 
 def chain_note(chain: str) -> str:
@@ -873,14 +879,16 @@ def _register_after(t: _Target, name: str, chain: str, tx: str, yes: bool, *, wa
         rc = _link_own_wallet(t, name, chain, out["agent_id"], yes, wait)
     else:
         rc = link_8004(name, chain, out["agent_id"], "", "", 0, yes, browser, wait, False, port, listen)
+    linked = rc == 0 and (name, str(out["agent_id"])) in _RECORDED
     paid = ""
-    if rc == 0 and not own and _cli()._persons_terminal() and _cli().prompt(
+    # Only a browser run can send the second transaction from here; on the --tx path the summary names the command.
+    if linked and browser and not own and _cli()._persons_terminal() and _cli().prompt(
             f"Also set {name}'s own wallet as where #{out['agent_id']} is paid (one more transaction from your wallet)? "
             "[Y/n]", "y").lower() in ("y", "yes", ""):
         if set_8004_wallet(name, chain, out["agent_id"], yes=yes, browser=browser, wait=True, port=port,
                            listen=listen) == 0:
             paid = "set"
-    _summary(name, out, rc == 0, paid, own)
+    _summary(name, out, linked, paid, own)
     return rc
 
 
@@ -938,12 +946,7 @@ def _link_own_wallet(t: _Target, name: str, chain: str, agent_id: str, yes: bool
     if not rec.get("success"):
         print(f"agent link-8004: {rec.get('error')}")
         return 1
-    link = rec.get("link") or {}
-    checked = rec.get("checked_here") or {}
-    print(f"  Checked here at block {checked.get('block_number')}: {checked.get('tier')}. "
-          f"On {name}'s card as {link.get('status', 'claimed')}"
-          + (" (testnet)." if rec.get("testnet") else "."))
-    return 0
+    return _say_recorded(name, agent_id, rec)
 
 
 def set_8004_wallet(name: str, chain: str, agent_id: str, tx: str = "", yes: bool = False, browser: bool = False,

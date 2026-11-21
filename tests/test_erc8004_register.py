@@ -621,7 +621,8 @@ def test_while_it_waits_the_number_is_said_at_once_with_minutes_to_go(target, fa
 def test_a_person_who_sent_from_the_page_is_offered_the_wallet_step_next(target, fake, monkeypatch, capsys):
     minted(fake)
     fake.block_number = int(REAL["receipt"]["blockNumber"], 16) + 5
-    monkeypatch.setattr(card, "link_8004", lambda *a, **k: 0)
+    monkeypatch.setattr(card, "_RECORDED", set())
+    monkeypatch.setattr(card, "link_8004", lambda name, chain, aid, *a, **k: card._RECORDED.add((name, aid)) or 0)
     cli = card._cli()
     monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
     monkeypatch.setattr(cli, "prompt", lambda q, d="": "y")
@@ -631,6 +632,25 @@ def test_a_person_who_sent_from_the_page_is_offered_the_wallet_step_next(target,
     (a, k), = asked
     assert a[2] == "10727" and k["browser"] is True and k["wait"] is True
     assert "paid at:" in capsys.readouterr().out
+
+
+def test_a_declined_link_is_not_called_linked_and_no_wallet_step_is_offered(target, fake, monkeypatch, capsys):
+    """Release review 2.1 (delta 2, finding 2): link-8004 returns 0 when the person says no; the summary must not
+    claim the link, and the wallet step is offered only after a link and only where it can be sent (a browser run)."""
+    minted(fake)
+    fake.block_number = int(REAL["receipt"]["blockNumber"], 16) + 5
+    monkeypatch.setattr(card, "_RECORDED", set())
+    monkeypatch.setattr(card, "link_8004", lambda *a, **k: 0)                 # declined: nothing recorded
+    cli = card._cli()
+    monkeypatch.setattr(cli, "_persons_terminal", lambda: True)
+    monkeypatch.setattr(cli, "prompt", lambda q, d="": "y")
+    monkeypatch.setattr(card, "set_8004_wallet", lambda *a, **k: pytest.fail("no wallet step without a link"))
+    assert card._register_after(card._Target(target.name), target.name, "base-sepolia", TX, False, browser=True) == 0
+    assert "not linked to the card yet" in capsys.readouterr().out
+    monkeypatch.setattr(card, "link_8004", lambda name, chain, aid, *a, **k: card._RECORDED.add((name, aid)) or 0)
+    monkeypatch.setattr(card, "set_8004_wallet", lambda *a, **k: pytest.fail("the --tx path cannot send it"))
+    assert card._register_after(card._Target(target.name), target.name, "base-sepolia", TX, False) == 0
+    assert "not linked" not in capsys.readouterr().out
 
 
 def test_the_not_final_yet_message_says_what_wait_does(target, fake, monkeypatch):
