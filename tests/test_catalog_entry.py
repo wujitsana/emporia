@@ -61,6 +61,10 @@ def test_the_pr_explains_rule_3_and_claims_no_private_import():
 
 def test_the_entry_and_pr_say_testnet_and_keep_to_the_repos_wording():
     pr = (REPO / "docs" / "catalog" / "PR.md").read_text()
-    for text in (ENTRY["description"], pr):
+    # The catalog maintainer's "Disclosure —" paragraph states the facts, the mainnet opt-in included; our own words
+    # are the opener before it.
+    opener = ENTRY["description"].split("Disclosure —", 1)[0]
+    assert "Disclosure —" in ENTRY["description"] and "emporia wallet mainnet" in ENTRY["description"]
+    for text in (opener, pr):
         assert "testnet" in text.lower()
         assert "mainnet" not in text.lower() and "real money" not in text.lower()
