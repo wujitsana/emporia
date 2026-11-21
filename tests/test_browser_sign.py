@@ -253,8 +253,7 @@ SIGNER = "0x" + "11" * 20
 def test_on_the_wrong_chain_the_page_asks_the_wallet_to_switch_then_signs_and_posts(tmp_path):
     shown = SIGNER.upper().replace("0X", "0x")
     log, td = run_page(tmp_path, {"chain": 1, "accounts": [shown], "switch": "ok", "sign": "ok"})
-    assert log["calls"][0] == "eth_chainId", "the page reads the network first, asking nothing"
-    assert log["calls"][1:] == ["eth_requestAccounts", "eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_signTypedData_v4"]
+    assert log["calls"] == ["eth_requestAccounts", "eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_signTypedData_v4"]
     assert log["switched_to"] == 84532
     assert log["signed"]["account"] == shown, "the account exactly as the wallet named it"
     assert log["signed"]["typed"] == td
@@ -459,13 +458,6 @@ def test_a_connection_that_stops_mid_request_is_dropped_after_the_socket_timeout
     finally:
         s.close()
         t.join(6)
-
-
-@needs_node
-def test_before_any_press_the_page_says_the_wallet_is_on_another_network(tmp_path):
-    log, _ = run_page(tmp_path, {"chain": 1, "accounts": [SIGNER], "switch": "ok", "sign": "ok"}, clicks=0)
-    assert "on another network (chain id 1)" in log["statusBeforeClick"] and "chain id 84532" in log["statusBeforeClick"]
-    assert log["calls"] == ["eth_chainId"] and log["posts"] == []
 
 
 @needs_node

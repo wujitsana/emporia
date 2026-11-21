@@ -319,25 +319,9 @@ SCRIPT = r"""
     pick.hidden = found.length < 2;
     $("sign").disabled = found.length === 0;
     $("nowallet").hidden = found.length > 0;
-    if (found.length) checkChain(found[Number(pick.value || 0)].provider);
   }
   const addHint = () => doc.add_chain ? " (if your wallet does not have it, add it: chain id " + wantChain + ", RPC " +
     doc.add_chain.rpcUrls[0] + ")" : "";
-  // Before anything is asked: which network the wallet is on (no permission needed to read it), so a person on another
-  // network knows before pressing, also with a wallet that will not switch for a page it has not connected.
-  let chainSaid = false;
-  async function checkChain(p) {
-    if (chainSaid) return;
-    chainSaid = true;          // once: the page renders on each wallet found and again on load
-    try {
-      const now = parseInt(await p.request({ method: "eth_chainId" }), 16);
-      if (now !== wantChain) {
-        say("Your wallet is on another network (chain id " + now + "); this needs " + doc.chain_label + " (chain id " +
-            wantChain + "). Pressing the button asks your wallet to switch. If it does not ask, switch it to " +
-            doc.chain_label + " yourself" + addHint() + ", then press.");
-      }
-    } catch (e) { /* the wallet would not say: the button still asks */ }
-  }
   window.addEventListener("eip6963:announceProvider", (e) => { if (e.detail) add(e.detail.info, e.detail.provider); });
   window.dispatchEvent(new Event("eip6963:requestProvider"));
   window.addEventListener("load", () => { setTimeout(() => { if (!found.length && window.ethereum) add(null, window.ethereum); render(); }, 300); });
