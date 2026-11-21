@@ -98,9 +98,10 @@ export interface ChainView {
 }
 
 /** "checked by you at block N", from this machine's own read; never the relay's word. */
-export function localStatus(v: ChainView): string {
+export function localStatus(v: ChainView, bare = false): string {
   if (v.status === "checked") {
-    const two = (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
+    // `bare`: the identity card says two-way and where it is paid on its own lines
+    const two = bare ? "" : (v.two_way ? " · two-way" : "") + (v.paid_at_own_wallet ? " · paid at its own wallet" : "");
     return v.signature_checked === false ? `chain control checked by you at block ${v.block_number} (signature not available)${two}`
       : `checked by you at block ${v.block_number}${two}`;
   }

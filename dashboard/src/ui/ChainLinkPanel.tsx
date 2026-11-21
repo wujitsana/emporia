@@ -24,6 +24,19 @@ export function ChainBadge({ link }: { link: ChainLink }) {
   );
 }
 
+/** A compact mark for lists: `8004 #N` for the agent's first live link, the full badge line on hover. */
+export function ChainMark({ agent }: { agent: Pick<AgentProfile, "links"> }) {
+  const live = chainLinks(agent).filter((l) => l.status !== "superseded");
+  if (!live.length) return null;
+  const l = live[0];
+  return (
+    <span className="e-quiet-chip" style={{ marginLeft: 6 }} data-testid="chain-mark" data-link-status={l.status}
+      title={`${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)`}>
+      8004 #{l.agent_id}{l.status === "stale" ? " · stale" : ""}
+    </span>
+  );
+}
+
 /** The badges of an agent's live links (a superseded one has none). Lists and the hero show these and nothing more. */
 export function ChainBadges({ agent }: { agent: Pick<AgentProfile, "links"> }) {
   return <>{chainLinks(agent).filter((l) => l.status !== "superseded").map((l) => <ChainBadge key={`${l.agent_registry}/${l.agent_id}`} link={l} />)}</>;
@@ -89,7 +102,7 @@ function IdentityCard({ link, stable, payTo }: { link: ChainLink; stable?: strin
     <span className="e-chain-link" data-testid="chain-link-row" style={{ display: "grid", gap: 4 }}>
       <Text className="e-faint" style={{ fontSize: "0.68rem" }}>
         <span data-testid="chain-relay-status">{relayStatus(link)}</span>
-        {view ? <> · <span data-testid="chain-local-status">{localStatus(view)}</span></> : null}
+        {view ? <> · <span data-testid="chain-local-status">{localStatus(view, true)}</span></> : null}
       </Text>
       {facts.length ? <Text className="e-faint" style={{ fontSize: "0.68rem" }}>{facts.map((f, i) => <span key={i}>{i ? " · " : ""}{f}</span>)}</Text> : null}
       {view?.image.available ? <ChainImage link={link} stable={stable} /> : null}

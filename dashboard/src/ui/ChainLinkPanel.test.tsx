@@ -8,7 +8,7 @@ vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "me" }));
 vi.mock("../transport", () => ({ IN_HERMES: false, VIA_CONSOLE: true, consoleUrl: (p: string) => p, httpFetch: vi.fn() }));
 vi.mock("../chainlink", async (orig) => ({ ...(await orig<typeof import("../chainlink")>()), fetchChainView: (...a: unknown[]) => fetchView(...a) }));
 
-import { ChainBadges, ChainLinkPanel } from "./ChainLinkPanel";
+import { ChainBadges, ChainLinkPanel, ChainMark } from "./ChainLinkPanel";
 
 const REG = "0x8004a818bfb912233c491871b3d84c89a494bd9e";
 const link = (over: Partial<ChainLink> = {}): ChainLink => ({
@@ -24,6 +24,16 @@ const view = (over: Record<string, unknown> = {}) => ({ status: "checked", reaso
 afterEach(() => { cleanup(); fetchView.mockReset(); });
 
 describe("the ERC-8004 badge and panel", () => {
+  it("marks an agent with a live identity in lists, with the full line on hover, and nothing otherwise", () => {
+    render(<ChainMark agent={agent([link({ agent_id: "7", status: "superseded", tier: "" }), link()])} />);
+    const mark = screen.getByTestId("chain-mark");
+    expect(mark.textContent).toBe("8004 #42");
+    expect(mark.getAttribute("title")).toContain("8004 #42 · Base Sepolia · owner (testnet)");
+    cleanup();
+    render(<ChainMark agent={agent([link({ status: "superseded", tier: "" })])} />);
+    expect(screen.queryByTestId("chain-mark")).toBeNull();
+  });
+
   it("renders the badge line with an explorer link, and lists show nothing more", () => {
     render(<ChainBadges agent={agent([link()])} />);
     const badge = screen.getByTestId("chain-badge");
@@ -41,10 +51,13 @@ describe("the ERC-8004 badge and panel", () => {
     expect(badges[0].textContent).not.toContain("testnet");
   });
 
-  it("says two-way beside the viewer's own read when it found it", async () => {
-    fetchView.mockResolvedValue(view({ two_way: true }));
+  it("says two-way once, in the card's own line, and the viewer's read only says where it was checked", async () => {
+    fetchView.mockResolvedValue(view({ two_way: true, paid_at_own_wallet: true }));
     render(<ChainLinkPanel agent={agent([link()])} />);
-    await waitFor(() => expect(screen.getByTestId("chain-local-status").textContent).toBe("checked by you at block 321 · two-way"));
+    await waitFor(() => expect(screen.getByTestId("chain-local-status").textContent).toBe("checked by you at block 321"));
+    const card = screen.getByTestId("identity-card").textContent ?? "";
+    expect(card).toContain("Linked and checked here, two-way");
+    expect(card.match(/two-way/g)).toHaveLength(1);
   });
 
   it("shows the relay's status beside the viewer's own read, and the registration text as a stranger's", async () => {

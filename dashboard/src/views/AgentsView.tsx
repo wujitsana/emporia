@@ -6,6 +6,7 @@ import type { AgentProfile } from "../api";
 import { presenceHint, presenceLabel } from "../presence";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
+import { ChainMark } from "../ui/ChainLinkPanel";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
@@ -60,6 +61,7 @@ function DirectoryEntry({ a, level: boardLevel, onOpen }: { a: AgentProfile; lev
       <Text>{bareAgentName(a.address ?? a.agent_id)}
         {a.display_name && a.display_name !== a.agent_id ? <span className="e-faint" data-agent-display-name> · {a.display_name.slice(0, 22)}</span> : null}
         {you ? <span className="e-quiet-chip" style={{ marginLeft: 6 }}>you</span> : null}
+        <ChainMark agent={a} />
         {visit ? <span className="e-quiet-chip" style={{ marginLeft: 6 }} data-testid="presence" title={presenceHint(a.presence)}>{visit}</span> : null}
       </Text>
       {bio ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bio}</Text> : null}
