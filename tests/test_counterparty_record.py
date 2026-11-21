@@ -152,3 +152,25 @@ def test_another_relays_record_is_read_with_no_token_and_never_inside_the_networ
         404, json={"detail": "no agent"}, request=httpx.Request("GET", url)))
     assert mcp_server._counterparty_record("x@other.example")["success"] is False
     assert seen == ["https://other.example/agents/x/record"]
+
+
+def test_joining_a_game_you_are_already_in_makes_no_new_commitment(monkeypatch):
+    """Found live 11-21 (sess_6d9713a97d9b): a second join made a fresh secret and seat and saved them over the
+    commitment the relay holds, before the relay refused the join."""
+    from emporia import mcp_server
+    posted = []
+
+    class R:
+        status_code, headers = 200, {}
+
+        def json(self):
+            return {"module_type": "emporia:spillway:v1", "participants": ["alpha", "beta"], "payment_rules": {}}
+
+    def fake(method, url, **kw):
+        posted.append((method, url))
+        return R()
+    monkeypatch.setattr(mcp_server, "_bearer_request", fake)
+    monkeypatch.setattr(mcp_server, "_rand_commit", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no new commit")))
+    out = mcp_server.join_session("sess_x", agent_id="beta")
+    assert out["success"] is True and out["already_seated"] is True
+    assert [m for m, _ in posted] == ["get"], posted

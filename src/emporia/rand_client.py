@@ -107,11 +107,14 @@ def private_view(sess: dict[str, Any], agent_id: str, rec: dict[str, Any] | None
     if not sig:
         return {**base, "error": "the beacon round could not be read from the relay or drand; try again"}
     rec["beacon_sig"] = sig
+    # The seat is the one the relay recorded and verified this agent's signature over, not a local copy (a copy
+    # can be wrong: live 11-21 a repeated join saved the seat after the last one).
+    seat = int((commits.get(agent_id) or {}).get("seat", rec["seat"]))
     mod = module_of(sess)
     if mod is not None and hasattr(mod, "private"):      # the game's own reading of what only this player knows
-        return {**base, **mod().private(data, r_scope(sess), int(rec["seat"]), bytes.fromhex(sig),
+        return {**base, **mod().private(data, r_scope(sess), seat, bytes.fromhex(sig),
                                         bytes.fromhex(rec["s"]), sess)}
-    hand, walk = BG.draw(r_scope(sess), int(rec["seat"]), bytes.fromhex(sig), bytes.fromhex(rec["s"]))
+    hand, walk = BG.draw(r_scope(sess), seat, bytes.fromhex(sig), bytes.fromhex(rec["s"]))
     pool = BG._as_vec(data.get("pool") or BG.POOL)
     return {**base, "values": BG._as_dict(hand), "total": BG.TOTAL, "walk_away": walk,
             "all_goods_worth": BG.worth(hand, pool),

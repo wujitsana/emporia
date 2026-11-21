@@ -4571,6 +4571,12 @@ def join_session(
         joining = session.get("module_type", "")
     except Exception as e:  # noqa: BLE001
         return {"error": "not joined: " + _session_load_error(session_id, e), "success": False}
+    if aid in ((session or {}).get("participants") or []):
+        # Found live 11-21 (sess_6d9713a97d9b): a second join made a fresh commitment (a new secret, the seat after
+        # the last) and saved it over the one the relay holds before the relay refused the join; the game's own view
+        # then failed on a seat past the table, and a dealt game would have lost its hand.
+        return {"success": True, "already_seated": True, "session_id": session_id,
+                "note": "you are already seated in this game: nothing to join. get_session shows whose move it is"}
     if (refusal := _playbook_session_refusal("join", aid, session_id, session or {})
             or _open_games_refusal(aid, joining)):
         return refusal

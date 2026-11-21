@@ -671,3 +671,21 @@ def test_an_accept_wakes_both_players_to_reveal_the_mover_too(client):
     with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
         assert _reveal(client, sid, a).status_code == 200
     assert not [c for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"], "told once, not per reveal"
+
+
+def test_the_view_uses_the_seat_the_relay_verified_not_a_local_copy():
+    """Found live 11-21 (sess_6d9713a97d9b): a repeated join saved a local seat past the table; the hand must come
+    from the seat the relay recorded and verified the signature over."""
+    from emporia import rand_client
+    sess_id = "sess_seat"
+    now = rand.GENESIS + 1_000_000 * rand.PERIOD_S
+    (ca, _sa), (cb, sb) = (rand_client.make_commit(lambda *a: "sig", sess_id, "a", 0, now=now),
+                           rand_client.make_commit(lambda *a: "sig", sess_id, "b", 1, now=now + 5))
+    sess = {"session_id": sess_id, "config": {"rand": {"scope": sess_id, "commits": {"a": {**ca, "seat": 0}, "b": {**cb, "seat": 1}}}},
+            "state": {"data": {"pool": B._as_dict(POOL), "offers": []}}}
+    rnd = B.game_round(sess["config"]["rand"]["commits"])
+    wrong = dict(sb, seat=2, seen_all_at=now + 1)             # what the repeated join left on disk
+    view = rand_client.private_view(sess, "b", wrong, now=rand.round_time(rnd) + 1,
+                                    fetch=lambda r, base=None: fake_beacon_sig(r))
+    hand, _walk = B.draw(sess_id, 1, bytes.fromhex(fake_beacon_sig(rnd)), bytes.fromhex(sb["s"]))
+    assert view["values"] == B._as_dict(hand)

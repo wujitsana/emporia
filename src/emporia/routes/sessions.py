@@ -1027,17 +1027,31 @@ async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
     # Whom the game waits on: a simultaneous phase's pending players, else the one whose turn it is (bargain and
     # liar's dice say TURN_ORDER = False because a reveal is anyone's, but their offers and bids go in turn).
     module = get_interaction_module(s["module_type"])
-    drawn = module.first_to_move(data)
+
+    async def drawn_now(sess: dict[str, Any]) -> tuple[dict[str, Any], list[str] | None]:
+        # The draw is stored in the game only when someone moves; until then it is read from the beacon cache, as the
+        # game view does (found live 11-21, sess_6d9713a97d9b: nothing was stored, the tries ran out, nobody was told).
+        stored = ((sess.get("state") or {}).get("data") or {})
+        if module.first_to_move(stored) != []:
+            return stored, module.first_to_move(stored)
+        try:
+            st = SessionState.from_dict(sess["state"])
+            if module.beacon_round(st) is not None:
+                st = await _with_beacon(module, session_id, st)
+            return st.data, module.first_to_move(st.data)
+        except Exception:  # noqa: BLE001 — the stored state answers then
+            return stored, module.first_to_move(stored)
+
+    data, drawn = await drawn_now(s)
     for _ in range(FIRST_MOVER_TRIES):
         if drawn != []:
             break
-        # the draw is published but the relay has not stored it yet: ask again shortly
+        # the draw is not published yet: ask again shortly
         await asyncio.sleep(FIRST_MOVER_WAIT_S)
         s = rs.load_session(session_id)
         if not s or s.get("status") != "active" or int(s.get("step_number") or 0) != 0:
             return
-        data = ((s.get("state") or {}).get("data") or {})
-        drawn = module.first_to_move(data)
+        data, drawn = await drawn_now(s)
     if drawn is not None:
         waiting = drawn           # a drawn first mover: only that player is told (`[]` after the tries: nobody)
     else:

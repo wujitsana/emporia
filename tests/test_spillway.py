@@ -801,12 +801,13 @@ def test_the_start_notice_does_not_claim_a_first_mover_the_beacon_has_not_drawn(
 
 # ── who is told "your turn" when the beacon has drawn the first mover ─────────
 
-def _tell(session):
+def _tell(session, published=None):
     from unittest.mock import AsyncMock, patch
 
     from emporia.routes import sessions
     with patch.object(sessions.rs, "load_session", return_value=session), \
          patch.object(sessions.rs, "broadcast_to_agent", new=AsyncMock()) as bcast, \
+         patch.object(sessions.beacon_route, "signature", return_value=published), \
          patch.object(sessions.asyncio, "sleep", new=AsyncMock()):
         asyncio.run(sessions._tell_when_open("sess_x", datetime.now(UTC) - timedelta(seconds=5)))
     return bcast
@@ -1097,3 +1098,18 @@ def test_the_first_drop_wakes_the_creator_when_the_draw_made_the_other_seat_go_f
         assert r.status_code == 200, r.text
     turns = [c.args[0] for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"]
     assert turns == [agents[0]], turns
+
+
+
+def test_the_first_mover_is_told_when_the_draw_is_published_but_not_stored_yet():
+    """Found live 11-21 (sess_6d9713a97d9b): the draw is stored in the game only when someone moves, so the opening
+    notice found nothing stored, ran out of tries and told nobody; the first mover sat until its clock ran."""
+    data = _stored_game()
+    first = S._opening_for(data, _sig(5000))["first"]
+    data["rand"] = {**data["rand"], "beacon_sig": None, "beacons": {}}
+    assert M().first_to_move(data) == [], "nothing stored"
+    bcast = _tell({"status": "active", "step_number": 0, "module_type": SPILLWAY, "current_agent": "alpha",
+                   "participants": ["alpha", "beta"],
+                   "state": {"data": data, "metadata": {"participants": ["alpha", "beta"]}}}, published=fake_beacon_sig(5000))
+    sent = [(c.args[0], c.args[1]["type"]) for c in bcast.await_args_list]
+    assert {a for a, _ in sent} == {first} and ("your_turn" in {t for _, t in sent}), sent   # (+ its half-clock reminder)
