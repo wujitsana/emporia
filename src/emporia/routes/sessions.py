@@ -1004,10 +1004,14 @@ async def _remind(session_id: str, agents: list[str], step: int, delay_s: float,
         done = set((data.get("rand") or {}).get("reveals") or {})
         due = [a for a in agents if a not in done]
     else:
-        if int(s.get("step_number") or 0) != step:
+        # A turn-order game: any move since means this reminder is moot. A simultaneous game (`pending`): another
+        # player's move bumps the step without serving this one, so who is still waited on decides (found live
+        # 11-21, sess_1a6e290755f4: a seat's reminder was dropped by another seat's seal, and it timed out).
+        if not isinstance(data.get("pending"), (list, tuple, set)) and int(s.get("step_number") or 0) != step:
             return
         waiting = set(_waiting_on(s, data))
         due = [a for a in agents if a in waiting]
+        step = int(s.get("step_number") or step)
     for agent in due:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"], "step_number": step, "reminder": True,
@@ -1015,6 +1019,52 @@ async def _remind(session_id: str, agents: list[str], step: int, delay_s: float,
 
 
 FIRST_MOVER_TRIES, FIRST_MOVER_WAIT_S = 15, 2.0
+DRAW_WAIT_MAX_S = 300.0
+
+
+def _draw_pending(module, state: SessionState) -> bool:
+    """True when the state names a public draw the relay has not stored yet (a Tesseract round that opens when its
+    drand round publishes)."""
+    try:
+        return bool(getattr(module, "USES_RAND", False)) and module.beacon_round(state) is not None
+    except Exception:  # noqa: BLE001 — a module that cannot say is treated as drawn
+        return False
+
+
+async def _tell_when_drawn(session_id: str, agents: list[str], step: int, extra: dict[str, Any]) -> None:
+    """Tell `agents` it is their turn once the draw the new phase opens on is published and stored, never before
+    (found live 11-21, sess_1a6e290755f4: a Tesseract round's wake came a few seconds before its drand round, the
+    players read `ready: false`, rightly did nothing, and nothing woke them again). The beacon is read the way the
+    game view reads it; when it does not come, they are told anyway once the tries run out."""
+    s = rs.load_session(session_id)
+    if not s or s.get("status") != "active":
+        return
+    module = get_interaction_module(s["module_type"])
+    try:
+        rnd = module.beacon_round(SessionState.from_dict(s["state"]))
+        if rnd:
+            wait = rand_module.round_time(int(rnd)) - datetime.now(UTC).timestamp()
+            await asyncio.sleep(min(max(0.0, wait), DRAW_WAIT_MAX_S))
+    except Exception:  # noqa: BLE001 — the tries below still run
+        pass
+    for _ in range(FIRST_MOVER_TRIES):
+        s = rs.load_session(session_id)
+        if not s or s.get("status") != "active":
+            return
+        try:
+            st = await _with_beacon(module, session_id, SessionState.from_dict(s["state"]))
+            if module.beacon_round(st) is None:
+                break
+        except Exception:  # noqa: BLE001 — tell them anyway
+            break
+        await asyncio.sleep(FIRST_MOVER_WAIT_S)
+    data = ((s.get("state") or {}).get("data") or {})
+    waiting = set(_waiting_on(s, data))
+    due = [a for a in agents if a in waiting]
+    for agent in due:
+        await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
+                                            "module_type": s["module_type"],
+                                            "step_number": int(s.get("step_number") or step), **extra})
 
 
 async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
@@ -1900,7 +1950,11 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         # P136: everyone may move; when a phase opens, tell everyone it waits on.
         before = (s.get("state") or {}).get("data") or {}
         waiting: list[str] = []
-        if new_state.data.get("phase") != before.get("phase"):
+        # A phase is its name and its round: a Tesseract round that ended on the clock goes from "seal" to "seal"
+        # (found live 11-21, sess_1a6e290755f4: round 3 opened and nobody was told).
+        phase_opened = ((new_state.data.get("phase"), new_state.data.get("epoch"))
+                        != (before.get("phase"), before.get("epoch")))
+        if phase_opened:
             waiting = list(new_state.data.get("pending") or [])
         # A game whose offers still alternate though anyone may reveal or void (Bargain) names the player it
         # waits on in current_agent: a move that hands it over wakes that player (found live 11-10: an offer
@@ -1924,13 +1978,22 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
             for p in s["participants"]:
                 if p not in revealed and p not in waiting:
                     waiting.append(p)
+        extra = {"last_action": last_action,
+                 **({"reveal": True, "reveal_by": new_state.data.get("reveal_by")} if reveal_now else {})}
+        later: list[str] = []
+        if phase_opened and not reveal_now and _draw_pending(module, new_state):
+            # A new phase that opens on a draw not published yet (a Tesseract round): its players are told when it
+            # is, and hear the line then. A turn handed over (Spillway) and a reveal are told now, as before.
+            later = [a for a in waiting if a in (new_state.data.get("pending") or [])]
+            told.update(later)
+            _schedule(_tell_when_drawn(session_id, later, s["step_number"] + 1, extra))
         for agent in waiting:
+            if agent in later:
+                continue
             told.add(agent)
             await rs.broadcast_to_agent(agent, {
                 "type": "your_turn", "session_id": session_id,
-                "module_type": s["module_type"], "step_number": s["step_number"] + 1,
-                "last_action": last_action,
-                **({"reveal": True, "reveal_by": new_state.data.get("reveal_by")} if reveal_now else {}),
+                "module_type": s["module_type"], "step_number": s["step_number"] + 1, **extra,
             })
         _remind_later(session_id, waiting, s["step_number"] + 1, new_state.data, reveal=reveal_now)
     elif new_state.current_agent and new_state.current_agent != req.agent_id:

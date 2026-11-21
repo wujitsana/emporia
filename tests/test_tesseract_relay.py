@@ -753,3 +753,78 @@ def test_the_last_sealer_is_told_to_open_now_and_the_others_to_wait(w):
     last = w.tools(names[2]).push(sid, {"XY>X": 2})
     assert last["everyone_sealed"] is True
     assert last["next"].startswith("everyone has sealed: your bridge opens your push now")
+
+
+# ── the wakes between rounds (found live 11-21, sess_1a6e290755f4) ──────────────────────────────────────────
+
+class _Wakes:
+    """Records the relay's `your_turn` notices and the deferred ones it schedules, instead of sending them."""
+
+    def __init__(self, monkeypatch):
+        from emporia.routes import sessions as S
+        self.S, self.sent, self.deferred = S, [], []
+
+        async def bcast(agent, frame):
+            if frame.get("type") == "your_turn":
+                self.sent.append((agent, frame))
+
+        def schedule(coro):
+            name = coro.cr_code.co_name
+            if name == "_tell_when_drawn":
+                self.deferred.append(coro.cr_frame.f_locals)
+            coro.close()
+            from unittest.mock import MagicMock
+            return MagicMock()
+        monkeypatch.setattr(S.rs, "broadcast_to_agent", bcast)
+        monkeypatch.setattr(S, "_schedule", schedule)
+        monkeypatch.setattr(S, "_REMINDERS", {})        # the stand-in reminders go with the test
+
+
+def test_a_new_rounds_wake_waits_for_its_draw_and_then_tells_everyone_pending(w, monkeypatch):
+    import asyncio
+    names = agents(w, 3)
+    sid = w.table(names)
+    w.clock.advance(20)
+    for n in names:
+        assert w.tools(n).push(sid, {"XY>X": 2})["success"]
+    wakes = _Wakes(monkeypatch)
+    for n in names:
+        assert w.tools(n).open(sid)["success"]
+    # the last open starts round 2, which opens only when the drand round the seals named is out: nobody is told yet
+    fl = w.flow(sid)
+    assert fl["phase"] == "seal" and fl["epoch"] == 2 and fl["opens_at"] > w.clock.t
+    assert not [a for a, f in wakes.sent if f["step_number"] == w.state(sid)["step_number"]]
+    assert len(wakes.deferred) == 1 and sorted(wakes.deferred[0]["agents"]) == sorted(names)
+    # the deferred wake sleeps until that round publishes, then tells every player round 2 waits on
+    told = []
+
+    async def bcast(agent, frame):
+        told.append((agent, frame, w.clock.t))
+
+    async def sleep(s):
+        w.clock.advance(s)
+    monkeypatch.setattr(wakes.S.rs, "broadcast_to_agent", bcast)
+    monkeypatch.setattr(wakes.S.asyncio, "sleep", sleep)
+    monkeypatch.setattr(wakes.S, "datetime", type("D", (), {"now": staticmethod(
+        lambda tz=None: __import__("datetime").datetime.fromtimestamp(w.clock.t, tz))}))
+    d = wakes.deferred[0]
+    asyncio.run(wakes.S._tell_when_drawn(sid, d["agents"], d["step"], d["extra"]))
+    assert sorted(a for a, _, _ in told) == sorted(names)
+    assert all(f["type"] == "your_turn" and t >= fl["opens_at"] for _, f, t in told)
+    assert w.tools(names[0]).view(sid)["ready"] is True
+
+
+def test_a_round_that_ended_on_the_clock_still_wakes_the_next_round(w, monkeypatch):
+    """Round 2 went from "seal" to "seal" when it closed on the clock, and the relay compared only the phase name."""
+    names = agents(w, 3)
+    sid = w.table(names)
+    w.clock.advance(20)
+    assert w.tools(names[0]).push(sid, {"XY>X": 2})["success"]
+    limit = int(w.state(sid)["state"]["data"]["move_time_limit_s"])
+    w.clock.advance(limit + 5)                  # the other two never seal: the seal phase ends on the clock
+    wakes = _Wakes(monkeypatch)
+    assert w.tools(names[0]).open(sid)["success"]
+    data = w.state(sid)["state"]["data"]
+    assert data["phase"] == "seal" and data["epoch"] == 2
+    told = {a for a, _ in wakes.sent} | {a for d in wakes.deferred for a in d["agents"]}
+    assert told == set(data["pending"]) == set(names)

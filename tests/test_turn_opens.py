@@ -127,3 +127,16 @@ def test_no_clock_no_reminder():
         sessions._remind_later("sess_x", ["beta"], 1, {})
         sessions._remind_later("sess_x", ["beta"], 1, {"move_time_limit_s": 0})
     sched.assert_not_called()
+
+
+def test_a_simultaneous_phase_still_reminds_a_player_after_another_players_move():
+    """Live 11-21 (sess_1a6e290755f4): another seat's seal bumped the step, the reminder of a seat that had not
+    sealed was dropped, and it timed out. In a simultaneous phase who is still pending decides."""
+    s = {"status": "active", "step_number": 5, "module_type": "emporia:tesseract:v1", "current_agent": "alpha",
+         "state": {"data": {"pending": ["alpha", "hackathon"]}}}
+    bcast = _run_remind(s, ["alpha", "hackathon"], 4)
+    assert [c.args[0] for c in bcast.await_args_list] == ["alpha", "hackathon"]
+    assert bcast.await_args.args[1]["step_number"] == 5
+    turn_order = {"status": "active", "step_number": 5, "module_type": "emporia:bargain:v2", "current_agent": "beta",
+                  "state": {"data": {}}}
+    _run_remind(turn_order, ["beta"], 4).assert_not_awaited()      # a turn-order game: a move since makes it moot
