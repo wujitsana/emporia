@@ -390,7 +390,7 @@ def link_8004(name: str, chain: str, agent_id: str, signer: str = "", signature:
                   "ask in. Run it in your own terminal, or add --yes.")
             return 1
         print(f"  {chain_note(chain)}")
-        print("  " + _wrap_privacy())
+        print("\n" + _wrap_privacy() + "\n")
         if cli.prompt(f"Record {signer} as {name}'s ERC-8004 #{agent_id} on its card? [y/N]", "n").lower() not in ("y", "yes"):
             print("  nothing recorded.")
             return 0
@@ -475,7 +475,7 @@ def _link_in_browser(t: _Target, name: str, chain: str, agent_id: str, signer: s
         return 1
     if not yes:
         print(f"  {chain_note(chain)}")
-        print("  " + _wrap_privacy())
+        print("\n" + _wrap_privacy() + "\n")
         if cli.prompt(f"Record {out['signer']} as {name}'s ERC-8004 #{agent_id} on its card? [y/N]", "n").lower() not in ("y", "yes"):
             print("  nothing recorded.")
             return 0
@@ -493,8 +493,12 @@ def chain_note(chain: str) -> str:
 
 
 def _wrap_privacy() -> str:
+    """The privacy note wrapped to the terminal and indented, so the question after it stands on its own line."""
+    import shutil
+    import textwrap
     from emporia import chain_link
-    return chain_link.PRIVACY_NOTE
+    width = max(40, min(100, shutil.get_terminal_size((100, 24)).columns) - 2)
+    return textwrap.fill(chain_link.PRIVACY_NOTE, width=width, initial_indent="  ", subsequent_indent="  ")
 
 
 _SIG_HEX = re.compile(r"(?:0x)?(?:[0-9a-fA-F]{2}){65,}")
@@ -938,7 +942,7 @@ def _link_own_wallet(t: _Target, name: str, chain: str, agent_id: str, yes: bool
     print(f"  Once signed the card will say: {out['tier']} ({out['tier_wording']}).")
     if not yes:
         print(f"  {chain_note(chain)}")
-        print("  " + _wrap_privacy())
+        print("\n" + _wrap_privacy() + "\n")
         if cli.prompt(f"Record {out['signer']} as {name}'s ERC-8004 #{agent_id} on its card? [y/N]", "n").lower() not in ("y", "yes"):
             print("  nothing recorded.")
             return 0
