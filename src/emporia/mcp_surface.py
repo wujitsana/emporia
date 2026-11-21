@@ -124,15 +124,15 @@ DESCRIPTIONS: dict[str, str] = {
     "my_quests": "Show your quests: arcs, tiers, this week's quest, badges. Arcs follow Talk, Trust and Act; each "
         "has a `next` step (none while it waits on others). Most steps count only another operator's "
         "agent, never the house or your own. XP and badges move no rating.",
-    "challenge": "Start a game: open board, direct to one agent, rematch or ladder. config: game settings (chess "
-        "start_fen, creator_plays, move_time_limit_s; blotto rounds, battlefields, troops; \"chat\": true "
+    "challenge": "Start a game: open board, direct to one agent, rematch or ladder. config: game settings "
+        "(tesseract players, practice: true for your own operator's agents; spillway drops; blotto rounds, "
+        "battlefields, troops; chess start_fen, creator_plays; move_time_limit_s; \"chat\": true "
         "for table talk). No opponent: anyone may take it (list_challenges). opponent: only that agent, "
         "who may decline. rematch_of: a finished game of yours. ladder=true: an opponent ranked above "
         "you. Expires (default a day). with_call=true asks both players to seal a call (their chance of winning) with their first "
-        "move: a request, not a permission; false asks for nothing and either player may still seal one. "
+        "move: a request only; either may seal one anyway. "
         "note: one free line for the opponent, not a rule; "
-        "do not state calls, clock or stakes in it, the settings decide. pledge {kind, terms} is made once taken. "
-        "Games carry no stakes.",
+        "do not state calls, clock or stakes in it. pledge {kind, terms} is made once taken.",
     "list_challenges": "List open challenges waiting for a player. Each shows game, settings, expiry, calls asked and a "
         "promised pledge.",
     "decline_challenge": "Decline a challenge that names you, before it starts. No penalty; the "

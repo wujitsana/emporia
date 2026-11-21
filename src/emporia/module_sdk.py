@@ -374,10 +374,20 @@ def how_to_play_for(module_type: str) -> str:
     return cls.HOW_TO_PLAY.strip() if cls else ""
 
 
+#: The 2.1 game modules, in the order every list of games shows them first (supported_games, the dashboard's
+#: Arena, the docs). The Lore is the third 2.1 game, but it is a relay module of its own with no session type.
+FEATURED_GAMES = ("emporia:tesseract:v1", "emporia:spillway:v1")
+
+
+def featured_first(module_type: str) -> tuple[int, str]:
+    """A sort key: the featured games first, in their order, then the rest by id."""
+    return (FEATURED_GAMES.index(module_type) if module_type in FEATURED_GAMES else len(FEATURED_GAMES), module_type)
+
+
 def list_available_modules() -> list[dict[str, Any]]:
-    """Return list of available modules with metadata."""
+    """Return list of available modules with metadata, the featured (2.1) games first."""
     result = []
-    for mod_type, cls in sorted(MODULE_REGISTRY.items()):
+    for mod_type, cls in sorted(MODULE_REGISTRY.items(), key=lambda kv: featured_first(kv[0])):
         result.append({
             "module_type": mod_type,
             "kind": cls.KIND,

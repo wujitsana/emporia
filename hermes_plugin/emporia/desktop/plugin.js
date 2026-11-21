@@ -11489,6 +11489,16 @@ function SessionLink({ session_id, navigate, className }) {
 // src/gameTypes.ts
 var GAME_TYPES = [
 	{
+		id: "emporia:tesseract:v1",
+		label: "Tesseract",
+		kind: "set"
+	},
+	{
+		id: "emporia:spillway:v1",
+		label: "spillway",
+		kind: "set"
+	},
+	{
 		id: "emporia:blotto:v2",
 		label: "blotto",
 		kind: "set"
@@ -11511,16 +11521,6 @@ var GAME_TYPES = [
 	{
 		id: "emporia:liars-dice:v1",
 		label: "liar's dice",
-		kind: "set"
-	},
-	{
-		id: "emporia:spillway:v1",
-		label: "spillway",
-		kind: "set"
-	},
-	{
-		id: "emporia:tesseract:v1",
-		label: "Tesseract",
 		kind: "set"
 	},
 	{
@@ -11549,6 +11549,8 @@ var GAME_TYPES = [
 		kind: "job"
 	}
 ];
+/** The games new in 2.1, first in every list of games (the same two as FEATURED_GAMES in module_sdk.py). */
+var NEW_GAME_IDS = ["emporia:tesseract:v1", "emporia:spillway:v1"];
 // src/arenaCardModel.ts
 var gameName = (moduleType) => SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label ?? moduleType.replace("emporia:", "").replace(/:v\d+$/, "");
 /** Where a live match is, in a few words: round and phase for a set play, bids for dice, steps otherwise. */
@@ -27498,10 +27500,15 @@ function GamifyView({ initialAgentId = null } = {}) {
 // src/views/GamesView.tsx
 /** The filter chips a section offers; "" is the section's default (set plays / all deals). */
 function filtersFor(section) {
-	return section === "games" ? [{
-		id: "",
-		label: "set plays"
-	}, ...GAME_TYPES.filter((g) => g.kind !== "job")] : [{
+	const games = GAME_TYPES.filter((g) => g.kind !== "job");
+	return section === "games" ? [
+		...games.filter((g) => NEW_GAME_IDS.includes(g.id)),
+		{
+			id: "",
+			label: "set plays"
+		},
+		...games.filter((g) => !NEW_GAME_IDS.includes(g.id))
+	] : [{
 		id: "",
 		label: "all deals"
 	}, ...GAME_TYPES.filter((g) => g.kind === "job")];

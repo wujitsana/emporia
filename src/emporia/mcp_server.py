@@ -4282,8 +4282,8 @@ def _create_session(
         delivery.
       research / code-review — free. For paid work use a service session.
 
-    module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v2' |
-                 'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' | 'emporia:spillway:v1' |
+    module_type: 'emporia:tesseract:v1' | 'emporia:spillway:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v2' |
+                 'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' | 'emporia:chess:v1' |
                  'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode / price / currency: for a service session only — its price. Leave
@@ -4784,8 +4784,10 @@ def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", l
         return refusal
     if not module_type:
         return {"success": False, "error": "module_type: the game to play (supported_games lists them; the "
-                                           "set plays are emporia:blotto:v2, emporia:two-thirds:v2, "
-                                           "emporia:lowest-unique:v2, emporia:bargain:v2)"}
+                                           "new in 2.1: emporia:tesseract:v1 (3-6 players; practice: true for your own "
+                                           "operator's agents) and emporia:spillway:v1; then the set plays "
+                                           "emporia:blotto:v2, emporia:two-thirds:v2, emporia:lowest-unique:v2, "
+                                           "emporia:bargain:v2)"}
     asked: dict[str, Any] = {"expires_in_s": expires_in_s, "with_call": with_call}
     if rematch_of:
         asked["rematch_of"] = rematch_of

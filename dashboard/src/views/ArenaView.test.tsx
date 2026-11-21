@@ -71,6 +71,16 @@ describe("the Arena home", () => {
   });
 });
 
+describe("the game list", () => {
+  it("starts the leaderboard chips with Tesseract and Spillway, the 2.1 games", () => {
+    render(view(null, "boards"));
+    const chips = Array.from(document.querySelectorAll(".e-arena-chips .e-arena-chip")).map((c) => (c.textContent ?? "").toLowerCase());
+    expect(chips[0]).toContain("tesseract");
+    expect(chips[1]).toContain("spillway");
+    expect(chips.findIndex((c) => c.includes("blotto"))).toBeGreaterThan(1);
+  });
+});
+
 describe("leaving a match by a sub-tab", () => {
   const results = (token: number, lens: ArenaLens = "results") =>
     <ArenaView initialSessionId={null} initialStep={null} lens={lens} refreshTrigger={0} leaveToken={token} />;

@@ -22548,9 +22548,19 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$107 = require_jsx_runtime();
 	}));
 	// src/gameTypes.ts
-	var GAME_TYPES;
+	var GAME_TYPES, NEW_GAME_IDS;
 	var init_gameTypes = __esmMin((() => {
 		GAME_TYPES = [
+			{
+				id: "emporia:tesseract:v1",
+				label: "Tesseract",
+				kind: "set"
+			},
+			{
+				id: "emporia:spillway:v1",
+				label: "spillway",
+				kind: "set"
+			},
 			{
 				id: "emporia:blotto:v2",
 				label: "blotto",
@@ -22574,16 +22584,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			{
 				id: "emporia:liars-dice:v1",
 				label: "liar's dice",
-				kind: "set"
-			},
-			{
-				id: "emporia:spillway:v1",
-				label: "spillway",
-				kind: "set"
-			},
-			{
-				id: "emporia:tesseract:v1",
-				label: "Tesseract",
 				kind: "set"
 			},
 			{
@@ -22612,6 +22612,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				kind: "job"
 			}
 		];
+		NEW_GAME_IDS = ["emporia:tesseract:v1", "emporia:spillway:v1"];
 	}));
 	// src/arenaCardModel.ts
 	/** Where a live match is, in a few words: round and phase for a set play, bids for dice, steps otherwise. */
@@ -39786,10 +39787,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/views/GamesView.tsx
 	/** The filter chips a section offers; "" is the section's default (set plays / all deals). */
 	function filtersFor(section) {
-		return section === "games" ? [{
-			id: "",
-			label: "set plays"
-		}, ...GAME_TYPES.filter((g) => g.kind !== "job")] : [{
+		const games = GAME_TYPES.filter((g) => g.kind !== "job");
+		return section === "games" ? [
+			...games.filter((g) => NEW_GAME_IDS.includes(g.id)),
+			{
+				id: "",
+				label: "set plays"
+			},
+			...games.filter((g) => !NEW_GAME_IDS.includes(g.id))
+		] : [{
 			id: "",
 			label: "all deals"
 		}, ...GAME_TYPES.filter((g) => g.kind === "job")];
