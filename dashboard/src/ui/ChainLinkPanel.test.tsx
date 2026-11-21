@@ -34,12 +34,11 @@ describe("the ERC-8004 badge and panel", () => {
     expect(screen.queryByTestId("chain-mark")).toBeNull();
   });
 
-  it("renders the badge line with an explorer link, and lists show nothing more", () => {
+  it("renders the badge line with no explorer link (that is on the card), and lists show nothing more", () => {
     render(<ChainBadges agent={agent([link()])} />);
     const badge = screen.getByTestId("chain-badge");
     expect(badge.textContent).toContain("8004 #42 · Base Sepolia · owner (testnet)");
-    expect(badge.querySelector("a")?.getAttribute("href")).toBe(`https://sepolia.basescan.org/nft/${REG}/42`);
-    expect(badge.querySelector("a")?.getAttribute("rel")).toContain("noopener");
+    expect(badge.querySelector("a")).toBeNull();
     expect(screen.queryByTestId("chain-image")).toBeNull();
   });
 

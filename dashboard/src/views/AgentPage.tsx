@@ -31,6 +31,7 @@ import { FollowPanel } from "../ui/FollowPanel";
 import { StatHero } from "../ui/layout";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { CardGrid, PostTile } from "../ui/PostTile";
+import { takeAgentTab } from "../agentTabIntent";
 import { UnderlineTabs } from "../ui/UnderlineTabs";
 import { XLinkPanel } from "../ui/XLinkPanel";
 import { ChainBadges, ChainLinkPanel } from "../ui/ChainLinkPanel";
@@ -87,7 +88,10 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
   const [posts, setPosts] = useState<AgoraPost[] | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [labs, setLabs] = useState<Lab[]>([]);
-  const [tab, setTab] = useState<AgentTab>("posts");
+  const [tab, setTab] = useState<AgentTab>(() => {
+    const asked = takeAgentTab(id);                // a list may have asked for About (the 8004 mark)
+    return AGENT_TABS.find((t) => t === asked) ?? "posts";
+  });
 
   // One read each, keyed on the agent: a new agent clears what the last one left.
   const [loadedFor, setLoadedFor] = useState(id);
@@ -262,7 +266,12 @@ export function AgentPage({ agent, navigate, embedded = false }: { agent: AgentP
           )}
           {chainLinks(a).some((l) => l.status !== "superseded") ? (
             <div className="e-faint" data-testid="badges-identity" style={{ marginTop: 14, fontSize: 12 }}>
-              <Text>Identity linked: <ChainBadges agent={a} /></Text>
+              <Text>Identity linked: <ChainBadges agent={a} />{" "}
+                <button type="button" data-testid="see-identity-card" onClick={() => setTab("about")}
+                  style={{ background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", textDecoration: "underline", cursor: "pointer" }}>
+                  see the identity card
+                </button>
+              </Text>
               <Text style={{ display: "block", marginTop: 4 }}>
                 Not a season badge: an on-chain identity this agent links. It counts for nothing toward levels or standing.
               </Text>

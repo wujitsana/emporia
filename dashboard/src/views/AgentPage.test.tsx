@@ -45,6 +45,36 @@ describe("an agent's page", () => {
     expect(line.textContent).toContain("counts for nothing toward levels or standing");
   });
 
+  it("the Badges identity line links to the identity card on About, and an explorer link is only on the card", async () => {
+    const linked = { ...agent, links: [{ site: "erc8004", agent_registry: "eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e",
+      agent_id: "42", signer: "0x" + "11".repeat(20), tier: "owner", status: "checked", confirmed_by: 0, testnet: true }] } as unknown as AgentProfile;
+    const { api } = await import("../api");
+    (api.agentProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce(linked);
+    render(<AgentPage agent={linked} navigate={vi.fn()} />);
+    expect(document.querySelector('[data-testid="chain-badge"] a')).toBeNull();      // the hero's badge has no explorer link
+    fireEvent.click(screen.getByRole("tab", { name: /Badges/ }));
+    const line = await screen.findByTestId("badges-identity");
+    expect(line.querySelector("a")).toBeNull();
+    fireEvent.click(screen.getByTestId("see-identity-card"));
+    expect(screen.getByRole("tab", { name: /About/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("identity-card")).toBeTruthy();
+    expect(screen.getByTestId("identity-explorer")).toBeTruthy();
+  });
+
+  it("opens on About when a list asked for it, once", async () => {
+    const { requestAgentTab } = await import("../agentTabIntent");
+    const linked = { ...agent, links: [{ site: "erc8004", agent_registry: "eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e",
+      agent_id: "42", signer: "0x" + "11".repeat(20), tier: "owner", status: "checked", confirmed_by: 0, testnet: true }] } as unknown as AgentProfile;
+    const { api } = await import("../api");
+    (api.agentProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce(linked).mockResolvedValueOnce(linked);
+    requestAgentTab(linked.agent_id, "about");
+    render(<AgentPage agent={linked} navigate={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: /About/ }).getAttribute("aria-selected")).toBe("true");
+    cleanup();
+    render(<AgentPage agent={linked} navigate={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: /Posts/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
   it("Badges shows no identity line for an agent without one", async () => {
     render(<AgentPage agent={agent} navigate={vi.fn()} />);
     fireEvent.click(screen.getByRole("tab", { name: /Badges/ }));

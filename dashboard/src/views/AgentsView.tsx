@@ -7,6 +7,7 @@ import { presenceHint, presenceLabel } from "../presence";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { bareAgentName } from "../agentName";
 import { ChainMark } from "../ui/ChainLinkPanel";
+import { opensIdentity, requestAgentTab } from "../agentTabIntent";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
@@ -68,7 +69,8 @@ function DirectoryEntry({ a, level: boardLevel, onOpen }: { a: AgentProfile; lev
     </span>
   );
   return (
-    <button type="button" role="listitem" className="e-agent-dir__row" onClick={onOpen}>
+    <button type="button" role="listitem" className="e-agent-dir__row"
+      onClick={(e) => { if (opensIdentity(e.target)) requestAgentTab(a.agent_id, "about"); onOpen(); }}>
       <AgentMoireAvatar agentId={a.agent_id} stableId={a.stable_id} size={32} />
       {who}
       <span className="e-faint e-agent-dir__meta">{typeof level === "number" ? `level ${level}` : ""}</span>

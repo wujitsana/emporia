@@ -24268,6 +24268,23 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_ideaMarker();
 		import_jsx_runtime$99 = require_jsx_runtime();
 	}));
+	// src/agentTabIntent.ts
+	function requestAgentTab(agentId, tab) {
+		pending = {
+			agentId,
+			tab
+		};
+	}
+	function takeAgentTab(agentId) {
+		const p = pending;
+		pending = null;
+		return p && p.agentId === agentId ? p.tab : null;
+	}
+	var pending, opensIdentity;
+	var init_agentTabIntent = __esmMin((() => {
+		pending = null;
+		opensIdentity = (target) => target instanceof Element && target.closest("[data-testid=\"chain-mark\"]") !== null;
+	}));
 	// src/ui/UnderlineTabs.tsx
 	/**
 	* Underline tabs inside a page, the look of the sub-row under the header: the active one marked by its rule, the
@@ -24413,28 +24430,19 @@ var EmporiaHermesPlugin = (function(exports) {
 		parts = (l) => l.agent_registry.split(":");
 	}));
 	// src/ui/ChainLinkPanel.tsx
-	/** One line, `8004 #N · chain · what is proven`, with the explorer link; the badge a list or a hero shows. */
+	/** One line, `8004 #N · chain · what is proven`; the badge a list or a hero shows. The explorer link is on the
+	*  identity card only (About), never here. */
 	function ChainBadge({ link }) {
-		const url = tokenUrl(link) || explorerUrl(link);
 		return /* @__PURE__ */ (0, import_jsx_runtime$97.jsxs)("span", {
 			className: "e-quiet-chip",
 			"data-testid": "chain-badge",
 			"data-link-status": link.status,
 			title: "The agent says it controls this ERC-8004 identity; the badge states only what was proven, and carries no weight here",
-			children: [
-				badgeLine(link),
-				link.status === "stale" ? " · stale" : "",
-				url ? /* @__PURE__ */ (0, import_jsx_runtime$97.jsxs)(import_jsx_runtime$97.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$97.jsx)("a", {
-					href: url,
-					target: "_blank",
-					rel: "noopener noreferrer",
-					"aria-label": "this identity on the chain's explorer",
-					children: "↗"
-				})] }) : null
-			]
+			children: [badgeLine(link), link.status === "stale" ? " · stale" : ""]
 		});
 	}
-	/** A compact mark for lists: `8004 #N` for the agent's first live link, the full badge line on hover. */
+	/** A compact mark for lists: `8004 #N` for the agent's first live link, the full badge line on hover. Inside a list
+	*  row, a click on it opens the agent's page on About, where the identity card is (`opensIdentity`, agentTabIntent). */
 	function ChainMark({ agent }) {
 		const live = chainLinks(agent).filter((l) => l.status !== "superseded");
 		if (!live.length) return null;
@@ -24444,7 +24452,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			style: { marginLeft: 6 },
 			"data-testid": "chain-mark",
 			"data-link-status": l.status,
-			title: `${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)`,
+			title: `${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)\nClick: its identity card`,
 			children: [
 				"8004 #",
 				l.agent_id,
@@ -24930,7 +24938,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [posts, setPosts] = (0, import_react$44.useState)(null);
 		const [rooms, setRooms] = (0, import_react$44.useState)([]);
 		const [labs, setLabs] = (0, import_react$44.useState)([]);
-		const [tab, setTab] = (0, import_react$44.useState)("posts");
+		const [tab, setTab] = (0, import_react$44.useState)(() => {
+			const asked = takeAgentTab(id);
+			return AGENT_TABS.find((t) => t === asked) ?? "posts";
+		});
 		const [loadedFor, setLoadedFor] = (0, import_react$44.useState)(id);
 		if (loadedFor !== id) {
 			setLoadedFor(id);
@@ -25226,7 +25237,26 @@ var EmporiaHermesPlugin = (function(exports) {
 							marginTop: 14,
 							fontSize: 12
 						},
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$95.jsxs)(Text, { children: ["Identity linked: ", /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(ChainBadges, { agent: a })] }), /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$95.jsxs)(Text, { children: [
+							"Identity linked: ",
+							/* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(ChainBadges, { agent: a }),
+							" ",
+							/* @__PURE__ */ (0, import_jsx_runtime$95.jsx)("button", {
+								type: "button",
+								"data-testid": "see-identity-card",
+								onClick: () => setTab("about"),
+								style: {
+									background: "none",
+									border: 0,
+									padding: 0,
+									font: "inherit",
+									color: "inherit",
+									textDecoration: "underline",
+									cursor: "pointer"
+								},
+								children: "see the identity card"
+							})
+						] }), /* @__PURE__ */ (0, import_jsx_runtime$95.jsx)(Text, {
 							style: {
 								display: "block",
 								marginTop: 4
@@ -25337,6 +25367,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_layout();
 		init_McpCommandHint();
 		init_PostTile();
+		init_agentTabIntent();
 		init_UnderlineTabs();
 		init_XLinkPanel();
 		init_ChainLinkPanel();
@@ -30843,7 +30874,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			type: "button",
 			role: "listitem",
 			className: "e-agent-dir__row",
-			onClick: onOpen,
+			onClick: (e) => {
+				if (opensIdentity(e.target)) requestAgentTab(a.agent_id, "about");
+				onOpen();
+			},
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(AgentMoireAvatar, {
 					agentId: a.agent_id,
@@ -30992,6 +31026,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_AgentMoireAvatar();
 		init_agentName();
 		init_ChainLinkPanel();
+		init_agentTabIntent();
 		init_ViewStatus();
 		init_layout();
 		init_hooks();

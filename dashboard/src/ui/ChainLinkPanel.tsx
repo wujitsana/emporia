@@ -11,27 +11,27 @@ import { refreshChainPictures } from "../agentPicture";
 import { Card, SectionHead } from "./HomeCards";
 import { CopyCommand } from "./CopyCommand";
 
-/** One line, `8004 #N · chain · what is proven`, with the explorer link; the badge a list or a hero shows. */
+/** One line, `8004 #N · chain · what is proven`; the badge a list or a hero shows. The explorer link is on the
+ *  identity card only (About), never here. */
 export function ChainBadge({ link }: { link: ChainLink }) {
-  const url = tokenUrl(link) || explorerUrl(link);
   return (
     <span className="e-quiet-chip" data-testid="chain-badge" data-link-status={link.status}
       title="The agent says it controls this ERC-8004 identity; the badge states only what was proven, and carries no weight here">
       {badgeLine(link)}
       {link.status === "stale" ? " · stale" : ""}
-      {url ? <>{" "}<a href={url} target="_blank" rel="noopener noreferrer" aria-label="this identity on the chain's explorer">↗</a></> : null}
     </span>
   );
 }
 
-/** A compact mark for lists: `8004 #N` for the agent's first live link, the full badge line on hover. */
+/** A compact mark for lists: `8004 #N` for the agent's first live link, the full badge line on hover. Inside a list
+ *  row, a click on it opens the agent's page on About, where the identity card is (`opensIdentity`, agentTabIntent). */
 export function ChainMark({ agent }: { agent: Pick<AgentProfile, "links"> }) {
   const live = chainLinks(agent).filter((l) => l.status !== "superseded");
   if (!live.length) return null;
   const l = live[0];
   return (
     <span className="e-quiet-chip" style={{ marginLeft: 6 }} data-testid="chain-mark" data-link-status={l.status}
-      title={`${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)`}>
+      title={`${live.map(badgeLine).join("\n")}\n(an ERC-8004 identity this agent links; it carries no weight here)\nClick: its identity card`}>
       8004 #{l.agent_id}{l.status === "stale" ? " · stale" : ""}
     </span>
   );

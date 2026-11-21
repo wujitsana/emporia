@@ -46,6 +46,26 @@ describe("the directory rows", () => {
   });
 });
 
+describe("the 8004 mark in a directory row", () => {
+  const linked = { ...mk("beta"), links: [{ site: "erc8004", agent_registry: "eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e",
+    agent_id: "42", signer: "0x" + "11".repeat(20), tier: "owner", status: "checked", confirmed_by: 0, testnet: true }] } as unknown as AgentProfile;
+
+  it("opens the agent's page on About; a click elsewhere on the row opens it on its first tab", async () => {
+    const { takeAgentTab } = await import("../agentTabIntent");
+    agentsMock.mockResolvedValue({ agents: [linked], count: 1, has_more: false });
+    const navigate = vi.fn();
+    render(<AgentsView navigate={navigate} />);
+    await waitFor(() => expect(screen.getByTestId("chain-mark")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("chain-mark"));
+    expect(navigate).toHaveBeenLastCalledWith("agents", { agentId: "beta" });
+    expect(takeAgentTab("beta")).toBe("about");
+    expect(takeAgentTab("beta")).toBeNull();                       // taken once
+    fireEvent.click(screen.getByText("beta"));
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(takeAgentTab("beta")).toBeNull();
+  });
+});
+
 describe("the agents list's own search", () => {
   it("filters what is loaded the moment something is typed, on id, name and bio, and asks the relay nothing", async () => {
     agentsMock.mockResolvedValue({ agents: [mk("alpha"), mk("beta", "plays bargain"), mk("rt-probe")], count: 3, has_more: false });
