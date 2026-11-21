@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Text from "@kit/Text";
 import type { AgentProfile, ChainLink } from "../api";
 import { VIEWER_ID } from "../relayEnv";
 import { IN_HERMES, VIA_CONSOLE } from "../transport";
 import {
-  badgeLine, chainImagePath, chainLinks, explorerUrl, fetchChainImage, fetchChainView, localStatus, relayStatus, tokenUrl,
+  badgeLine, chainImagePath, chainLabel, chainLinks, explorerUrl, fetchChainImage, fetchChainView, localStatus, relayStatus, tierWording, tokenUrl,
   type ChainView,
 } from "../chainlink";
 import { refreshChainPictures } from "../agentPicture";
-import { MetaGrid } from "./cards";
+import { Card, SectionHead } from "./HomeCards";
 import { CopyCommand } from "./CopyCommand";
 
 /** One line, `8004 #N · chain · what is proven`, with the explorer link; the badge a list or a hero shows. */
@@ -60,50 +60,79 @@ function Registration({ view }: { view: ChainView }) {
   );
 }
 
-function ChainLinkRow({ link, stable, payTo }: { link: ChainLink; stable?: string; payTo?: string }) {
+
+const shortAddr = (a: string) => (/^0x[0-9a-fA-F]{40}$/.test(a) ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+
+/** One live ERC-8004 identity as a card: what is proven, this machine's own read, owner, where it is paid, the
+ *  picture, the registration's words (secondary, someone else's text) and the explorer link. Read-only. */
+function IdentityCard({ link, stable, payTo }: { link: ChainLink; stable?: string; payTo?: string }) {
   const [view, setView] = useState<ChainView | null>(null);
   useEffect(() => {
     let live = true;
-    if (VIA_CONSOLE && VIEWER_ID && link.status !== "superseded") {
+    if (VIA_CONSOLE && VIEWER_ID) {
       void fetchChainView(VIEWER_ID, link, stable, payTo).then((v) => { refreshChainPictures(); if (live) setView(v); });
     }
     return () => { live = false; };
   }, [link, stable, payTo]);
-  return (
-    <div className="e-chain-link" data-testid="chain-link-row" style={{ display: "grid", gap: 4 }}>
-      <ChainBadge link={link} />
+  const url = tokenUrl(link) || explorerUrl(link);
+  const checked = view?.status === "checked";
+  const state = link.status === "stale" ? "Stale: no longer proven"
+    : !view ? "Linked" : checked ? (view.two_way ? "Linked and checked here, two-way" : "Linked and checked here") : "Linked, not checked here";
+  const facts: ReactNode[] = [];
+  if (view?.owner) facts.push(<span data-testid="chain-owner" title={view.owner}>owner {shortAddr(view.owner)}</span>);
+  if (view?.agent_wallet) {
+    facts.push(<span data-testid="chain-paid-to" title={view.agent_wallet}>
+      paid at {shortAddr(view.agent_wallet)}{view.paid_at_own_wallet === true ? " (this agent's own wallet)" : view.paid_at_own_wallet === false ? " (not this agent's own wallet)" : ""}
+    </span>);
+  }
+  const extra = (
+    <span className="e-chain-link" data-testid="chain-link-row" style={{ display: "grid", gap: 4 }}>
       <Text className="e-faint" style={{ fontSize: "0.68rem" }}>
         <span data-testid="chain-relay-status">{relayStatus(link)}</span>
         {view ? <> · <span data-testid="chain-local-status">{localStatus(view)}</span></> : null}
       </Text>
-      {view ? <Registration view={view} /> : null}
+      {facts.length ? <Text className="e-faint" style={{ fontSize: "0.68rem" }}>{facts.map((f, i) => <span key={i}>{i ? " · " : ""}{f}</span>)}</Text> : null}
       {view?.image.available ? <ChainImage link={link} stable={stable} /> : null}
-      {view && !view.image.available && view.status === "checked" && view.image.note
+      {view && !view.image.available && checked && view.image.note
         ? <Text className="e-faint" style={{ fontSize: "0.66rem" }}>{view.image.note}</Text> : null}
-    </div>
+      {view ? <Registration view={view} /> : null}
+      {url ? <a className="e-hcard__caption" href={url} target="_blank" rel="noopener noreferrer" data-testid="identity-explorer">
+        this identity on the explorer ↗</a> : null}
+    </span>
+  );
+  return (
+    <span data-testid="identity-card" data-link-status={link.status} style={{ display: "contents" }}>
+      <Card c={{ key: `${link.agent_registry}/${link.agent_id}`, meta: chainLabel(link), chip: "ERC-8004", head: `#${link.agent_id}`,
+        detail: `${state} · ${tierWording(link)}${link.testnet ? " (testnet)" : ""}`, caption: "", extra }} />
+    </span>
   );
 }
 
-/** The profile's ERC-8004 section: each link, the relay's status beside this machine's own read, the registration
- *  text (secondary) and the on-chain image. For the viewer's own agent with none, the command that starts one. */
+/** The profile's Identity section: a card per live ERC-8004 link; for the viewer's own agent with none, one card
+ *  with the two commands (register, link). Another agent's profile with no link shows nothing. */
 export function ChainLinkPanel({ agent }: { agent: AgentProfile }) {
-  const links = chainLinks(agent);
+  const links = chainLinks(agent).filter((l) => l.status !== "superseded");
   const own = VIEWER_ID !== null && VIEWER_ID === agent.agent_id;
   if (!links.length && !own) return null;
   return (
     <div className="e-xlink" data-testid="chain-link-panel">
-      {links.length ? (
-        <MetaGrid rows={links.map((l) => ["ERC-8004", <ChainLinkRow key={`${l.agent_registry}/${l.agent_id}`} link={l} stable={agent.stable_id} payTo={agent.x402_pay_to?.evm} />])} />
-      ) : (
-        <div style={{ marginTop: 10, marginBottom: 14 }}>
-          <Text className="e-dim" style={{ fontSize: "0.68rem" }}>
-            No ERC-8004 identity linked. To link one you already have (nothing goes on-chain, no money moves), run in a terminal:
-          </Text>
-          <div className="e-op-cmds">
-            <CopyCommand command={`emporia agent link-8004 ${agent.agent_id} --chain base --agent-id N`} />
-          </div>
-        </div>
-      )}
+      <SectionHead title="Identity" />
+      <div className="e-cardrow" role="list" aria-label="ERC-8004 identity">
+        {links.length ? links.map((l) => (
+          <IdentityCard key={`${l.agent_registry}/${l.agent_id}`} link={l} stable={agent.stable_id} payTo={agent.x402_pay_to?.evm} />
+        )) : (
+          <span data-testid="identity-card" style={{ display: "contents" }}>
+            <Card c={{ key: "none", meta: "", chip: "ERC-8004", head: "No identity yet",
+              detail: "An optional on-chain identity for this agent (testnet registration); nothing needs it.", caption: "",
+              extra: (
+                <span className="e-op-cmds" style={{ display: "grid", gap: 6 }}>
+                  <CopyCommand command={`emporia agent register-8004 ${agent.agent_id} --chain base-sepolia --browser`} />
+                  <CopyCommand command={`emporia agent link-8004 ${agent.agent_id} --chain base --agent-id N`} />
+                </span>
+              ) }} />
+          </span>
+        )}
+      </div>
     </div>
   );
 }

@@ -76,8 +76,33 @@ describe("the ERC-8004 badge and panel", () => {
     expect(screen.queryByTestId("chain-image")).toBeNull();
   });
 
-  it("offers the command to link one to the viewer's own agent, and nothing to anyone else's", () => {
+  it("draws an identity card per live link, with chip, number, chain, owner and the explorer link", async () => {
+    const OWNER = "0x" + "ab".repeat(20);
+    fetchView.mockResolvedValue(view({ owner: OWNER, agent_wallet: "0x" + "cd".repeat(20), paid_at_own_wallet: true }));
+    render(<ChainLinkPanel agent={agent([link(), link({ agent_id: "7", status: "superseded", tier: "" })])} />);
+    const cards = screen.getAllByTestId("identity-card");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].textContent).toContain("ERC-8004");
+    expect(cards[0].textContent?.toLowerCase()).toContain("base sepolia");
+    const owner = await screen.findByTestId("chain-owner");
+    expect(owner.textContent).toBe("owner 0xabab…abab");
+    expect(owner.getAttribute("title")).toBe(OWNER);
+    expect(screen.getByTestId("chain-paid-to").textContent).toContain("this agent's own wallet");
+    const a = screen.getByTestId("identity-explorer");
+    expect(a.getAttribute("href")).toBe(`https://sepolia.basescan.org/nft/${REG}/42`);
+    expect(a.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(a.getAttribute("target")).toBe("_blank");
+  });
+
+  it("draws no card for a superseded link alone", () => {
+    render(<ChainLinkPanel agent={agent([link({ status: "superseded", tier: "" })])} />);
+    expect(screen.queryByTestId("identity-card")).toBeNull();
+  });
+
+  it("offers both commands on the empty card of the viewer's own agent, and nothing to anyone else's", () => {
     render(<ChainLinkPanel agent={{ ...agent([]), agent_id: "me" }} />);
+    expect(screen.getAllByTestId("identity-card")).toHaveLength(1);
+    expect(screen.getByText(/emporia agent register-8004 me --chain base-sepolia --browser/)).toBeTruthy();
     expect(screen.getByText(/emporia agent link-8004 me --chain base/)).toBeTruthy();
     cleanup();
     render(<ChainLinkPanel agent={agent([])} />);
