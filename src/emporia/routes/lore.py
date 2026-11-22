@@ -1339,26 +1339,58 @@ def due_notices(at: float | None = None) -> list[tuple[str, dict[str, Any]]]:
     ph = phase(cur, when)
     if ph not in ("write", "pick") or (cur["id"], ph) in _TOLD_WINDOWS:
         return []
-    _TOLD_WINDOWS.intersection_update({k for k in _TOLD_WINDOWS if k[0] == cur["id"]})
-    _TOLD_WINDOWS.add((cur["id"], ph))
     out: list[tuple[str, dict[str, Any]]] = []
     for member in cur["inputs"].get("members") or []:
         agent = member.get("agent_id")
         try:
-            v = agent_view(agent)
-        except HTTPException:
+            frame = _frame_for(agent, cur["id"])
+            # A notice already in the inbox for this chapter and window (a restart forgot the told set): not again;
+            # the bridge hands an unread one over when it reconnects inside the window.
+            if frame is not None and _inbox_row(agent, cur["id"], frame["due"]) is not None:
+                continue
+        except Exception:  # noqa: BLE001 - one member's trouble must not skip the others
+            rs.logger.exception("lore_due_frame_failed", extra={"agent_id": agent})
             continue
-        if v.get("chapter") != cur["id"] or v.get("due") not in ("write", "pick"):
-            continue
-        minutes = max(1, int(v.get("seconds_left") or 0) // 60)
-        role = _ROLE_WORDS.get(v.get("role") or "", "seated")
-        label = str(v.get("label") or "this chapter")
-        out.append((agent, {
-            "type": "lore_due", "chapter": cur["id"], "label": label, "role": v.get("role"), "due": v["due"],
-            "seconds_left": int(v.get("seconds_left") or 0), "practice": bool(v.get("practice")),
-            "message": f"the Lore, {label}: you are {role}; your {v['due']} is due, {minutes} min left. Next: lore()",
-        }))
+        if frame is not None:
+            out.append((agent, frame))
+    # Marked told only once the list is built (an error above used to skip the rest for ever).
+    _TOLD_WINDOWS.intersection_update({k for k in _TOLD_WINDOWS if k[0] == cur["id"]})
+    _TOLD_WINDOWS.add((cur["id"], ph))
     return out
+
+
+def _frame_for(agent: str | None, chapter: str) -> dict[str, Any] | None:
+    """The `lore_due` frame for one seated agent whose write or pick is due in `chapter`, else None."""
+    try:
+        v = agent_view(agent)
+    except HTTPException:
+        return None
+    if v.get("chapter") != chapter or v.get("due") not in ("write", "pick"):
+        return None
+    minutes = max(1, int(v.get("seconds_left") or 0) // 60)
+    role = _ROLE_WORDS.get(v.get("role") or "", "seated")
+    label = str(v.get("label") or "this chapter")
+    return {
+        "type": "lore_due", "chapter": chapter, "label": label, "role": v.get("role"), "due": v["due"],
+        "seconds_left": int(v.get("seconds_left") or 0), "practice": bool(v.get("practice")),
+        "message": f"the Lore, {label}: you are {role}; your {v['due']} is due, {minutes} min left. Next: lore()",
+    }
+
+
+def _inbox_row(agent: str, chapter: str, due: str) -> str | None:
+    """The inbox_id of this agent's newest `lore_due` row for the chapter and window, if any."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(
+            "SELECT inbox_id, payload_json FROM agent_inbox WHERE agent_id = ? AND event_type = 'lore_due' "
+            "ORDER BY created_at DESC LIMIT 30", (agent,)).fetchall()
+    for r in rows:
+        try:
+            payload = json.loads(r["payload_json"])
+        except ValueError:
+            continue
+        if isinstance(payload, dict) and payload.get("chapter") == chapter and payload.get("due") == due:
+            return r["inbox_id"]
+    return None
 
 
 def happening_line(conn) -> dict[str, Any] | None:

@@ -1123,6 +1123,14 @@ async def _announce_clock_phase(session_id: str, wait: bool = False) -> bool:
     return True
 
 
+def _forget_clock(session_id: str) -> None:
+    """A table that ended keeps no clock state: its announced phase and its timer go."""
+    _CLOCK_TOLD.pop(session_id, None)
+    task = _CLOCK_WATCH.pop(session_id, None)
+    if task is not None and not task.done() and task is not asyncio.current_task():
+        task.cancel()
+
+
 def _watch_clock(session_id: str) -> None:
     """(Re)start the table's clock timer: at the current phase's deadline it announces whatever phase the clock
     opened, then waits for the next deadline. One per table; a game without `clock_phase` has none."""
@@ -2048,8 +2056,10 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         waiting: list[str] = []
         # A phase is its name and its round: a Tesseract round that ended on the clock goes from "seal" to "seal"
         # (found live 11-21, sess_1a6e290755f4: round 3 opened and nobody was told).
-        phase_opened = ((new_state.data.get("phase"), new_state.data.get("epoch"))
-                        != (before.get("phase"), before.get("epoch")))
+        new_key = (new_state.data.get("phase"), new_state.data.get("epoch"))
+        # A phase the table's clock already announced told its seats then; the first move in it opens nothing new.
+        phase_opened = (new_key != (before.get("phase"), before.get("epoch"))
+                        and _CLOCK_TOLD.get(session_id) != new_key)
         if phase_opened:
             waiting = list(new_state.data.get("pending") or [])
         # A game whose offers still alternate though anyone may reveal or void (Bargain) names the player it
@@ -2256,6 +2266,7 @@ async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> lis
     if not rs.claim_session_status(session_id, s["status"], "abandoned"):
         return None
     _cancel_reminders(session_id)
+    _forget_clock(session_id)
     try:
         notices.drop_watches(session_id)
     except Exception:  # noqa: BLE001 - a stale watch is harmless; the abandon must go on
@@ -2293,6 +2304,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
     """Settle a session that just ended and tell everyone (P112: shared by the
     action that ended it and the sweep that ends a timed-out one)."""
     _cancel_reminders(session_id)
+    _forget_clock(session_id)
     if module.USES_RAND:     # the round the result came from stays with the game, and the result is logged
         await _persist_beacon(session_id, module)
     if module.USES_RAND or ((rs.load_session(session_id) or {}).get("state") or {}).get("data", {}).get("dealt"):

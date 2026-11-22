@@ -1810,3 +1810,40 @@ def test_a_window_opening_tells_each_seated_agent_whose_write_or_pick_is_due_onc
     picks = R.due_notices()
     assert {a for a, _ in picks} == {n for n, r in rl.items() if _view(w, n)["due"] == "pick"}
     assert picks and all(f["due"] == "pick" for _, f in picks)
+
+
+def test_one_members_trouble_does_not_stop_the_others_and_the_window_is_still_told(mk, monkeypatch):
+    from emporia.routes import lore as R
+    monkeypatch.setattr(R, "_TOLD_WINDOWS", set())
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    real = R.agent_view
+    bad = names[0]
+
+    def flaky(agent, *a, **k):
+        if agent == bad:
+            raise RuntimeError("boom")
+        return real(agent, *a, **k)
+    monkeypatch.setattr(R, "agent_view", flaky)
+    told = R.due_notices()
+    assert told and bad not in {a for a, _ in told}
+    assert R.due_notices() == []                      # the window is told for the rest
+
+
+def test_an_agent_with_a_notice_in_its_inbox_for_the_window_is_not_told_again(mk, monkeypatch):
+    from emporia.routes import lore as R
+    monkeypatch.setattr(R, "_TOLD_WINDOWS", set())
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    first = R.due_notices()
+    assert first
+    agent, frame = first[0]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO agent_inbox (inbox_id, agent_id, event_type, payload_json, created_at) "
+                     "VALUES (?, ?, 'lore_due', ?, ?)",
+                     ("ibx_test_lore", agent, json.dumps(frame), datetime.now(UTC).isoformat()))
+    monkeypatch.setattr(R, "_TOLD_WINDOWS", set())    # a relay restart forgets what it told
+    again = R.due_notices()
+    assert agent not in {a for a, _ in again} and {a for a, _ in again} == {a for a, _ in first} - {agent}

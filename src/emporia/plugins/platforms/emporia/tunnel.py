@@ -39,21 +39,30 @@ MISSED_TURN_HOURS = 24
 
 
 def missed_turn_frames(events: list[dict[str, Any]], now: Any = None) -> list[dict[str, Any]]:
-    """From an inbox page (newest first): the newest unread `your_turn` per game from the last day, as the
-    frames the relay would have sent live (payload plus inbox_id), oldest first. Older notices and other
+    """From an inbox page (newest first): the newest unread `your_turn` per game from the last day, and the newest
+    unread `lore_due` per (chapter, window) whose window is still open, as the frames the relay would have sent
+    live (payload plus inbox_id), oldest first. A Lore notice comes back with `seconds_left` reduced by the time it
+    sat in the inbox; one with no valid `seconds_left`, or none left, is not replayed. Older notices and other
     kinds stay in the inbox for whats_next; replaying them all would wake the agent for games long over."""
     from datetime import UTC, datetime, timedelta
     now = now or datetime.now(UTC)
-    seen: set[str] = set()
+    seen: set[Any] = set()
     out: list[dict[str, Any]] = []
     for e in events:
         payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
-        if e.get("event_type") != "your_turn" or payload.get("type") != "your_turn":
+        kind = e.get("event_type")
+        if kind == "your_turn" and payload.get("type") == "your_turn":
+            sid = str(payload.get("session_id") or "")
+            if not sid:
+                continue
+            key: Any = sid
+        elif kind == "lore_due" and payload.get("type") == "lore_due":
+            key = ("lore", str(payload.get("chapter") or ""), str(payload.get("due") or ""))
+        else:
             continue
-        sid = str(payload.get("session_id") or "")
-        if not sid or sid in seen:
+        if key in seen:
             continue
-        seen.add(sid)            # only the newest notice per game counts: if it was read, older ones are stale
+        seen.add(key)            # only the newest notice per game counts: if it was read, older ones are stale
         if e.get("is_read"):
             continue
         try:
@@ -64,7 +73,16 @@ def missed_turn_frames(events: list[dict[str, Any]], now: Any = None) -> list[di
             at = at.replace(tzinfo=UTC)
         if now - at > timedelta(hours=MISSED_TURN_HOURS):
             continue
-        out.append({**payload, "inbox_id": e.get("inbox_id"), "replayed": True})
+        frame = {**payload, "inbox_id": e.get("inbox_id"), "replayed": True}
+        if kind == "lore_due":
+            left = payload.get("seconds_left")
+            if isinstance(left, bool) or not isinstance(left, (int, float)) or left != left:
+                continue
+            remaining = int(left - (now - at).total_seconds()) if abs(left) < 1e12 else 0
+            if remaining <= 0:
+                continue         # the window closed while the bridge was away
+            frame["seconds_left"] = remaining
+        out.append(frame)
     return list(reversed(out))
 
 
@@ -160,8 +178,9 @@ async def maintain_relay_tunnel(
                 from emporia.agent_sdk import ws_subprotocols
                 async with websockets.connect(url, subprotocols=ws_subprotocols(token)) as ws:
                     attempt = 0
-                    # A turn notice sent while this bridge was away (a relay restart, a dropped line) is in the
-                    # inbox but was never handed over live: hand the newest per game over now, once.
+                    # A turn notice (or a Lore notice whose window is still open) sent while this bridge was away
+                    # (a relay restart, a dropped line) is in the inbox but was never handed over live: hand the
+                    # newest per game (per chapter and window) over now, once.
                     for frame in await _missed_turns(agent, relay_url, agent_id):
                         if await on_frame(frame) and frame.get("inbox_id"):
                             with contextlib.suppress(Exception):

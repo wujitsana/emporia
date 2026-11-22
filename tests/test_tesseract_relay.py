@@ -911,3 +911,41 @@ def test_the_sweep_announces_a_round_the_clock_opened_when_the_timer_was_lost(w,
     assert len(tells) == 1 and sid in watched
     asyncio.run(tells[0])
     assert sorted(told) == sorted(names)
+
+
+def test_a_clock_announced_round_is_not_woken_again_by_its_first_move(w, monkeypatch):
+    """The clock told round 2's players; the first move in round 2 compared the new phase with the stored one
+    (round 1) and woke them all once more."""
+    from emporia.routes import sessions as S
+    names = agents(w, 3)
+    sid = w.table(names)
+    w.clock.advance(20)
+    w.clock.advance(int(w.state(sid)["state"]["data"]["move_time_limit_s"]) + 5)
+    fl = w.flow(sid)
+    assert fl["phase"] == "seal" and fl["epoch"] == 2
+    wakes = _Wakes(monkeypatch)
+    monkeypatch.setattr(S, "_CLOCK_TOLD", {sid: (fl["phase"], fl["epoch"])})      # the clock announced it
+    assert w.tools(names[0]).push(sid, {"XY>X": 2})["success"]
+    assert not [a for a, f in wakes.sent if a != names[0]]
+    assert not [d for d in wakes.deferred if d["session_id"] == sid and d["agents"]]
+
+
+def test_the_sweep_ending_a_clock_table_clears_its_clock_state(w, monkeypatch):
+    from unittest.mock import MagicMock
+    from emporia.routes import sessions as S
+    names = agents(w, 3)
+    sid = w.table(names)
+    task = MagicMock()
+    task.done.return_value = False
+    monkeypatch.setattr(S, "_CLOCK_TOLD", {sid: ("seal", 1)})
+    monkeypatch.setattr(S, "_CLOCK_WATCH", {sid: task})
+    monkeypatch.setattr(S, "_REMINDERS", {})
+    limit = int(w.state(sid)["state"]["data"]["move_time_limit_s"])
+    for _ in range(5):
+        w.clock.advance(limit + 25)
+        w.sweep()
+    w.clock.advance(int(w.state(sid)["state"]["data"]["reveal_window_s"]) + 25)
+    w.sweep()
+    assert w.state(sid)["status"] == "completed"
+    assert sid not in S._CLOCK_TOLD and sid not in S._CLOCK_WATCH
+    task.cancel.assert_called()

@@ -496,11 +496,17 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         # The Lore's window opened and this agent's write or pick is due (the relay's own fields; fixed words).
         due = frame.get("due") if frame.get("due") in ("write", "pick") else "turn"
         role = {"scribe": "a scribe", "juror": "a juror", "alternate": "an alternate"}.get(str(frame.get("role")), "seated")
+        # A number from the wire is capped (a week) and never raises: bool, NaN, inf and huge values all land in range.
+        left = frame.get("seconds_left")
         try:
-            minutes = max(1, int(frame.get("seconds_left") or 0) // 60)
-        except (TypeError, ValueError):
+            minutes = 1 if isinstance(left, bool) else max(1, min(int(left or 0) // 60, 10080))
+        except (TypeError, ValueError, OverflowError):
             minutes = 1
-        label = _one_line(frame.get("label"), 40) or "this chapter"
+        # The label is fixed words: only the relay's own "Chapter N" / "Practice page N" pass (lore.py); anything
+        # else, from a hostile relay, becomes "this chapter".
+        label = _one_line(frame.get("label"), 40)
+        if not _LORE_LABEL.fullmatch(label):
+            label = "this chapter"
         then = "lore_write" if due == "write" else "lore_vote" if due == "pick" else "the tool lore() names"
         return relay_notice(
             f"The Lore, {label}: you are {role}; your {due} is due, {minutes} min left"
@@ -511,6 +517,9 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
     # and in one short line, since it goes out as the relay (audit 11-05).
     detail = _one_line(frame.get("message"), 200)
     return relay_notice(f"{_one_line(t, 48) or 'event'}" + (f": {detail}" if detail else ""))
+
+_LORE_LABEL = re.compile(r"(Chapter|Practice page) \d{1,6}")
+
 
 def _quoted(value: Any, limit: int) -> str:
     """Another agent's short text in a digest: one line, cut, in double quotes (a quote inside is a single one),

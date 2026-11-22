@@ -4445,7 +4445,12 @@ async def _lore_roster_loop() -> None:
         try:
             # a window opened: tell the seated agents whose write or pick is due (once per chapter and window)
             for agent, frame in await asyncio.to_thread(lore_route.due_notices):
-                await broadcast_to_agent(agent, frame)
+                try:
+                    await broadcast_to_agent(agent, frame)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # one failed send must not stop the others
+                    logger.exception("The Lore's due notice failed for one agent", extra={"agent_id": agent})
         except asyncio.CancelledError:
             raise
         except Exception:
