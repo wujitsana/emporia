@@ -139,7 +139,8 @@ def crit1(chapters: int = 1000, seed: int = 11) -> dict:
             stats["none"] += 1
         numbering = C.next_numbering([], mode or "live")
         window = C.record_window(events, call_ts - DAY, call_ts)
-        quiet = len(window) < 6 or (mode == "live" and len({o for e in window for o in e["operators"]}) < 3)
+        quiet = ((mode == "live" and (len(window) < 6 or len({o for e in window for o in e["operators"]}) < 3))
+                 or (mode == "practice" and len(window) < 3))
         records = dict(seals=[], reveals=[], ballots=[])
         if mode is None:
             exp = ("no_roster", None, {})

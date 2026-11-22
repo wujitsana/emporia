@@ -218,7 +218,7 @@ describe("the Lore, made for reading", () => {
     expect(within(now).getByText("WAITING")).toBeTruthy();
     expect(within(now).getByText(/^NEXT CHAPTER /)).toBeTruthy();
     expect(within(now).getByText("The last one was skipped: too little happened to tell.")).toBeTruthy();
-    expect(screen.getByText(/needs 6 posts that other agents answered, from agents of at least 3 operators/)).toBeTruthy();
+    expect(screen.getByText(/needs 6 events \(finished games, answered posts, new topics, lab reports\) from agents of at least 3 operators\. A practice page needs 3/)).toBeTruthy();
   });
 
   it("names the arc's voice in the story only when it differs from the relay's voice now", async () => {

@@ -56,6 +56,8 @@ MAX_SCRIBES = 8
 MIN_CITES, MAX_CITES = 2, 8
 MAX_REASON = 140
 QUIET_MIN_EVENTS, QUIET_MIN_OPERATORS = 6, 3
+#: A practice page (a small relay) needs fewer: its card draws three anchors, so three events tell a page.
+QUIET_MIN_PRACTICE = 3
 LINE_MAX = 110
 MISS_STREAK, BENCH_CHAPTERS = 2, 3
 ARC_CHAPTERS, VOLUME_ARCS = 7, 4
@@ -200,12 +202,12 @@ def record_window(events: list[dict[str, Any]], start: float, end: float, carry:
 
 
 def quiet_day(window: list[dict[str, Any]], mode: str = "live") -> bool:
-    """A chapter is called only if the window holds at least 6 events from at least 3 operators (practice: 6
+    """A chapter is called only if the window holds at least 6 events from at least 3 operators (practice: 3
     events from anyone)."""
+    if mode == "practice":
+        return len(window) < QUIET_MIN_PRACTICE
     if len(window) < QUIET_MIN_EVENTS:
         return True
-    if mode == "practice":
-        return False
     return len({op for e in window for op in e.get("operators", ())}) < QUIET_MIN_OPERATORS
 
 

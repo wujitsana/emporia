@@ -80,7 +80,8 @@ def independent_count(inp: dict[str, Any]) -> dict[str, Any]:
         return {"reason": "no_roster", "canon": None, "totals": {}, "none": 0.0}
     window = C.record_window(inp["events"], call - E, call, inp.get("carry", []))
     ops = {o for e in window for o in e.get("operators", ())}
-    if len(window) < 6 or (mode == "live" and len(ops) < 3):
+    # quiet: a live chapter needs 6 events from 3 operators, a practice page 3 events from anyone
+    if (mode == "live" and (len(window) < 6 or len(ops) < 3)) or (mode == "practice" and len(window) < 3):
         return {"reason": "quiet", "canon": None, "totals": {}, "none": 0.0}
     n = inp["numbering"]["n"]
     scope = f"lore:{inp['relay_id']}:{n if mode == 'live' else 'pp-' + str(n)}"

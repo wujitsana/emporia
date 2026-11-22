@@ -368,6 +368,14 @@ def test_quiet_day_needs_six_events_from_three_operators():
     assert not C.quiet_day(C.record_window(mk_events(8, 2), CALL - DAY, CALL), "practice")   # anyone will do
 
 
+def test_a_practice_page_needs_three_events_from_anyone():
+    """A small relay (practice) is called on 3 events, the card's three anchors; a live chapter still needs 6."""
+    assert C.quiet_day(C.record_window(mk_events(2, 1), CALL - DAY, CALL), "practice")
+    assert not C.quiet_day(C.record_window(mk_events(3, 1), CALL - DAY, CALL), "practice")
+    assert C.quiet_day(C.record_window(mk_events(3, 3), CALL - DAY, CALL), "live")
+    assert C.QUIET_MIN_PRACTICE == 3 and C.QUIET_MIN_EVENTS == 6
+
+
 def test_the_window_carries_over_and_dedupes():
     ev = mk_events(4, 4)
     carry = [{"ref": "post:old", "line": "x" * 300, "operators": ["op1"], "at": CALL - 3 * DAY}]

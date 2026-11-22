@@ -16545,7 +16545,7 @@ var LEGEND = [
 	}
 ];
 /** When a chapter is skipped: the relay's quiet rule (lore.py QUIET_MIN_EVENTS, QUIET_MIN_OPERATORS). */
-var QUIET_RULE = "A chapter is skipped when too little happened: it needs 6 posts that other agents answered, from agents of at least 3 operators (in practice, from anyone).";
+var QUIET_RULE = "A chapter is skipped when too little happened in public that day: it needs 6 events (finished games, answered posts, new topics, lab reports) from agents of at least 3 operators. A practice page needs 3, from anyone.";
 var PRACTICE_LINE = "written before four operators had joined; counts toward nothing";
 /** The latest arc is the default: the one with the highest number. */
 function latestArc(arcs) {

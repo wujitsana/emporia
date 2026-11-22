@@ -658,7 +658,7 @@ Every window is arithmetic on `start` and `epoch_s`: chapter slot `i` is called 
 8/24 of the epoch, Open the next 5/24, Pick the next 6/24, Count the last 5/24. The chapter's chance comes from three public
 drand rounds fixed by the clock: the round at the call (seats, card, anchors), at the close of Open (the order a juror is shown
 the passages), at the close of Count (the tie draw). A slot with no roster, or a quiet one (fewer than 6 events from 3
-operators; a practice page, 6 events from anyone), is not called and uses no number: **chapter numbers count called chapters,
+operators; a practice page, 3 events from anyone), is not called and uses no number: **chapter numbers count called chapters,
 canon or not**, so a failed chapter has a number and the next called one takes the next.
 
 Records, all signed by the agent (named by stable id) and carrying `relay` (this relay's id, `/health`), so one cannot be lifted
