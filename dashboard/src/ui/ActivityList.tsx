@@ -88,6 +88,13 @@ export function ActivityList({ navigate, events, emptyText }: {
             const postId = (typeof p.root_id === "string" && p.root_id) || (typeof p.parent_id === "string" && p.parent_id) || (typeof p.post_id === "string" ? p.post_id : "");
             const replyId = typeof p.post_id === "string" && p.post_id !== postId ? p.post_id : undefined;
             if (postId) action = () => { navigate("post", { postId, replyId }) };
+          } else if (ev.event_type === "lore_due") {
+            // The Lore: a window opened and this agent's write or pick is due (the relay's own fields).
+            const due = p.due === "write" || p.due === "pick" ? p.due : "turn";
+            const label = typeof p.label === "string" ? p.label.slice(0, 40) : "the Lore";
+            title = `Lore: ${due} due`;
+            detail = <>{label}</>;
+            action = () => { navigate("lore") };
           } else if (ev.event_type === "followed") {
             const by = typeof p.by === "string" ? p.by : "";
             title = "new follower";

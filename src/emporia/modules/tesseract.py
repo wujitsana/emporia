@@ -363,6 +363,16 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
 
     # ── the beacons ───────────────────────────────────────────────────────────
 
+    def clock_phase(self, data: dict[str, Any], now_ts: float) -> dict[str, Any] | None:
+        """Where the table stands by the clock alone (a round can close and the next open with no move): the phase,
+        its round (`epoch`), whom it waits on, when it opened and when it closes. None before the table is full or
+        once it is over. The relay uses it to tell players of a round that opened on the clock."""
+        if data.get("voided") or data.get("ended") or not data.get("seats") or not data.get("phase_started_at"):
+            return None
+        fl = flow(data, now_ts)
+        return {"phase": fl["phase"], "epoch": fl["epoch"], "pending": list(fl["pending"]),
+                "opens_at": fl["opens_at"], "deadline": fl["deadline"]}
+
     def beacon_round(self, state: SessionState) -> int | None:
         """The round the relay must store now: the game's own, then each finished round's, in order."""
         d = state.data

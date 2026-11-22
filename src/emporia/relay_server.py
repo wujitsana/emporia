@@ -4442,6 +4442,14 @@ async def _lore_roster_loop() -> None:
             raise
         except Exception:
             logger.exception("The Lore's tick (rosters, freezing) failed — will retry")
+        try:
+            # a window opened: tell the seated agents whose write or pick is due (once per chapter and window)
+            for agent, frame in await asyncio.to_thread(lore_route.due_notices):
+                await broadcast_to_agent(agent, frame)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("The Lore's due notices failed — will retry")
 
 
 async def _log_state_loop() -> None:

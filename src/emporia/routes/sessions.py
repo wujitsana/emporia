@@ -956,6 +956,21 @@ def _waiting_on(s: dict[str, Any], data: dict[str, Any]) -> list[str]:
     return [s["current_agent"]] if s.get("current_agent") else []
 
 
+def _waiting_now(s: dict[str, Any], data: dict[str, Any]) -> list[str]:
+    """Whom a game waits on now. A game whose rounds close on the clock (Tesseract) says so itself: its stored
+    `pending` is the one of the last move, stale once a round closed with no move."""
+    module = get_interaction_module(s["module_type"]) if s.get("module_type") else None
+    clock = getattr(module, "clock_phase", None)
+    if clock is not None:
+        try:
+            cp = clock(data, datetime.now(UTC).timestamp())
+            if cp is not None:
+                return list(cp["pending"])
+        except Exception:  # noqa: BLE001 — the stored answer then
+            pass
+    return _waiting_on(s, data)
+
+
 def _first_turn_opens_at(data: dict[str, Any]) -> datetime | None:
     """When a new game's first turn opens, if that is later than now (a game dealt from a public draw)."""
     raw = data.get("turn_started_at") or data.get("phase_started_at")
@@ -1009,7 +1024,7 @@ async def _remind(session_id: str, agents: list[str], step: int, delay_s: float,
         # 11-21, sess_1a6e290755f4: a seat's reminder was dropped by another seat's seal, and it timed out).
         if not isinstance(data.get("pending"), (list, tuple, set)) and int(s.get("step_number") or 0) != step:
             return
-        waiting = set(_waiting_on(s, data))
+        waiting = set(_waiting_now(s, data))
         due = [a for a in agents if a in waiting]
         step = int(s.get("step_number") or step)
     for agent in due:
@@ -1059,12 +1074,89 @@ async def _tell_when_drawn(session_id: str, agents: list[str], step: int, extra:
             break
         await asyncio.sleep(FIRST_MOVER_WAIT_S)
     data = ((s.get("state") or {}).get("data") or {})
-    waiting = set(_waiting_on(s, data))
+    waiting = set(_waiting_now(s, data))
     due = [a for a in agents if a in waiting]
     for agent in due:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"],
                                             "step_number": int(s.get("step_number") or step), **extra})
+
+
+#: The phase each table last announced from the clock (game -> (phase, round)), so it is told once.
+_CLOCK_TOLD: dict[str, tuple[Any, Any]] = {}
+#: One timer per table whose rounds close on the clock: it wakes at the current phase's deadline.
+_CLOCK_WATCH: dict[str, asyncio.Task] = {}
+CLOCK_GRACE_S = 2.0
+
+
+async def _announce_clock_phase(session_id: str, wait: bool = False) -> bool:
+    """Tell the players of a phase that opened on the clock, with no move (a Tesseract round nobody sealed in closes
+    at its deadline and the next opens; no move means no wake, and the table went on with nobody told). Once per
+    phase; the players are told when its draw is stored, as after a move (in the background unless `wait`: the sweep
+    must not stand still for one table's draw). True when it told anyone."""
+    s = rs.load_session(session_id)
+    if not s or s.get("status") != "active":
+        return False
+    module = get_interaction_module(s["module_type"])
+    clock = getattr(module, "clock_phase", None)
+    if clock is None:
+        return False
+    data = ((s.get("state") or {}).get("data") or {})
+    now = datetime.now(UTC).timestamp()
+    try:
+        cp = clock(data, now)
+    except Exception:  # noqa: BLE001 — nothing to say then
+        return False
+    if not cp or not cp["pending"] or now >= float(cp["deadline"]):
+        return False
+    key = (cp["phase"], cp["epoch"])
+    if key == (data.get("phase"), data.get("epoch")) or _CLOCK_TOLD.get(session_id) == key:
+        return False          # a move already announced it, or this did
+    _CLOCK_TOLD[session_id] = key
+    step = int(s.get("step_number") or 0)
+    tell = _tell_when_drawn(session_id, list(cp["pending"]), step, {"opened_on_clock": True})
+    if wait:
+        await tell
+    else:
+        _schedule(tell)
+    _remind_later(session_id, list(cp["pending"]), step, data)
+    return True
+
+
+def _watch_clock(session_id: str) -> None:
+    """(Re)start the table's clock timer: at the current phase's deadline it announces whatever phase the clock
+    opened, then waits for the next deadline. One per table; a game without `clock_phase` has none."""
+    old = _CLOCK_WATCH.pop(session_id, None)
+    if old is not None and not old.done() and old is not asyncio.current_task():
+        old.cancel()
+    try:
+        task = _schedule(_clock_tick(session_id))
+    except RuntimeError:          # no running loop (a synchronous caller): the sweep is the backstop
+        return
+    _CLOCK_WATCH[session_id] = task
+    task.add_done_callback(lambda t, k=session_id: _CLOCK_WATCH.pop(k, None) if _CLOCK_WATCH.get(k) is t else None)
+
+
+async def _clock_tick(session_id: str) -> None:
+    s = rs.load_session(session_id)
+    if not s or s.get("status") != "active":
+        _CLOCK_TOLD.pop(session_id, None)
+        return
+    clock = getattr(get_interaction_module(s["module_type"]), "clock_phase", None)
+    if clock is None:
+        return
+    try:
+        cp = clock(((s.get("state") or {}).get("data") or {}), datetime.now(UTC).timestamp())
+    except Exception:  # noqa: BLE001 — the sweep is the backstop
+        return
+    if not cp:
+        _CLOCK_TOLD.pop(session_id, None)
+        return
+    if datetime.now(UTC).timestamp() >= float(cp["deadline"]) + CLOCK_GRACE_S:
+        return                # the last phase is over: the sweep ends the table (no tick every few seconds till then)
+    await asyncio.sleep(max(0.0, float(cp["deadline"]) - datetime.now(UTC).timestamp()) + CLOCK_GRACE_S)
+    await _announce_clock_phase(session_id, wait=True)
+    _watch_clock(session_id)
 
 
 async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
@@ -1111,6 +1203,8 @@ async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"], "step_number": 0})
     _remind_later(session_id, list(waiting), 0, data)
+    if getattr(module, "clock_phase", None) is not None:
+        _watch_clock(session_id)            # a first round nobody seals in still tells the next
 
 
 async def _start(session_id: str, s: dict[str, Any], participants: list[str],
@@ -1159,6 +1253,8 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
     first = (list(state.data.get("pending") or participants) if not module.TURN_ORDER
              else ([state.current_agent] if state.current_agent else []))
     _remind_later(session_id, first, 0, state.data)
+    if getattr(module, "clock_phase", None) is not None:
+        _watch_clock(session_id)
 
 
 ESCROW_HEADER = "PAYMENT-ESCROW"
@@ -1996,6 +2092,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
                 "module_type": s["module_type"], "step_number": s["step_number"] + 1, **extra,
             })
         _remind_later(session_id, waiting, s["step_number"] + 1, new_state.data, reveal=reveal_now)
+        if getattr(module, "clock_phase", None) is not None:
+            _watch_clock(session_id)        # the next deadline: a round that closes with no move is still told
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching
         # the session socket, so an agent driven by its own channel waited on a
@@ -2057,6 +2155,14 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
                 counts["skipped"] = counts.get("skipped", 0) + 1
                 continue
             if not is_over:
+                if getattr(module, "clock_phase", None) is not None:
+                    # a timer lost to a restart: announce what the clock opened, and watch the next deadline
+                    await _announce_clock_phase(s["session_id"])
+                    if s["session_id"] not in _CLOCK_WATCH:
+                        try:
+                            _watch_clock(s["session_id"])
+                        except Exception:  # noqa: BLE001 — the next sweep tries again
+                            pass
                 continue
             # Claimed like a fund, so a racing submit_action and this sweep
             # cannot both settle the same session.

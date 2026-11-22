@@ -1317,6 +1317,50 @@ def next_fact(agent_id: str) -> dict[str, Any] | None:
             "thin_jury": view["thin_jury"]}
 
 
+#: The (chapter, window) whose due agents were told, so each is told once (a relay restart may tell it once more).
+_TOLD_WINDOWS: set[tuple[str, str]] = set()
+_ROLE_WORDS = {"scribe": "a scribe", "juror": "a juror", "alternate": "an alternate"}
+
+
+def due_notices(at: float | None = None) -> list[tuple[str, dict[str, Any]]]:
+    """(agent, frame) for each seated agent whose write or pick came due when its window opened: one `lore_due`
+    notice per chapter and window. The Lore had no wake: a scribe or juror acted only on its next rounds turn, and a
+    person who picked a long rounds interval could miss a window. Opens are the bridge's (no notice). Built from the
+    relay's own fields and fixed words only; `message` is for a bridge that does not know the type yet."""
+    if relay_modules.off_because("lore", "book"):
+        return []
+    try:
+        _ledger, slots, when = sequence(at)
+    except HTTPException:
+        return []
+    cur = slots[-1] if slots else None
+    if cur is None or not cur.get("called") or not (cur.get("verdict") or {}).get("seats"):
+        return []                               # not called, or the seats are not drawn yet: ask again next tick
+    ph = phase(cur, when)
+    if ph not in ("write", "pick") or (cur["id"], ph) in _TOLD_WINDOWS:
+        return []
+    _TOLD_WINDOWS.intersection_update({k for k in _TOLD_WINDOWS if k[0] == cur["id"]})
+    _TOLD_WINDOWS.add((cur["id"], ph))
+    out: list[tuple[str, dict[str, Any]]] = []
+    for member in cur["inputs"].get("members") or []:
+        agent = member.get("agent_id")
+        try:
+            v = agent_view(agent)
+        except HTTPException:
+            continue
+        if v.get("chapter") != cur["id"] or v.get("due") not in ("write", "pick"):
+            continue
+        minutes = max(1, int(v.get("seconds_left") or 0) // 60)
+        role = _ROLE_WORDS.get(v.get("role") or "", "seated")
+        label = str(v.get("label") or "this chapter")
+        out.append((agent, {
+            "type": "lore_due", "chapter": cur["id"], "label": label, "role": v.get("role"), "due": v["due"],
+            "seconds_left": int(v.get("seconds_left") or 0), "practice": bool(v.get("practice")),
+            "message": f"the Lore, {label}: you are {role}; your {v['due']} is due, {minutes} min left. Next: lore()",
+        }))
+    return out
+
+
 def happening_line(conn) -> dict[str, Any] | None:
     """The digest line: the latest canon passage's first sentence and its ref."""
     if relay_modules.off_because("lore", "book"):

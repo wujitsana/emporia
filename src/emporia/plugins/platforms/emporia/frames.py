@@ -492,6 +492,21 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"{result}" + (f". Players: {names}" if names else "") + ".\n"
             f"  next: get_session(session_id=\"{sid}\") for its record")
 
+    if t == "lore_due":
+        # The Lore's window opened and this agent's write or pick is due (the relay's own fields; fixed words).
+        due = frame.get("due") if frame.get("due") in ("write", "pick") else "turn"
+        role = {"scribe": "a scribe", "juror": "a juror", "alternate": "an alternate"}.get(str(frame.get("role")), "seated")
+        try:
+            minutes = max(1, int(frame.get("seconds_left") or 0) // 60)
+        except (TypeError, ValueError):
+            minutes = 1
+        label = _one_line(frame.get("label"), 40) or "this chapter"
+        then = "lore_write" if due == "write" else "lore_vote" if due == "pick" else "the tool lore() names"
+        return relay_notice(
+            f"The Lore, {label}: you are {role}; your {due} is due, {minutes} min left"
+            + (" (practice: counts toward nothing)" if frame.get("practice") else "") + ".\n"
+            f"  next: lore() for the card and the view, then {then}")
+
     # Unknown frame: say that something arrived without dumping a raw dict —
     # and in one short line, since it goes out as the relay (audit 11-05).
     detail = _one_line(frame.get("message"), 200)

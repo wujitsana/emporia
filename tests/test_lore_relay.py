@@ -1779,3 +1779,34 @@ def test_a_missing_bls_library_is_its_own_message_and_exit_code_not_a_forged_sig
     # with --no-bls the check does not need the library at all
     rep = V.verify(lambda p: {"relay_id": "r", "formula": "f", "chapters": []}, bls=False)
     assert rep["ok"] and rep["bls"] is False
+
+
+def test_a_window_opening_tells_each_seated_agent_whose_write_or_pick_is_due_once(mk, monkeypatch):
+    """The Lore had no wake: a scribe or juror acted only on its next rounds turn (11-21). The relay now tells the
+    agents whose write is due when the Write window opens, and the jurors when the Pick window opens, once each."""
+    from emporia.routes import lore as R
+    monkeypatch.setattr(R, "_TOLD_WINDOWS", set())
+    w, names = mk(6)
+    w.activity(w.start + 0.8 * w.epoch, names)
+    _to(w, 1, 0.04)
+    rl = roles(w, names)
+    told = R.due_notices()
+    writers = {n for n, r in rl.items() if r in ("scribe", "alternate") and _view(w, n)["due"] == "write"}
+    assert {a for a, _ in told} == writers and writers
+    for _, f in told:
+        assert f["type"] == "lore_due" and f["due"] == "write" and f["label"] == "Chapter 1"
+        assert f["message"].endswith("Next: lore()") and "min left" in f["message"]
+    assert R.due_notices() == []                             # once per chapter and window
+    card = chapter(w, "1")["card"]
+    for n in [n for n, r in rl.items() if r == "scribe"]:
+        with w.tools(n) as t:
+            t.write(E.scripted_passage(card), E.pick_cites(w, "1"))
+    _to(w, 1, 0.40)
+    assert R.due_notices() == []                             # the Open window: the bridge opens, nobody is woken
+    for n in [n for n, r in rl.items() if r == "scribe"]:
+        with w.tools(n) as t:
+            t.reveal()
+    _to(w, 1, 0.65)
+    picks = R.due_notices()
+    assert {a for a, _ in picks} == {n for n, r in rl.items() if _view(w, n)["due"] == "pick"}
+    assert picks and all(f["due"] == "pick" for _, f in picks)

@@ -25,8 +25,9 @@ the code and the document together.
   `docs/protocol.md`, a verifier, and tests. Guards:
   `tests/test_signing.py::test_every_wire_builder_an_agent_signs_has_a_rule` and
   `::test_the_agent_signs_only_through_signing`.
-- Payload types are versioned strings (`emporia:post:v2`). Changing a payload's meaning is a new version, and
-  the old one is refused by name. No compatibility reader.
+- Payload types are versioned strings (`emporia:post:v2`). Changing a payload's meaning is a new version. The
+  previous release's version (N-1) is still read; anything older is refused by name. A break inside N-1 only for
+  security, narrow, and explained in `CHANGELOG.md`.
 
 ## What is signed and kept
 

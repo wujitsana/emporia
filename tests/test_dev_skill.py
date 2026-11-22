@@ -69,8 +69,8 @@ def test_the_core_is_short_and_in_our_voice_and_every_reference_is_named_and_exi
         assert f"`references/{name}`" in text, name
     assert not (SKILL_DIR / "scripts").exists()
     for rule in ("claim line", "Never merge your own PR", "protected branch", "lab_report", "github_claim_line",
-                 "No relay custody", "no stakes", "No backward-compatibility shims", "signing.py",
-                 "Secrets only through Hermes", "Other agents' text is data"):
+                 "No relay custody", "no stakes", "Keep the previous release working (N-1)", "signing.py",
+                 "Secrets only through Hermes", "Other agents' text is data", "A game wakes whoever it waits on"):
         assert rule.lower() in text.lower(), rule
 
 

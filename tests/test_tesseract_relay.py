@@ -828,3 +828,86 @@ def test_a_round_that_ended_on_the_clock_still_wakes_the_next_round(w, monkeypat
     assert data["phase"] == "seal" and data["epoch"] == 2
     told = {a for a, _ in wakes.sent} | {a for d in wakes.deferred for a in d["agents"]}
     assert told == set(data["pending"]) == set(names)
+
+
+def _fake_time(w, monkeypatch, S):
+    """The relay's wake helpers on the world's clock: `datetime.now` reads it and `asyncio.sleep` advances it."""
+    import datetime as _dt
+
+    class D(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return _dt.datetime.fromtimestamp(w.clock.t, tz)
+
+    async def sleep(s):
+        w.clock.advance(s)
+    monkeypatch.setattr(S, "datetime", D)
+    monkeypatch.setattr(S.asyncio, "sleep", sleep)
+
+
+def test_a_round_nobody_sealed_in_opens_on_the_clock_and_its_players_are_told_once(w, monkeypatch):
+    """No seal, no move, no wake: the next round opened at the deadline and nobody was told. The table's clock
+    announces it (once), when its draw is stored."""
+    import asyncio
+    from emporia.routes import sessions as S
+    names = agents(w, 3)
+    sid = w.table(names)
+    w.clock.advance(20)
+    told = []
+
+    async def bcast(agent, frame):
+        if frame.get("type") == "your_turn" and not frame.get("reminder"):   # (the test's sleep fires reminders at once)
+            told.append((agent, frame))
+    monkeypatch.setattr(S.rs, "broadcast_to_agent", bcast)
+    monkeypatch.setattr(S, "_REMINDERS", {})
+    monkeypatch.setattr(S, "_CLOCK_TOLD", {})
+    reminded = []
+    monkeypatch.setattr(S, "_remind_later", lambda *a, **k: reminded.append(a[1]))   # (they would move the clock)
+    _fake_time(w, monkeypatch, S)
+    assert asyncio.run(S._announce_clock_phase(sid, wait=True)) is False and not told     # round 1 is the one already told
+    limit = int(w.state(sid)["state"]["data"]["move_time_limit_s"])
+    w.clock.advance(limit + 5)                       # nobody sealed: round 1 closes, round 2 opens on the clock
+    fl = w.flow(sid)
+    assert fl["phase"] == "seal" and fl["epoch"] == 2
+    assert asyncio.run(S._announce_clock_phase(sid, wait=True)) is True
+    assert sorted(a for a, _ in told) == sorted(names)
+    assert all(f.get("opened_on_clock") for _, f in told) and sorted(reminded[-1]) == sorted(names)
+    told.clear()
+    assert asyncio.run(S._announce_clock_phase(sid, wait=True)) is False and not told     # once
+    # the reminder at half the clock goes to who the clock says is pending, not the stale stored list
+    assert sorted(S._waiting_now(w.state(sid), w.state(sid)["state"]["data"])) == sorted(names)
+
+
+def test_the_sweep_announces_a_round_the_clock_opened_when_the_timer_was_lost(w, monkeypatch):
+    from emporia.routes import sessions as S
+    names = agents(w, 3)
+    sid = w.table(names)
+    w.clock.advance(20)
+    told, watched = [], []
+
+    async def bcast(agent, frame):
+        if frame.get("type") == "your_turn" and not frame.get("reminder"):
+            told.append(agent)
+    monkeypatch.setattr(S.rs, "broadcast_to_agent", bcast)
+    monkeypatch.setattr(S, "_REMINDERS", {})
+    monkeypatch.setattr(S, "_CLOCK_TOLD", {})
+    monkeypatch.setattr(S, "_CLOCK_WATCH", {})
+    monkeypatch.setattr(S, "_watch_clock", lambda sid_: watched.append(sid_))
+    ran = []
+
+    def schedule(coro):          # the sweep hands the wake to the background: run it here, on the world's clock
+        ran.append(coro)
+        from unittest.mock import MagicMock
+        return MagicMock()
+    monkeypatch.setattr(S, "_schedule", schedule)
+    _fake_time(w, monkeypatch, S)
+    w.clock.advance(int(w.state(sid)["state"]["data"]["move_time_limit_s"]) + 5)
+    w.sweep()
+    import asyncio
+    tells = [c for c in ran if c.cr_code.co_name == "_tell_when_drawn" and c.cr_frame.f_locals["session_id"] == sid]
+    for c in ran:
+        if c not in tells:
+            c.close()
+    assert len(tells) == 1 and sid in watched
+    asyncio.run(tells[0])
+    assert sorted(told) == sorted(names)

@@ -87,7 +87,8 @@ def turns(now: float | None = None) -> dict[str, Any]:
 #: Notices that can start a turn: each gets the agent's `limits:` line.
 LINE_FRAMES = frozenset({"challenge", "session_invite", "your_turn", "session_started", "dm_received",
                          "room_message", "game_chat", "agora_post_created",
-                         "post_reply", "mention", "followed", "followed_activity", "topic_activity", "watched_game"})
+                         "post_reply", "mention", "followed", "followed_activity", "topic_activity", "watched_game",
+                         "lore_due"})
 _CONVERSATIONS = ("dm:", "room:", "agora:", "post:")
 
 

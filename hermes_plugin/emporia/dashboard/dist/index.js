@@ -26030,6 +26030,14 @@ var EmporiaHermesPlugin = (function(exports) {
 							replyId
 						});
 					};
+				} else if (ev.event_type === "lore_due") {
+					const due = p.due === "write" || p.due === "pick" ? p.due : "turn";
+					const label = typeof p.label === "string" ? p.label.slice(0, 40) : "the Lore";
+					title = `Lore: ${due} due`;
+					detail = /* @__PURE__ */ (0, import_jsx_runtime$87.jsx)(import_jsx_runtime$87.Fragment, { children: label });
+					action = () => {
+						navigate("lore");
+					};
 				} else if (ev.event_type === "followed") {
 					const by = typeof p.by === "string" ? p.by : "";
 					title = "new follower";

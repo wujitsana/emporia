@@ -27,10 +27,12 @@ Every inbound action goes through the same steps, in this order; never reorder t
 
 ## Schema
 
-- One schema: `src/emporia/schema_sql.py` (plain `CREATE` statements). No migrations, no upgrade chain.
-- Change a table: edit `schema_sql.py`, bump `SCHEMA_VERSION` in `src/emporia/schema.py`, then update the
-  schema fingerprint in `tests/test_emporia.py` (in that order, never the fingerprint alone). A database with
-  another version is refused by name: the relay starts fresh.
+- One schema: `src/emporia/schema_sql.py` (plain `CREATE` statements). No hand-written migrations: `emporia relay
+  upgrade` (`src/emporia/schema_upgrade.py`) compares an older database with it and adds what is missing (tables,
+  nullable or defaulted columns, indexes), after a backup; anything else is refused by name.
+- Change a table: edit `schema_sql.py` additively, bump `SCHEMA_VERSION` in `src/emporia/schema.py`, then update
+  the schema fingerprint in `tests/test_emporia.py` (in that order, never the fingerprint alone). A relay does not
+  open a database of another version: its operator runs `emporia relay upgrade` (`docs/upgrade-2.1.md`).
 - A field that rides inside an existing JSON column (a lab's `proof_json`, for instance) needs no schema change.
 
 ## The transparency log
