@@ -2058,8 +2058,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         # (found live 11-21, sess_1a6e290755f4: round 3 opened and nobody was told).
         new_key = (new_state.data.get("phase"), new_state.data.get("epoch"))
         # A phase the table's clock already announced told its seats then; the first move in it opens nothing new.
-        phase_opened = (new_key != (before.get("phase"), before.get("epoch"))
-                        and _CLOCK_TOLD.get(session_id) != new_key)
+        clock_told = _CLOCK_TOLD.get(session_id) == new_key
+        phase_opened = new_key != (before.get("phase"), before.get("epoch")) and not clock_told
         if phase_opened:
             waiting = list(new_state.data.get("pending") or [])
         # A game whose offers still alternate though anyone may reveal or void (Bargain) names the player it
@@ -2073,7 +2073,10 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         newly_named = (module.first_to_move(before) is not None          # only a game whose first mover is drawn
                        and list(new_state.data.get("pending") or []) == [nxt]
                        and list(before.get("pending") or []) != [nxt])
-        if nxt and nxt != req.agent_id and (nxt != s.get("current_agent") or newly_named) and nxt not in waiting:
+        # On a phase the clock announced, the stored current_agent is from the round before: a change there is no
+        # hand-over, and its player was told with the others.
+        if (nxt and nxt != req.agent_id and (nxt != s.get("current_agent") or newly_named) and nxt not in waiting
+                and not clock_told):
             waiting.append(nxt)
         # A dealt game (Bargain, Liar's Dice) that this move ended now waits on every player's reveal, the
         # mover's too: the player who accepted had only its own tool result to go on and let the window pass
