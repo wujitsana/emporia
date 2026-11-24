@@ -418,7 +418,7 @@ def test_a_captured_leave_cannot_be_replayed_after_the_agent_joined_again(client
     """Audit R2: a leave signed before the agent's last join or leave is refused (409), as a join is."""
     _keyed(client, "rp_host", "rp_guest")
     room_id = _room(client, "rp_host", encrypted=True)
-    join = lambda: client.post(f"/rooms/{room_id}/join", json={"agent_id": "rp_guest"}, headers=_as("rp_guest"))  # noqa: E731
+    join = lambda: client.post(f"/rooms/{room_id}/join", json={"agent_id": "rp_guest"}, headers=_as("rp_guest"))
     assert join().status_code == 200
     leave = _signed(wire.signed_room_leave_payload, room_id, "rp_guest")
     assert client.post(f"/rooms/{room_id}/leave", json=leave, headers=_as("rp_guest")).status_code == 200
