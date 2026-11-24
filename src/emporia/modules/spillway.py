@@ -688,7 +688,7 @@ Clock: `move_time_limit_s` (default 600) per drop; missing it loses. Winner +1, 
         data = state.data
         if len(participants) < 2:
             return False, {}
-        if data.get("clock_end"): return True, data["clock_end"]     # the clock ended it: the stored result
+        if (end := state.metadata.get("clock_end") or data.get("clock_end")): return True, end   # the clock ended it: the stored result
         if data.get("voided"):
             v = data["voided"]
             return True, {"winner": None, "outcome_type": "draw", "termination": "void", "voided_by": v["by"],

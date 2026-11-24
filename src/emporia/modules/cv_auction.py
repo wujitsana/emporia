@@ -334,7 +334,7 @@ bid committed and not revealed in time forfeits (-1); so does refusing the secre
         data = state.data
         if len(participants) < data.get("players", 99):
             return False, {}
-        if data.get("clock_end"): return True, data["clock_end"]     # the clock ended it: the stored result
+        if (end := state.metadata.get("clock_end") or data.get("clock_end")): return True, end   # the clock ended it: the stored result
         if data.get("voided"):
             v = data["voided"]
             return True, {"winner": None, "outcome_type": "draw", "termination": "void", "voided_by": v["by"],

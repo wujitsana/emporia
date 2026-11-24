@@ -1910,8 +1910,9 @@ def _one_move_at_a_time(fn):
 def _step_still(session_id: str, step: int) -> bool:
     """The backstop under the lock: the stored step is still the one this move was checked against."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT step_number FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
-    return bool(row) and row[0] == step
+        row = conn.execute("SELECT step_number, status FROM sessions WHERE session_id = ?",
+                           (session_id,)).fetchone()
+    return bool(row) and row[0] == step and row[1] == "active"
 
 
 @router.post("/sessions/{session_id}/action")
@@ -2180,13 +2181,17 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
            if say_dropped else {}),
     }
 def _store_clock_end(session_id: str, state: SessionState, outcome: dict[str, Any]) -> dict[str, Any]:
-    """A game the clock ended keeps ONE end: the state its result was computed on (beacon rounds filled in), the
-    result (`clock_end`, read first by `is_terminal`) and no seat left to move. Returns the stored state."""
-    data = {**state.data, "clock_end": json.loads(json.dumps(outcome, default=str))}
-    if "pending" in data:
+    """A game the clock ended keeps ONE end: the state its result was computed on (beacon rounds filled in) and the
+    result (`state.metadata["clock_end"]`, read first by `is_terminal`). `data` stays what a replay of the signed
+    log gives, which a 2.1.0 client compares (`verify._replay_rand`); a game that is not replayed also waits on
+    nobody. Returns the stored state."""
+    data = dict(state.data)
+    module = get_interaction_module((rs.load_session(session_id) or {}).get("module_type", ""))
+    if "pending" in data and not getattr(module, "REPLAY_WITH_RAND", False):
         data["pending"] = []
+    metadata = {**state.metadata, "clock_end": json.loads(json.dumps(outcome, default=str))}
     new = SessionState(data=data, current_agent=state.current_agent, step_number=state.step_number,
-                       metadata=state.metadata).to_dict()
+                       metadata=metadata).to_dict()
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?", (json.dumps(new), session_id))
     return new
@@ -2234,6 +2239,10 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
                 continue
             # Claimed like a fund, so a racing submit_action and this sweep
             # cannot both settle the same session.
+            # The beacon fetch above awaited: a move may have landed since the row was read. Then this result is
+            # stale (it would overwrite the board with the one before that move): leave it to the next sweep.
+            if not _step_still(s["session_id"], s["step_number"]):
+                continue
             if not rs.claim_session_status(s["session_id"], "active", "completed"):
                 continue
             if module.USES_RAND:     # one end: the round the clock's result came from, the result, no pending seat

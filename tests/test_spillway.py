@@ -458,9 +458,10 @@ def test_a_game_ended_by_the_clock_stores_one_end_and_no_pending_seat(client):
     stored = rs.load_session(sid)
     assert stored["status"] == "completed"
     data = stored["state"]["data"]
-    assert data["pending"] == [], "a finished game waits on nobody"
+    assert "clock_end" not in data, "the stored board stays what a replay of the signed log gives"
     assert str(named) in data["rand"]["beacons"], "the round the result came from stays with the game"
-    assert data["clock_end"]["termination"] == "timeout" and data["clock_end"]["winner"] == mover
+    end = stored["state"]["metadata"]["clock_end"]
+    assert end["termination"] == "timeout" and end["winner"] == mover
     out = get_interaction_module(SPILLWAY).is_terminal(SessionState.from_dict(stored["state"]))[1]
     assert out["termination"] == "timeout" and out["winner"] == mover
     served = _served(client, sid, other)
@@ -472,8 +473,8 @@ def test_every_beacon_game_reads_a_stored_clock_end_before_recomputing(module_ty
     """Completed implies a stored end: each per-turn-beacon game that can end by the clock returns the result the
     sweep stored, whatever its stored rounds would give when read again."""
     stored = {"termination": "timeout", "winner": "b", "outcome_type": "won", "reason": "a did not move in time"}
-    state = SessionState(data={"clock_end": stored, "players": 2, "pending": []}, current_agent="a",
-                         step_number=3, metadata={"participants": ["a", "b"]})
+    state = SessionState(data={"players": 2, "pending": []}, current_agent="a",
+                         step_number=3, metadata={"participants": ["a", "b"], "clock_end": stored})
     assert get_interaction_module(module_type).is_terminal(state) == (True, stored)
 
 

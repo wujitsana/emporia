@@ -126,3 +126,19 @@ def test_an_older_wallet_statement_cannot_be_posted_again_after_a_newer_one(clie
     assert client.post(f"/agents/{a}/x402-wallet", json=signed_wallet_body(a, "evm", WALLET),
                        headers=hdr).status_code == 200
     assert AGENT_REGISTRY.get_x402_pay_to(a, "evm") == WALLET
+
+
+def test_replaying_same_value_statements_cannot_roll_the_wallet_back(client):
+    """Review 11-24, finding 2: A(t1), B(t2), A(t3), then A(t1) and B(t2) again: the latest signed value stays."""
+    a = _agent(client, "pw_abab")
+    hdr = {"x-emporia-agent-id": a}
+    other = "0x" + "cd" * 20
+    first, second = signed_wallet_body(a, "evm", WALLET), signed_wallet_body(a, "evm", other)
+    third = signed_wallet_body(a, "evm", WALLET)
+    assert third["at"] > second["at"] > first["at"]
+    for body in (first, second, third):
+        assert client.post(f"/agents/{a}/x402-wallet", json=body, headers=hdr).status_code == 200
+    assert client.post(f"/agents/{a}/x402-wallet", json=first, headers=hdr).status_code == 200     # nothing stored
+    assert client.post(f"/agents/{a}/x402-wallet", json=second, headers=hdr).status_code == 409
+    assert AGENT_REGISTRY.get_x402_pay_to(a, "evm") == WALLET
+    assert AGENT_REGISTRY.payee_statement(a)["wallets"]["evm"]["at"] == third["at"]

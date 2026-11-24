@@ -672,7 +672,7 @@ Clock: `move_time_limit_s` (600) per phase. Sealing and not opening puts you out
         data = state.data
         if len(participants) < data.get("players", 99):
             return False, {}
-        if data.get("clock_end"): return True, data["clock_end"]     # the clock ended it: the stored result
+        if (end := state.metadata.get("clock_end") or data.get("clock_end")): return True, end   # the clock ended it: the stored result
         if data.get("voided"):
             v = data["voided"]
             return True, {"winner": None, "outcome_type": "draw", "termination": "void", "voided_by": v["by"],

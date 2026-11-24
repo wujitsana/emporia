@@ -22,15 +22,23 @@ def _older(held_at: str, at: str) -> bool:
     return bool(held and new and new <= held)
 
 
-def refuse_older_wallet(registry: Any, agent_id: str, network_family: str, address: str, at: str) -> None:
-    """409 when `at` is not later than the held wallet statement for the family and the address differs."""
+def refuse_older_wallet(registry: Any, agent_id: str, network_family: str, address: str, at: str) -> bool:
+    """409 when `at` is not later than the held wallet statement for the family and the address differs. True when
+    the address is the same and `at` is not later: answer success and store nothing (the newer `at` stays)."""
     held = ((registry.payee_statement(agent_id) or {}).get("wallets") or {}).get(network_family) or {}
-    if held.get("address") and held["address"] != address and _older(str(held.get("at") or ""), at):
-        raise HTTPException(409, f"the wallet statement is older than {_WHY}")
+    if held.get("address") and _older(str(held.get("at") or ""), at):
+        if held["address"] != address:
+            raise HTTPException(409, f"the wallet statement is older than {_WHY}")
+        return True
+    return False
 
 
-def refuse_older_networks(registry: Any, agent_id: str, networks: list[str], at: str) -> None:
-    """409 when `at` is not later than the held accept-networks list and the list differs."""
+def refuse_older_networks(registry: Any, agent_id: str, networks: list[str], at: str) -> bool:
+    """409 when `at` is not later than the held accept-networks list and the list differs. True when the list is the
+    same and `at` is not later: answer success and store nothing."""
     held = registry.accepts_networks_proof(agent_id) or {}
-    if held and sorted(held.get("networks") or []) != sorted(networks) and _older(str(held.get("at") or ""), at):
-        raise HTTPException(409, f"the networks statement is older than {_WHY}")
+    if held and _older(str(held.get("at") or ""), at):
+        if sorted(held.get("networks") or []) != sorted(networks):
+            raise HTTPException(409, f"the networks statement is older than {_WHY}")
+        return True
+    return False

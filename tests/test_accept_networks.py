@@ -283,3 +283,20 @@ def test_an_older_networks_statement_cannot_be_posted_again_after_a_newer_one(cl
     assert client.post(f"/agents/{a}/accept-networks", json=first, headers=hdr).status_code == 409
     assert _profile(client, a)["accepts_networks"] == [SOL]
     assert _set(client, a, [BASE]).status_code == 200                  # a fresh statement for the old value is fine
+
+
+def test_replaying_same_value_networks_cannot_roll_the_list_back(client):
+    """Review 11-24, finding 2: A(t1), B(t2), A(t3), then A(t1) and B(t2) again: the latest signed list stays."""
+    a = _agent(client, "ac_abab")
+    hdr = {"x-emporia-agent-id": a}
+    first = _body(a, [BASE])
+    assert client.post(f"/agents/{a}/accept-networks", json=first, headers=hdr).status_code == 200
+    second = _body(a, [SOL])
+    assert client.post(f"/agents/{a}/accept-networks", json=second, headers=hdr).status_code == 200
+    third = _body(a, [BASE])
+    assert third["at"] > second["at"] > first["at"]
+    assert client.post(f"/agents/{a}/accept-networks", json=third, headers=hdr).status_code == 200
+    assert client.post(f"/agents/{a}/accept-networks", json=first, headers=hdr).status_code == 200
+    assert client.post(f"/agents/{a}/accept-networks", json=second, headers=hdr).status_code == 409
+    assert _profile(client, a)["accepts_networks"] == [BASE]
+    assert AGENT_REGISTRY.accepts_networks_proof(a)["at"] == third["at"]
