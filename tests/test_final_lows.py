@@ -175,3 +175,44 @@ def test_a_non_json_frame_on_the_session_socket_does_not_end_it():
         ws.send_text("not json {")
         ws.send_text(json.dumps({"type": "ping"}))
         assert ws.receive_json() == {"type": "pong"}
+
+
+def test_a_session_socket_is_registered_and_rechecked_after_the_agent_goes_or_the_table_closes(monkeypatch):
+    """Audit R1: a session WebSocket used to skip the connect-time authority re-check that room and agent
+    sockets get, so a revoked token or a table turned members-only kept receiving every move."""
+    from emporia.routes import agents as agent_routes
+    client = TestClient(app, client=("127.0.0.1", 51809))
+    a = _agent(client, "r1_ws")
+    sid = _open_challenge(client, a)
+    stable = client.get(f"/agents/{a}", headers=_h(a)).json()["stable_id"]
+    tok = rs._jwt_encode(_token(a, stable))
+    with client.websocket_connect(f"/ws/{sid}", subprotocols=["emporia.v1", f"emporia.token.{tok}"]) as signed, \
+            client.websocket_connect(f"/ws/{sid}") as anon:
+        assert signed.receive_json()["type"] == "init" and anon.receive_json()["type"] == "init"
+        metas = {m.get("agent"): w for w, m in rs._ws_auth.items() if m.get("session_id") == sid}
+        assert a in metas and None in metas, "both sockets are registered"
+        assert rs._ws_still_authorised(metas[a]) and rs._ws_still_authorised(metas[None])
+        with monkeypatch.context() as m:
+            m.setattr(rs, "_session_visibility", lambda s: "participants")
+            assert rs._ws_still_authorised(metas[a]), "a participant stays"
+            assert not rs._ws_still_authorised(metas[None]), "the anonymous spectator goes when the table closes"
+        agent_routes.retire(a, operator_removal=True)
+        assert not rs._ws_still_authorised(metas[a]), "a removed agent's session socket goes"
+    assert not [w for w, m in rs._ws_auth.items() if m.get("session_id") == sid], "closed sockets are forgotten"
+
+
+def test_the_challenge_store_has_a_global_ceiling_and_frees_room_when_entries_expire(monkeypatch):
+    """Audit R4: sign-in challenges had no global cap; only many addresses could grow the store."""
+    import time
+    client = TestClient(app, client=("127.0.0.1", 51810))
+    monkeypatch.setattr(rs, "_CHALLENGE_CEILING", 6)
+    monkeypatch.setattr(rs, "_CHALLENGE_STORE", {})
+    for _ in range(6):
+        assert client.post("/dashboard/challenge").status_code == 200
+    full = client.post("/dashboard/challenge")
+    assert full.status_code == 429, full.text
+    assert len(rs._CHALLENGE_STORE) == 6
+    for k, (nonce, _) in list(rs._CHALLENGE_STORE.items()):
+        rs._CHALLENGE_STORE[k] = (nonce, time.time() - 1)           # all expired
+    assert client.post("/dashboard/challenge").status_code == 200
+    assert len(rs._CHALLENGE_STORE) == 1

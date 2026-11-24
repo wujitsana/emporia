@@ -347,6 +347,7 @@ import hmac as _hmac
 _JWT_TTL_SECONDS = 3600                  # 1-hour sessions
 _CHALLENGE_STORE: dict[str, tuple[str, float]] = {}   # challenge_id → (nonce, expires_at)
 _CHALLENGE_TTL = 300.0  # 5-minute window to complete sign
+_CHALLENGE_CEILING = 5000       # open challenges, all addresses together; past it a new one is 429
 
 
 def _jwt_encode(payload: dict) -> str:
@@ -3400,15 +3401,18 @@ def record_action(
 _ws_auth: dict[WebSocket, dict[str, Any]] = {}
 
 
-def _ws_still_authorised(ws: WebSocket) -> bool:
+def _ws_still_authorised(ws: WebSocket, session: dict[str, Any] | None = None) -> bool:
     """Whether the socket's connect-time authority still holds: its token not expired, signed out, revoked
     by revoke-all or key recovery, and its agent still active under the same stable id; for a private room's
     socket, the agent still a member (expiry-aware)."""
     meta = _ws_auth.get(ws)
     if meta is None:
         return True
-    if _token_agent(_jwt_decode(meta["token"])) != meta["agent"]:
+    if meta.get("token") and _token_agent(_jwt_decode(meta["token"])) != meta["agent"]:
         return False
+    if meta.get("session_id"):      # a session socket: the table may have turned members-only since connect
+        sess = session or load_session(meta["session_id"])
+        return bool(sess) and _session_viewer_allowed(sess, meta["agent"])
     room_id = meta.get("room_id")
     return not room_id or rooms_db.is_member(room_id, meta["agent"], db_path=DATABASE_PATH)
 
@@ -3432,8 +3436,9 @@ async def close_room_sockets_of(room_id: str, agent_id: str) -> None:
 
 async def broadcast_to_session(session_id: str, message: dict[str, Any]) -> None:
     dead: set[WebSocket] = set()
+    sess = load_session(session_id) if any(w in _ws_auth for w in ws_connections.get(session_id, ())) else None
     for ws in list(ws_connections.get(session_id, set())):
-        if ws in _ws_auth and not _ws_still_authorised(ws):
+        if ws in _ws_auth and not _ws_still_authorised(ws, sess):
             await _ws_drop(session_id, ws)
             continue
         try:
@@ -5209,11 +5214,12 @@ async def dashboard_challenge(request: Request):
         body = None
     if isinstance(body, dict) and isinstance(body.get("agent_id"), str):
         _check_signin_agent_limit(request, body["agent_id"])
-    # Prune expired challenges
     now = time.time()
-    expired = [k for k, (_, exp) in _CHALLENGE_STORE.items() if exp < now]
-    for k in expired:
-        _CHALLENGE_STORE.pop(k, None)
+    if len(_CHALLENGE_STORE) >= _CHALLENGE_CEILING // 2:     # prune only when the store is filling up
+        for k in [k for k, (_, exp) in _CHALLENGE_STORE.items() if exp < now]:
+            _CHALLENGE_STORE.pop(k, None)
+        if len(_CHALLENGE_STORE) >= _CHALLENGE_CEILING:
+            raise HTTPException(429, "too many sign-in challenges are open; try again in a few minutes")
 
     challenge_id = secrets.token_urlsafe(16)
     nonce = secrets.token_hex(32)
@@ -6779,17 +6785,9 @@ async def ws_global_events(ws: WebSocket):
 
 @app.websocket("/ws/{session_id}")
 async def ws_session(ws: WebSocket, session_id: str):
-    """Live session feed. Gated the same way as GET /sessions/{id}/actions
-    (_session_viewer_allowed()) — public sessions (default, e.g. chess spectator/replay)
-    stay open to any connection; participants-only sessions (paid modules by default)
-    require the caller to be a participant or the operator.
-
-    N4-5 (N4 review R7): used to fail OPEN on an unknown session_id — `if s and not
-    _session_viewer_allowed(...)` skipped the gate entirely when `s` was falsy, so an
-    unrecognized id was accepted and registered into ws_connections[session_id], where
-    it would receive anything later broadcast to that key. ws_room already rejects an
-    unknown room_id; this now matches that fail-closed shape.
-    """
+    """Live session feed, gated as GET /sessions/{id}/actions (_session_viewer_allowed()): a public session is open
+    to any connection, a participants-only one to its participants and the operator, and every send re-checks
+    that. An unknown session_id is refused (N4-5: it used to fail open)."""
     if await _ws_refused(ws):
         return
     s = load_session(session_id)
@@ -6805,6 +6803,7 @@ async def ws_session(ws: WebSocket, session_id: str):
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "session", "session_id": session_id})
     ws_connections[session_id].add(ws)
+    _ws_auth[ws] = {"token": _ws_token(ws), "agent": _ws_agent_id(ws), "session_id": session_id}
     try:
         await ws.send_json({"type": "init", "session": s})
         while True:
@@ -6820,6 +6819,7 @@ async def ws_session(ws: WebSocket, session_id: str):
     finally:
         logger.info("ws_disconnected", extra={"ws_id": ws_id, "channel": "session", "session_id": session_id})
         ws_connections[session_id].discard(ws)
+        _ws_auth.pop(ws, None)
 
 
 @app.websocket("/ws/agent/{agent_id}")
