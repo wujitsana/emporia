@@ -2182,15 +2182,12 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     }
 def _store_clock_end(session_id: str, state: SessionState, outcome: dict[str, Any]) -> dict[str, Any]:
     """A game the clock ended keeps ONE end: the state its result was computed on (beacon rounds filled in) and the
-    result (`state.metadata["clock_end"]`, read first by `is_terminal`). `data` stays what a replay of the signed
-    log gives, which a 2.1.0 client compares (`verify._replay_rand`); a game that is not replayed also waits on
-    nobody. Returns the stored state."""
-    data = dict(state.data)
-    module = get_interaction_module((rs.load_session(session_id) or {}).get("module_type", ""))
-    if "pending" in data and not getattr(module, "REPLAY_WITH_RAND", False):
-        data["pending"] = []
+    result (`state.metadata["clock_end"]`, read first by `is_terminal`). `data` is left exactly as the result was
+    computed on it, `pending` included: a 2.1.0 client compares a replay of the signed log with it
+    (`verify._replay_rand`) and recomputes an exported result from it (`game_export.verify_line`); the status says
+    the game is over. Returns the stored state."""
     metadata = {**state.metadata, "clock_end": json.loads(json.dumps(outcome, default=str))}
-    new = SessionState(data=data, current_agent=state.current_agent, step_number=state.step_number,
+    new = SessionState(data=state.data, current_agent=state.current_agent, step_number=state.step_number,
                        metadata=metadata).to_dict()
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?", (json.dumps(new), session_id))

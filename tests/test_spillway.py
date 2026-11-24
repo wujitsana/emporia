@@ -437,10 +437,10 @@ def test_running_out_of_time_loses(client):
     assert out["termination"] == "timeout" and out["winner"] == winner and out["points"] == {winner: 1, mover: -1}
 
 
-def test_a_game_ended_by_the_clock_stores_one_end_and_no_pending_seat(client):
+def test_a_game_ended_by_the_clock_stores_one_end(client):
     """Live 11-21: the sweep computed a timeout win on a state with the gate's round filled in, but saved the
     state without it: `completed` with no end, a seat still pending, and a reader's own recomputation saying
-    "draw, void". A game the clock ended keeps the filled state, the result, and waits on nobody."""
+    "draw, void". A game the clock ended keeps the filled state and the result; its status says it is over."""
     sid, agents = _game(client)
     _, mover, _d = _gated(client, sid, agents[0])
     assert _drop(client, sid, mover, _d["open"][0]).status_code == 200

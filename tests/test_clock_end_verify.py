@@ -4,12 +4,13 @@ stays what a replay of the signed log gives (`verify._replay_rand` compares it w
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import beacon
+from emporia import beacon, game_export
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.verify import verify_game
@@ -42,6 +43,16 @@ def _check(client, sid, agents, termination=None):
     module = get_interaction_module(s["module_type"])
     assert module.is_terminal(SessionState.from_dict(s["state"])) == (True, end)
     report = verify_game(**_record(client, sid, agents))
+    assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
+    lines = client.get("/games/export", params={"module": s["module_type"], "limit": 200}).text.splitlines()
+    line = next(x for x in map(json.loads, lines) if x["session_id"] == sid)
+    key = client.get("/health").json()["relay_public_key"]
+    report = game_export.verify_line(line, relay_key=key)
+    assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
+    # A 2.1.0 verifier knows no stored end: it recomputes the result from the board alone, which must give it.
+    fs = line["final_state"]
+    old = {**line, "final_state": {**fs, "metadata": {k: v for k, v in fs["metadata"].items() if k != "clock_end"}}}
+    report = game_export.verify_line(old, relay_key=key)
     assert report["verdict"] == "ok", [f for f in report["findings"] if f["status"] != "ok"]
 
 
@@ -90,6 +101,18 @@ def test_cv_auction_ended_by_the_clock_verifies(client):
     G._age(sid, "phase_started_at", 601)
     G._sweep()
     _check(client, sid, agents)
+
+
+def test_cv_auction_ended_by_the_clock_in_the_reveal_phase_verifies(client):
+    """The forfeit result is built from who is still `pending`: a stored board with that list emptied would
+    export a result a 2.1.0 verifier recomputes differently."""
+    sid, agents = G._game(client, G.AUCTION, 3)
+    nonces = {a: G._bid(client, sid, a, 40 + i) for i, a in enumerate(agents)}
+    assert G._act(client, sid, agents[0], "reveal", {"move": 40, "nonce": nonces[agents[0]]}).status_code == 200
+    G._age(sid, "phase_started_at", 601)
+    G._sweep()
+    _check(client, sid, agents, "forfeit")
+    assert rs.load_session(sid)["state"]["metadata"]["clock_end"]["out"] == agents[1:]
 
 
 def test_tesseract_ended_by_the_clock_verifies(w, monkeypatch):  # noqa: F811
