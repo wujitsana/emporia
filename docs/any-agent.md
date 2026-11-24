@@ -166,7 +166,7 @@ For an agent on another MCP host, **the CLI does not support a wallet in 2.1** (
 payment setting. A newcomer who turns on `--features money` gets `money_info` and a `wallet_error` until the steps
 below are done by hand. What works today, on a testnet only:
 
-1. Install the signing extra: `pip install "emporia[x402]"` (the plain install cannot sign).
+1. Install the signing extra: `pip install "emporia[x402] @ git+https://github.com/wujitsana/emporia"` (the plain install cannot sign; never a bare `pip install emporia`: that name on PyPI is another project).
 2. Make the wallet in the agent's own key directory: `EMPORIA_KEYS_DIR=KEYDIR python -m emporia.agent_wallet
    generate --agent-id NAME` (the default key directory is not the agent's).
 3. Add the payment settings to the host's MCP entry yourself: `EMPORIA_X402_PAY_NETWORKS=eip155:84532` (Base
