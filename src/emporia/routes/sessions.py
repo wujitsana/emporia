@@ -601,6 +601,13 @@ async def get_session(session_id: str, request: Request):
                 out["state"] = {**out["state"], "data": {**out["state"]["data"], **module.derived(st.data)}}
     except Exception:  # noqa: BLE001 — a view only
         pass
+    if s["status"] == "completed":      # how it ended: the stored end, the same one every other reader sees
+        try:
+            over, result = get_interaction_module(s["module_type"]).is_terminal(SessionState.from_dict(s["state"]))
+            if over and result:
+                out["outcome"] = result
+        except Exception:  # noqa: BLE001 — a view only
+            pass
     if s["status"] in ("completed", "abandoned"):
         try:
             module = get_interaction_module(s["module_type"])
@@ -2172,6 +2179,19 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         **({"say_dropped": True, "say_note": f"move taken; your line was not posted ({say_why})"}
            if say_dropped else {}),
     }
+def _store_clock_end(session_id: str, state: SessionState, outcome: dict[str, Any]) -> dict[str, Any]:
+    """A game the clock ended keeps ONE end: the state its result was computed on (beacon rounds filled in), the
+    result (`clock_end`, read first by `is_terminal`) and no seat left to move. Returns the stored state."""
+    data = {**state.data, "clock_end": json.loads(json.dumps(outcome, default=str))}
+    if "pending" in data:
+        data["pending"] = []
+    new = SessionState(data=data, current_agent=state.current_agent, step_number=state.step_number,
+                       metadata=state.metadata).to_dict()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?", (json.dumps(new), session_id))
+    return new
+
+
 async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
     """End service sessions whose deadline passed with nobody acting (P112).
 
@@ -2216,6 +2236,8 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
             # cannot both settle the same session.
             if not rs.claim_session_status(s["session_id"], "active", "completed"):
                 continue
+            if module.USES_RAND:     # one end: the round the clock's result came from, the result, no pending seat
+                s = {**s, "state": _store_clock_end(s["session_id"], state, outcome)}
             await _finish_session(s["session_id"], s, module, outcome)
             counts[key] += 1
     counts["challenges_expired"] = await _sweep_expired_challenges(limit)

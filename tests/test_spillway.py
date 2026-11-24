@@ -437,6 +437,46 @@ def test_running_out_of_time_loses(client):
     assert out["termination"] == "timeout" and out["winner"] == winner and out["points"] == {winner: 1, mover: -1}
 
 
+def test_a_game_ended_by_the_clock_stores_one_end_and_no_pending_seat(client):
+    """Live 11-21: the sweep computed a timeout win on a state with the gate's round filled in, but saved the
+    state without it: `completed` with no end, a seat still pending, and a reader's own recomputation saying
+    "draw, void". A game the clock ended keeps the filled state, the result, and waits on nobody."""
+    sid, agents = _game(client)
+    _, mover, _d = _gated(client, sid, agents[0])
+    assert _drop(client, sid, mover, _d["open"][0]).status_code == 200
+    named = rs.load_session(sid)["state"]["data"]["moves"][0]["round"]
+    assert str(named) not in rs.load_session(sid)["state"]["data"]["rand"].get("beacons", {})
+    other = agents[1] if mover == agents[0] else agents[0]
+    s = rs.load_session(sid)
+    s["state"]["data"]["turn_started_at"] = (datetime.now(UTC) - timedelta(seconds=700)).isoformat()
+    rs.save_session(session_id=sid, module_type=s["module_type"], config=s["config"], payment_rules=s["payment_rules"],
+                    state=SessionState.from_dict(s["state"]), current_agent=s["current_agent"],
+                    step_number=s["step_number"], status="active", participants=s["participants"],
+                    created_at=s["created_at"], updated_at=datetime.now(UTC).isoformat())
+    from emporia.routes.sessions import sweep_service_deadlines
+    asyncio.run(sweep_service_deadlines())
+    stored = rs.load_session(sid)
+    assert stored["status"] == "completed"
+    data = stored["state"]["data"]
+    assert data["pending"] == [], "a finished game waits on nobody"
+    assert str(named) in data["rand"]["beacons"], "the round the result came from stays with the game"
+    assert data["clock_end"]["termination"] == "timeout" and data["clock_end"]["winner"] == mover
+    out = get_interaction_module(SPILLWAY).is_terminal(SessionState.from_dict(stored["state"]))[1]
+    assert out["termination"] == "timeout" and out["winner"] == mover
+    served = _served(client, sid, other)
+    assert served["outcome"]["termination"] == "timeout" and served["outcome"]["winner"] == mover
+
+
+@pytest.mark.parametrize("module_type", sorted(m for m, c in MODULE_REGISTRY.items() if c.USES_RAND and c.TIMED))
+def test_every_beacon_game_reads_a_stored_clock_end_before_recomputing(module_type):
+    """Completed implies a stored end: each per-turn-beacon game that can end by the clock returns the result the
+    sweep stored, whatever its stored rounds would give when read again."""
+    stored = {"termination": "timeout", "winner": "b", "outcome_type": "won", "reason": "a did not move in time"}
+    state = SessionState(data={"clock_end": stored, "players": 2, "pending": []}, current_agent="a",
+                         step_number=3, metadata={"participants": ["a", "b"]})
+    assert get_interaction_module(module_type).is_terminal(state) == (True, stored)
+
+
 # ── scenarios: an honest game stopped before its last drop, the last drop played through the relay ──────────
 
 def _craft(sid, agents, silt=(), stones=None, first=None, moves=(), beacons=None, drops=None):
