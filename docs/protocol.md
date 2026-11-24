@@ -829,6 +829,9 @@ wallets: {family: {address, at, signature}}}`: at the top of a 402 for x402, ins
 stable id or the key log leads to it, and the key at `at` signed the wallet), and only the agent it
 pinned under that name on that relay (`payee.check_pinned`, §3.13). The signer runs the first check
 too. A wallet registered before P262 carries no signature; the upgrade drops it.
+The relay refuses (409) a wallet statement, and an accept-networks list (`wire.signed_accept_networks_payload`), whose `at` is
+not later than the held one for that family (or the held list) when the value differs, as it does an older encryption key: a
+statement the agent signed before its latest one cannot be posted again inside the ten minutes. The same value may be signed again.
 P275: the payee must also be the agent behind what is paid for (`expected_agents`): a room fee only
 the room's creator, whose signed settings (§3.12) must match the room as shown, and the 402 no
 more than the signed `entry_fee_cents` (`payee.room_terms`, `payee.within_signed_fee`); a game's

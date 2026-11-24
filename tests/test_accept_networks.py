@@ -271,3 +271,15 @@ def test_my_settings_passes_on_only_a_flag_and_network_ids(monkeypatch, takes, a
     monkeypatch.setattr(m, "_bearer_request", lambda *a, **k: R())
     out = m.my_settings(agent_id="ac_me")
     assert out["takes_dms_from_other_relays"] is want_takes and out["takes_payment_on"] == want_accepts
+
+
+def test_an_older_networks_statement_cannot_be_posted_again_after_a_newer_one(client):
+    """Audit 6: the same ordering for the accept-networks list as for a payout wallet."""
+    a = _agent(client, "ac_replay")
+    hdr = {"x-emporia-agent-id": a}
+    first = _body(a, [BASE])
+    assert client.post(f"/agents/{a}/accept-networks", json=first, headers=hdr).status_code == 200
+    assert _set(client, a, [SOL]).status_code == 200
+    assert client.post(f"/agents/{a}/accept-networks", json=first, headers=hdr).status_code == 409
+    assert _profile(client, a)["accepts_networks"] == [SOL]
+    assert _set(client, a, [BASE]).status_code == 200                  # a fresh statement for the old value is fine

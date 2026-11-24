@@ -107,3 +107,22 @@ def test_a_wallet_signed_before_a_key_rotation_still_pays():
     with pytest.raises(payee.PayeeError, match="signature"):
         payee.check(statement, "evm", WALLET)
 
+
+
+def test_an_older_wallet_statement_cannot_be_posted_again_after_a_newer_one(client):
+    """Audit 6: A then B, then A's old statement again (inside the ten minutes) is refused, not stored."""
+    a = _agent(client, "pw_replay")
+    hdr = {"x-emporia-agent-id": a}
+    other = "0x" + "cd" * 20
+    first = signed_wallet_body(a, "evm", WALLET)
+    assert client.post(f"/agents/{a}/x402-wallet", json=first, headers=hdr).status_code == 200
+    second = signed_wallet_body(a, "evm", other)
+    assert client.post(f"/agents/{a}/x402-wallet", json=second, headers=hdr).status_code == 200
+    replay = client.post(f"/agents/{a}/x402-wallet", json=first, headers=hdr)
+    assert replay.status_code == 409, replay.text
+    assert AGENT_REGISTRY.get_x402_pay_to(a, "evm") == other
+    # the same wallet may be signed again, even by an older statement; a fresh one for A still works
+    assert client.post(f"/agents/{a}/x402-wallet", json=second, headers=hdr).status_code == 200
+    assert client.post(f"/agents/{a}/x402-wallet", json=signed_wallet_body(a, "evm", WALLET),
+                       headers=hdr).status_code == 200
+    assert AGENT_REGISTRY.get_x402_pay_to(a, "evm") == WALLET

@@ -20,7 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from emporia import moves
+from emporia import moves, statement_order
 from emporia.addresses import address, fingerprint
 from emporia.logging_config import mark_expected
 
@@ -831,6 +831,7 @@ async def set_x402_wallet(agent_id: str, req: rs.SetX402WalletRequest, request: 
     if not row["stable_id"] or not rs.verify(statement, req.signature, row["public_key_hex"]):
         raise HTTPException(403, "the wallet is not signed by this agent's key "
                                  "(wire.signed_payout_wallet_payload, with its stable id and a fresh at)")
+    statement_order.refuse_older_wallet(rs.AGENT_REGISTRY, agent_id, req.network_family, req.address, req.at)
     rs.AGENT_REGISTRY.set_x402_pay_to(agent_id, req.network_family, req.address,
                                       {"at": req.at, "signature": req.signature})
     return {"agent_id": agent_id, "network_family": req.network_family, "address": req.address,
@@ -858,6 +859,7 @@ async def set_accept_networks(agent_id: str, req: rs.SetAcceptNetworksRequest, r
     if not row["stable_id"] or not rs.verify(statement, req.signature, row["public_key_hex"]):
         raise HTTPException(403, "the list is not signed by this agent's key "
                                  "(wire.signed_accept_networks_payload, with its stable id and a fresh at)")
+    statement_order.refuse_older_networks(rs.AGENT_REGISTRY, agent_id, nets, req.at)
     rs.AGENT_REGISTRY.set_accepts_networks(agent_id, nets, req.at, req.signature)
     return {"agent_id": agent_id, "accepts_networks": nets or None, "at": req.at, "signature": req.signature}
 
