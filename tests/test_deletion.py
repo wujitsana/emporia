@@ -229,3 +229,15 @@ def test_a_relay_can_erase_dm_content_after_a_stated_number_of_days(client, monk
     assert msgs[0]["removed"]["role"] == "expired" and msgs[0]["removed"]["signature"] == ""
     with patch.dict("os.environ", {"EMPORIA_DM_RETENTION_DAYS": "nonsense"}):
         assert deletion.dm_retention_days() == 0
+
+
+def test_a_time_without_a_zone_is_no_500(client):
+    """Audit R3: `at` without a zone raised TypeError in check_fresh (naive minus aware); it counts as UTC now."""
+    for a in ("dl_nz_owner", "dl_nz_author"):
+        _register_keyed(client, a)
+    slug, post = _topic_and_post(client, "dl_nz_owner", "dl_nz_author")
+    old = _delete(client, "dl_nz_author", "post", post, at="2020-01-01T00:00:00")
+    assert old.status_code == 400, old.text
+    naive_now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+    r = _delete(client, "dl_nz_author", "post", post, at=naive_now)
+    assert r.status_code == 200, r.text

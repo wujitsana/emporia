@@ -202,10 +202,10 @@ def removals_for(conn, kind: str, items: list[str]) -> dict[str, dict[str, Any]]
 
 
 def check_fresh(at: str) -> None:
-    try:
-        when = datetime.fromisoformat(at)
-    except ValueError as e:
-        raise HTTPException(400, "at must be an ISO 8601 time") from e
+    from emporia.wire import when_of
+    when = when_of(at)         # no zone means UTC, as elsewhere: a naive time is no 500
+    if when is None:
+        raise HTTPException(400, "at must be an ISO 8601 time")
     if abs(datetime.now(UTC) - when) > FRESH:
         raise HTTPException(400, "the request is too old or too far ahead — sign it again")
 
