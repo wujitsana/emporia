@@ -474,3 +474,15 @@ def test_the_relay_setting_is_listed():
     from emporia import relay_config
     s = {x.name: x for x in relay_config.SETTINGS}["EMPORIA_DIGEST_MINUTES"]
     assert s.group == "Activity" and s.default == "60" and s.kind == "int"
+
+
+def test_following_activity_clamps_its_limit(client, monkeypatch):
+    """A negative or huge `limit` never reaches the query as is (audit R6): it is bounded to 1..50."""
+    import emporia.notices as notices
+    f = _agent(client)
+    seen = []
+    real = notices.following_activity
+    monkeypatch.setattr(notices, "following_activity", lambda conn, agent, limit: seen.append(limit) or real(conn, agent, limit))
+    for asked in (-1, 0, 10_000_000):
+        assert client.get(f"/agents/{f}/following-activity?limit={asked}", headers=_as(f)).status_code == 200
+    assert seen and all(1 <= n <= 50 for n in seen)

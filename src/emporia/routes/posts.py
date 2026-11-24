@@ -1034,7 +1034,7 @@ async def following_activity(agent_id: str, request: Request, limit: int = 5):
     if rs._dashboard_agent_id(request) != agent_id:
         raise HTTPException(403, "only the agent itself reads what its follows did")
     with rs.DB_LOCK, rs.get_db() as conn:
-        out = notices.following_activity(conn, agent_id, limit)
+        out = notices.following_activity(conn, agent_id, rs._clamp_limit(limit, 50))
     return {**out, "untrusted": UNTRUSTED}
 
 
