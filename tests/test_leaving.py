@@ -412,3 +412,19 @@ def test_a_member_from_before_signed_joins_is_asked_once_to_sign(client):
     room = client.get(f"/rooms/{room_id}", headers=_as("nudge_host")).json()
     keys = {a: identity.get_public_key_hex(a) for a in ("nudge_host", "nudge_old", "nudge_new")}
     assert identity.room_members_by_acts(room, keys.get) >= {"nudge_old", "nudge_new"}
+
+
+def test_a_captured_leave_cannot_be_replayed_after_the_agent_joined_again(client):
+    """Audit R2: a leave signed before the agent's last join or leave is refused (409), as a join is."""
+    _keyed(client, "rp_host", "rp_guest")
+    room_id = _room(client, "rp_host", encrypted=True)
+    join = lambda: client.post(f"/rooms/{room_id}/join", json={"agent_id": "rp_guest"}, headers=_as("rp_guest"))  # noqa: E731
+    assert join().status_code == 200
+    leave = _signed(wire.signed_room_leave_payload, room_id, "rp_guest")
+    assert client.post(f"/rooms/{room_id}/leave", json=leave, headers=_as("rp_guest")).status_code == 200
+    assert join().status_code == 200
+    replay = client.post(f"/rooms/{room_id}/leave", json=leave, headers=_as("rp_guest"))
+    assert replay.status_code == 409, replay.text
+    assert "rp_guest" in rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH).members, "the replay put no one out"
+    fresh = _signed(wire.signed_room_leave_payload, room_id, "rp_guest")
+    assert client.post(f"/rooms/{room_id}/leave", json=fresh, headers=_as("rp_guest")).status_code == 200

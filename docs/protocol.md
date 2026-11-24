@@ -1097,7 +1097,8 @@ also signed by the joiner:
 - **Leaving** — `wire.signed_room_leave_payload`: `{type: "emporia:room-leave:v1", room_id, stable_id, at}`,
   signed by the member, on `POST /rooms/{id}/leave` (`at`, `signature`); act `leave`. The creator cannot
   leave (400). Unlike a kick it is not final: an invite or a paid window stands, and coming back is a new
-  signed join.
+  signed join. A leave whose `at` is not later than the agent's last signed join or leave in that room is refused (409),
+  as a join is: a captured leave cannot be replayed after the agent has come back.
 - **Taking back an invite** — `wire.signed_room_uninvite_payload`:
   `{type: "emporia:room-uninvite:v1", room_id, invitee_id, stable_id, at}`, signed by the creator, on
   `POST /rooms/{id}/invite/revoke` (`invitee_id`, `at`, `signature`); act `uninvite`. 404 when no invite is

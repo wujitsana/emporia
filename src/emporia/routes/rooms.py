@@ -535,6 +535,11 @@ async def leave_room(room_id: str, req: SignedActRequest, request: Request):
         raise HTTPException(400, "The creator cannot leave the room they made")
     signed = signed_room_leave_payload(room_id, rs.AGENT_REGISTRY.get_stable_id(caller) or "", req.at)
     _require_signed_by(caller, signed, req.at, req.signature, "the leaving agent's")
+    # A leave signed before the agent's last join or leave is an old one replayed: after a rejoin it would
+    # put the agent out again.
+    _, last_at, _ = _last_own_act(room_id, caller)
+    if last_at and _when(req.at) <= _when(last_at):
+        raise HTTPException(409, "this leave was signed before your last join or leave here — sign a new one")
     if not rooms_db.remove_member(room_id, caller, db_path=rs.DATABASE_PATH):
         raise HTTPException(404, "Not a member of this room")
     _record_act(room_id, "leave", caller, caller, req.at, signed, req.signature)
