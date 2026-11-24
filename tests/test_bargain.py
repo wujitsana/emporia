@@ -705,3 +705,42 @@ def test_a_secret_the_relay_does_not_hold_gives_no_hand():
     view = rand_client.private_view(sess, "b", other, now=rand.round_time(rnd) + 1,
                                     fetch=lambda r, base=None: fake_beacon_sig(r))
     assert "values" not in view and "not the one the relay holds" in view["error"]
+
+
+def test_two_simultaneous_moves_for_one_step_do_not_overwrite_each_other(client, monkeypatch):
+    """Audit item 5. Simultaneous-move games (bargain, liars_dice, cv_auction, tesseract) can suspend between
+    load and save while a beacon round is fetched. Both reveals were signed for the same step; before the
+    per-session lock both passed and the second save wiped the first reveal."""
+    from fastapi import HTTPException
+    from emporia.routes import sessions as action_mod
+    sid, a, b = _game(client)
+    _play_deal(client, sid, a, b)
+    step = rs.load_session(sid)["step_number"]
+    bodies = []
+    for who in (a, b):
+        s, nonce = RAND_SECRETS[(sid, who)]
+        bodies.append(rs.SubmitActionRequest(
+            **_signed_action_body(client, sid, who, "reveal", {"s": s, "nonce": nonce}, WHY)))
+    real = action_mod._with_beacon
+
+    async def slow(module, session_id, state):
+        await asyncio.sleep(0.05)       # the suspension a beacon fetch causes
+        return await real(module, session_id, state)
+    monkeypatch.setattr(action_mod, "_with_beacon", slow)
+
+    async def both():
+        return await asyncio.gather(*(action_mod.submit_action(sid, r) for r in bodies), return_exceptions=True)
+    results = asyncio.run(both())
+    failed = [r for r in results if isinstance(r, HTTPException)]
+    assert len(failed) == 1 and failed[0].status_code in (403, 409), results
+    assert rs.load_session(sid)["step_number"] == step + 1
+    with rs.DB_LOCK, rs.get_db() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM actions WHERE session_id=? AND action_type='reveal'", (sid,)).fetchone()[0]
+    assert n == 1
+
+
+def test_the_step_backstop_sees_a_newer_step(client):
+    from emporia.routes import sessions as action_mod
+    sid, a, b = _game(client)
+    step = rs.load_session(sid)["step_number"]
+    assert action_mod._step_still(sid, step) and not action_mod._step_still(sid, step - 1)

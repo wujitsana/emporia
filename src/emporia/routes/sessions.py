@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import functools
 import json
 import os
 import sys
@@ -1875,7 +1876,39 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     if joined and (guide := how_to_play_for(joined.get("module_type", ""))):
         joined = {**joined, "how_to_play": guide}
     return joined
+
+
+_MOVE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _one_move_at_a_time(fn):
+    """One move per session at a time, from load to save (the relay is one process per database).
+
+    A simultaneous-move game (bargain, liars_dice, cv_auction, tesseract) can suspend between load and save
+    while a beacon round is fetched; two moves for the same step then both passed and the second save wiped
+    the first. The second now waits, loads the new step and fails the step-bound signature as a late mover does.
+    """
+    @functools.wraps(fn)
+    async def run(session_id: str, *args, **kwargs):
+        lock = _MOVE_LOCKS.setdefault(session_id, asyncio.Lock())
+        try:
+            async with lock:
+                return await fn(session_id, *args, **kwargs)
+        finally:
+            if not lock.locked() and not getattr(lock, "_waiters", None):
+                _MOVE_LOCKS.pop(session_id, None)
+    return run
+
+
+def _step_still(session_id: str, step: int) -> bool:
+    """The backstop under the lock: the stored step is still the one this move was checked against."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT step_number FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+    return bool(row) and row[0] == step
+
+
 @router.post("/sessions/{session_id}/action")
+@_one_move_at_a_time
 async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     s = rs.load_session(session_id)
     if not s:
@@ -1986,6 +2019,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     new_state = result.new_state
     is_over, outcome = module.is_terminal(new_state)
     new_status = "completed" if is_over else "active"
+    if not _step_still(session_id, s["step_number"]):
+        raise HTTPException(409, "Another move landed first; read the new state and move again.")
     # P112: the deadline sweep can end a service session too. Whoever moves it
     # from active to completed first settles it; the other is told.
     if is_over and not rs.claim_session_status(session_id, "active", "completed"):
